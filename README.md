@@ -1,0 +1,2 @@
+# GoXDR
+KQL Query Library
