@@ -9,7 +9,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', -apple-system, sans-serif; background: #080c14; color: #e2e8f0; min-height: 100vh; -webkit-text-size-adjust: 100%; }
   .hero { background: #080c14; padding: 40px 24px 24px; text-align: center; border-bottom: 1px solid #1e293b; margin-bottom: 20px; }
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px 24px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 24px; }
   button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
   .header { text-align: center; margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
   .logo { font-size: 44px; font-weight: 800; color: #3b82f6; letter-spacing: -1px; }
@@ -25,21 +25,21 @@
   .search:focus { border-color: #3b82f6; }
   .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; }
   .search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: #334155; border: none; color: #e2e8f0; border-radius: 6px; padding: 4px 10px; font-size: 12px; }
-  .filters { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
-  .filters2 { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
-  .cat-btn { padding: 6px 16px; font-size: 13px; border-radius: 14px; border: none; background: #1e293b; color: #94a3b8; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .filters2 { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  .cat-btn { padding: 8px 20px; font-size: 14px; border-radius: 16px; border: none; background: #1e293b; color: #94a3b8; }
   .cat-btn.active { background: #3b82f6; color: #fff; font-weight: 600; }
-  .sev-btn { padding: 5px 12px; font-size: 11px; border-radius: 10px; text-transform: uppercase; font-weight: 700; background: transparent; }
-  .plat-btn { padding: 5px 12px; font-size: 11px; border-radius: 10px; border: 1px solid #334155; background: transparent; color: #64748b; }
+  .sev-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; text-transform: uppercase; font-weight: 700; background: transparent; }
+  .plat-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #334155; background: transparent; color: #64748b; }
   .plat-btn.active { background: #1e293b; color: #93c5fd; }
   .sep { color: #1e293b; margin: 0 2px; font-size: 12px; }
-  .group-hdr { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 12px 16px; background: #111827; border: 1px solid #1e293b; border-radius: 8px; }
+  .group-hdr { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 14px 18px; background: #111827; border: 1px solid #1e293b; border-radius: 8px; }
   .group-hdr.open { background: #0f1729; border: 2px solid #2563eb; border-radius: 8px 8px 0 0; border-bottom: 1px solid #1e293b; }
-  .group-cat { font-size: 13px; color: #3b82f6; font-weight: 700; }
-  .group-sep { color: #334155; font-size: 12px; }
-  .group-sub { font-size: 13px; color: #94a3b8; }
-  .group-count { font-size: 12px; color: #94a3b8; background: #1e293b; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
-  .group-arrow { font-size: 12px; transition: transform 0.2s; display: inline-block; }
+  .group-cat { font-size: 15px; color: #3b82f6; font-weight: 700; }
+  .group-sep { color: #334155; font-size: 13px; }
+  .group-sub { font-size: 15px; color: #94a3b8; }
+  .group-count { font-size: 13px; color: #94a3b8; background: #1e293b; padding: 3px 10px; border-radius: 8px; font-weight: 600; }
+  .group-arrow { font-size: 13px; transition: transform 0.2s; display: inline-block; }
   .group-body { background: #0b1120; border: 1px solid #1e293b; border-top: none; border-radius: 0 0 8px 8px; padding: 4px 0; }
   .q-btn { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; margin: 2px 4px; width: calc(100% - 8px); }
   .q-btn.sel { background: #1e293b; border-color: #334155; border-radius: 6px 6px 0 0; }
@@ -144,8 +144,8 @@ function App() {
         )
       ),
       // Search inside hero
-      e("div", { style: { maxWidth: 700, margin: "16px auto 0", position: "relative" } },
-        e("input", { type: "text", className: "search", placeholder: "identity, aitm, spray, bec, oauth, ntlm...", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
+      e("div", { style: { maxWidth: 900, margin: "16px auto 0", position: "relative" } },
+        e("input", { type: "text", className: "search", placeholder: "Click here to search queries... identity, aitm, password spray, bec, oauth, ntlm, token theft, bloodhound, kerberoasting", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
         e("span", { className: "search-icon" }, "\ud83d\udd0d"),
         search && e("button", { className: "search-clear", onClick: () => { setSearch(""); setSelQ(null); } }, "\u2715")
       )
