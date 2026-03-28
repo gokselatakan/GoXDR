@@ -1401,5 +1401,45 @@
     "sev": "critical",
     "desc": "Cross-references email threat source IPs with sign-in logs. If a user signs in from the same IP that sent phishing email, the account is likely compromised.",
     "kql": "let ThreatIPs = EmailEvents\n| where TimeGenerated > ago(7d)\n| where isnotempty(ThreatTypes) and isnotempty(SenderIPv4)\n| distinct SenderIPv4;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where IPAddress in (ThreatIPs)\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| summarize SignInCount = count(), UniqueUsers = dcount(UserPrincipalName), Users = make_set(UserPrincipalName, 5), SuccessCount = countif(ResultType == \"0\")\n    by IPAddress, Country\n| order by SuccessCount desc"
+  },
+  {
+    "id": 81,
+    "name": "Risky Sign-In from Unmanaged Device (Sentinel)",
+    "cat": "Identity",
+    "sub": "Device Trust",
+    "plat": "sentinel",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "unmanaged",
+      "non-compliant",
+      "risky sign-in",
+      "browser",
+      "device trust"
+    ],
+    "sev": "critical",
+    "desc": "Detects successful sign-ins and MFA-interrupted attempts from unmanaged and non-compliant devices with medium or high risk level. Filters for browser-based access with no device registration, meaning the device is completely unknown to Entra ID. This is a strong indicator of credential theft or AiTM session hijack from attacker infrastructure.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(1h)\n| where ResultType == 0 or ResultType == 50074\n| where DeviceDetail.isManaged != true\n| where DeviceDetail.isCompliant != true\n| where RiskLevelDuringSignIn in (\"medium\", \"high\")\n| where ClientAppUsed == \"Browser\"\n| where DeviceDetail.trustType == \"\"\n| where isnotempty(LocationDetails.state) or isnotempty(LocationDetails.countryOrRegion) or isnotempty(LocationDetails.city)\n| where isnotempty(IPAddress)\n| where isnotempty(UserId)\n| where isempty(DeviceDetail.displayName)\n| where isempty(DeviceDetail.deviceId)\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| extend City = tostring(LocationDetails.city)\n| extend State = tostring(LocationDetails.state)\n| extend SignInStatus = case(\n    ResultType == 0, \"Success\",\n    ResultType == 50074, \"MFA Interrupted\",\n    \"Other\")\n| project TimeGenerated, IPAddress, UserDisplayName, UserId, Country, City, State, AppDisplayName, RiskLevelDuringSignIn, SignInStatus, ResultType, CorrelationId"
+  },
+  {
+    "id": 82,
+    "name": "Risky Sign-In from Unmanaged Device (XDR)",
+    "cat": "Identity",
+    "sub": "Device Trust",
+    "plat": "xdr",
+    "tables": [
+      "AADSignInEventsBeta"
+    ],
+    "tags": [
+      "unmanaged",
+      "non-compliant",
+      "risky sign-in",
+      "browser",
+      "device trust"
+    ],
+    "sev": "critical",
+    "desc": "XDR version using AADSignInEventsBeta table. Detects successful sign-ins and MFA-interrupted attempts from unmanaged and non-compliant devices with medium (50) or high (100) risk level. No device registration means the device is unknown to Entra ID — strong indicator of credential theft or AiTM session hijack.",
+    "kql": "AADSignInEventsBeta\n| where Timestamp > ago(7d)\n| where ErrorCode == 0 or ErrorCode == 50074\n| where IsManaged != 1\n| where IsCompliant != 1\n| where RiskLevelDuringSignIn in (50, 100)\n| where ClientAppUsed == \"Browser\"\n| where isempty(DeviceTrustType)\n| where isnotempty(State) or isnotempty(Country) or isnotempty(City)\n| where isnotempty(IPAddress)\n| where isnotempty(AccountObjectId)\n| where isempty(DeviceName)\n| where isempty(AadDeviceId)\n| extend ReportId = strcat(AccountObjectId, \"-\", tostring(Timestamp))\n| extend SignInStatus = case(\n    ErrorCode == 0, \"Success\",\n    ErrorCode == 50074, \"MFA Interrupted\",\n    \"Other\")\n| project Timestamp, ReportId, AccountObjectId, IPAddress, AccountDisplayName, Country, City, Application, RiskLevelDuringSignIn, SignInStatus, ErrorCode"
   }
 ]
