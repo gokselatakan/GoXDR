@@ -1,0 +1,1405 @@
+[
+  {
+    "id": 1,
+    "name": "Brute Force - Users Under Attack",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "brute force",
+      "authentication"
+    ],
+    "sev": "high",
+    "desc": "Detects accounts receiving more than 10 failed sign-in attempts. High failure counts from multiple IPs indicate targeted brute force attacks.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize\n    FailedAttempts = count(),\n    UniqueIPs = dcount(IPAddress),\n    IPs = make_set(IPAddress, 5),\n    FirstAttempt = min(TimeGenerated),\n    LastAttempt = max(TimeGenerated)\n    by UserPrincipalName\n| where FailedAttempts > 10\n| extend AttackType = case(\n    UniqueIPs > 5, \"Distributed Brute Force\",\n    FailedAttempts > 100, \"Heavy Brute Force\",\n    \"Standard Brute Force\")\n| order by FailedAttempts desc"
+  },
+  {
+    "id": 2,
+    "name": "Successful Login After Failed Attempts",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "compromise",
+      "post-attack"
+    ],
+    "sev": "critical",
+    "desc": "Identifies accounts that successfully signed in after a series of failures. This pattern strongly indicates credential compromise.",
+    "kql": "let FailedAccounts = SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize FailCount = count(), LastFail = max(TimeGenerated) by UserPrincipalName\n| where FailCount > 5;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| join kind=inner (FailedAccounts) on UserPrincipalName\n| where TimeGenerated > LastFail\n| where datetime_diff('minute', TimeGenerated, LastFail) <= 30\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, AppDisplayName, FailCount\n| order by FailCount desc"
+  },
+  {
+    "id": 3,
+    "name": "Password Spray Detection",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "password spray",
+      "attack"
+    ],
+    "sev": "high",
+    "desc": "Detects IPs attempting to sign in across 10+ different user accounts per hour. Password spraying avoids lockout by trying one password against many users.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize\n    TargetedUsers = dcount(UserPrincipalName),\n    Attempts = count(),\n    Users = make_set(UserPrincipalName, 10)\n    by IPAddress, bin(TimeGenerated, 1h)\n| where TargetedUsers >= 10\n| extend SprayIntensity = case(\n    TargetedUsers > 50, \"CRITICAL - Mass Spray\",\n    TargetedUsers > 20, \"HIGH\",\n    \"MEDIUM\")\n| order by TargetedUsers desc"
+  },
+  {
+    "id": 4,
+    "name": "Password Spray Success (Compromise)",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "password spray",
+      "compromise"
+    ],
+    "sev": "critical",
+    "desc": "Finds successful sign-ins from IPs previously identified as password spray sources. A successful login from a spray IP means at least one account is compromised.",
+    "kql": "let SprayIPs = SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize TargetedUsers = dcount(UserPrincipalName) by IPAddress\n| where TargetedUsers >= 10\n| project IPAddress;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| where IPAddress in (SprayIPs)\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, AppDisplayName\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 5,
+    "name": "MFA Fatigue / Bombing Detection",
+    "cat": "Identity",
+    "sub": "MFA Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "mfa",
+      "fatigue",
+      "bombing"
+    ],
+    "sev": "high",
+    "desc": "Detects 5+ MFA push prompts to the same user within 10 minutes. Attackers repeatedly trigger MFA hoping the user accidentally approves.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"50074\"\n| summarize\n    MFAPrompts = count(),\n    TimeSpan = datetime_diff('minute', max(TimeGenerated), min(TimeGenerated)),\n    IPs = make_set(IPAddress, 5)\n    by UserPrincipalName, bin(TimeGenerated, 10m)\n| where MFAPrompts >= 5\n| extend RiskLevel = case(\n    MFAPrompts > 20, \"CRITICAL - Heavy Bombing\",\n    MFAPrompts > 10, \"HIGH\",\n    \"MEDIUM\")\n| order by MFAPrompts desc"
+  },
+  {
+    "id": 6,
+    "name": "MFA Fatigue Success",
+    "cat": "Identity",
+    "sub": "MFA Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "mfa",
+      "compromise"
+    ],
+    "sev": "critical",
+    "desc": "Identifies successful MFA completion following a fatigue/bombing attack. The user likely approved the push by mistake — immediate session revocation needed.",
+    "kql": "let MFABombedUsers = SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"50074\"\n| summarize MFAPrompts = count() by UserPrincipalName, bin(TimeGenerated, 10m)\n| where MFAPrompts >= 5\n| project UserPrincipalName;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| where UserPrincipalName in (MFABombedUsers)\n| where AuthenticationRequirement == \"multiFactorAuthentication\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, AppDisplayName\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 7,
+    "name": "AiTM Phishing / Token Replay",
+    "cat": "Identity",
+    "sub": "Token Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "aitm",
+      "token",
+      "phishing"
+    ],
+    "sev": "critical",
+    "desc": "Detects the same session used from multiple IP addresses, indicating stolen session token replay from attacker infrastructure after AiTM phishing.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| where isnotempty(OriginalRequestId)\n| summarize\n    UniqueIPs = dcount(IPAddress),\n    IPs = make_set(IPAddress, 10),\n    Countries = make_set(tostring(LocationDetails.countryOrRegion), 5)\n    by OriginalRequestId, UserPrincipalName\n| where UniqueIPs > 1\n| extend RiskLevel = case(\n    UniqueIPs > 3, \"CRITICAL - Multi-IP Token Replay\",\n    \"HIGH - Investigate\")\n| order by UniqueIPs desc"
+  },
+  {
+    "id": 8,
+    "name": "Impossible Travel Detection",
+    "cat": "Identity",
+    "sub": "Geo Anomaly",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "impossible travel",
+      "geo"
+    ],
+    "sev": "high",
+    "desc": "Calculates travel speed between consecutive sign-ins. Speed >800 km/h with >500 km distance flags impossible travel indicating compromised credentials.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| extend Lat = todouble(LocationDetails.geoCoordinates.latitude)\n| extend Lon = todouble(LocationDetails.geoCoordinates.longitude)\n| where isnotempty(Lat) and isnotempty(Lon)\n| order by UserPrincipalName, TimeGenerated\n| serialize\n| extend PrevLat = prev(Lat), PrevLon = prev(Lon), PrevTime = prev(TimeGenerated), PrevUser = prev(UserPrincipalName)\n| where UserPrincipalName == PrevUser and isnotempty(PrevLat)\n| extend TimeDiff = datetime_diff('minute', TimeGenerated, PrevTime)\n| where TimeDiff > 0\n| extend Distance_km = geo_distance_2points(Lon, Lat, PrevLon, PrevLat) / 1000\n| extend Speed_kmh = Distance_km / TimeDiff * 60\n| where Speed_kmh > 800 and Distance_km > 500\n| project TimeGenerated, UserPrincipalName, Distance_km = round(Distance_km, 0), Speed_kmh = round(Speed_kmh, 0), TimeDiff, IPAddress\n| order by Speed_kmh desc"
+  },
+  {
+    "id": 9,
+    "name": "Distributed Brute Force / Botnet",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "botnet",
+      "distributed"
+    ],
+    "sev": "high",
+    "desc": "Detects 5+ different IPs targeting the same user account. Distributed attacks use botnets to avoid IP-based rate limiting.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize\n    AttackingIPs = dcount(IPAddress),\n    Attempts = count(),\n    IPs = make_set(IPAddress, 10),\n    Countries = make_set(tostring(LocationDetails.countryOrRegion), 5)\n    by UserPrincipalName\n| where AttackingIPs >= 5\n| order by AttackingIPs desc"
+  },
+  {
+    "id": 10,
+    "name": "Low-and-Slow Password Spray",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "password spray",
+      "evasion"
+    ],
+    "sev": "medium",
+    "desc": "Catches evasive spray attacks making fewer than 10 attempts per hour but persisting over 4+ hours. Designed to fly under traditional thresholds.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize\n    AttemptCount = count(),\n    UniqueUsers = dcount(UserPrincipalName),\n    ActiveHours = dcount(bin(TimeGenerated, 1h)),\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated)\n    by IPAddress\n| where UniqueUsers >= 5 and ActiveHours >= 4 and AttemptCount / ActiveHours < 10\n| extend Duration_hours = datetime_diff('hour', LastSeen, FirstSeen)\n| order by UniqueUsers desc"
+  },
+  {
+    "id": 11,
+    "name": "Anonymous IP / VPN / Tor Detection",
+    "cat": "Identity",
+    "sub": "Suspicious Source",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "anonymous",
+      "vpn",
+      "tor"
+    ],
+    "sev": "medium",
+    "desc": "Identifies sign-ins flagged with anonymized IP risk events. Tor exit nodes and anonymous VPNs are commonly used by attackers.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where RiskEventTypes_V2 has_any (\"anonymizedIPAddress\", \"maliciousIPAddress\")\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| summarize\n    Events = count(),\n    IPs = make_set(IPAddress, 5),\n    Countries = make_set(Country, 5),\n    Apps = make_set(AppDisplayName, 5)\n    by UserPrincipalName, RiskLevelDuringSignIn\n| order by Events desc"
+  },
+  {
+    "id": 12,
+    "name": "First-Time Country Sign-In",
+    "cat": "Identity",
+    "sub": "Geo Anomaly",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "geo",
+      "new country"
+    ],
+    "sev": "medium",
+    "desc": "Compares current 7-day sign-in locations against a 30-day baseline. New countries are flagged as anomalous.",
+    "kql": "let Baseline = SigninLogs\n| where TimeGenerated between (ago(30d) .. ago(7d))\n| where ResultType == \"0\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| distinct UserPrincipalName, Country;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| where isnotempty(Country)\n| join kind=leftanti (Baseline) on UserPrincipalName, Country\n| summarize\n    Events = count(),\n    IPs = make_set(IPAddress, 5),\n    FirstSeen = min(TimeGenerated)\n    by UserPrincipalName, Country\n| order by Events desc"
+  },
+  {
+    "id": 13,
+    "name": "Users Without MFA",
+    "cat": "Identity",
+    "sub": "Compliance",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "mfa",
+      "compliance"
+    ],
+    "sev": "medium",
+    "desc": "Lists users authenticating with single-factor only. These accounts are the easiest targets and should be prioritized for MFA enforcement.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| where AuthenticationRequirement == \"singleFactorAuthentication\"\n| summarize\n    SingleFactorLogins = count(),\n    IPs = make_set(IPAddress, 5),\n    Apps = make_set(AppDisplayName, 5),\n    LastLogin = max(TimeGenerated)\n    by UserPrincipalName\n| order by SingleFactorLogins desc"
+  },
+  {
+    "id": 14,
+    "name": "Legacy Authentication Usage",
+    "cat": "Identity",
+    "sub": "Compliance",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "legacy",
+      "imap",
+      "pop"
+    ],
+    "sev": "medium",
+    "desc": "Detects usage of legacy protocols (IMAP, POP, SMTP, ActiveSync) that bypass MFA. Attackers target these protocols specifically.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ClientAppUsed has_any (\"IMAP\", \"POP\", \"SMTP\", \"Exchange ActiveSync\", \"Other clients\", \"Authenticated SMTP\")\n| summarize\n    LegacyLogins = count(),\n    Protocols = make_set(ClientAppUsed, 5),\n    Apps = make_set(AppDisplayName, 5),\n    LastUsed = max(TimeGenerated)\n    by UserPrincipalName\n| order by LegacyLogins desc"
+  },
+  {
+    "id": 15,
+    "name": "Z-Score Statistical Anomaly",
+    "cat": "Identity",
+    "sub": "Anomaly",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "anomaly",
+      "z-score",
+      "baseline"
+    ],
+    "sev": "medium",
+    "desc": "Calculates Z-score for each user's daily sign-in volume against their 30-day baseline. Z-score >3 means statistically significant deviation.",
+    "kql": "let Baseline = SigninLogs\n| where TimeGenerated between (ago(30d) .. ago(1d))\n| summarize DailyCount = count() by UserPrincipalName, bin(TimeGenerated, 1d)\n| summarize AvgDaily = avg(DailyCount), StdDev = stdev(DailyCount) by UserPrincipalName;\nSigninLogs\n| where TimeGenerated > ago(1d)\n| summarize TodayCount = count() by UserPrincipalName\n| join kind=inner (Baseline) on UserPrincipalName\n| where StdDev > 0\n| extend ZScore = round((TodayCount - AvgDaily) / StdDev, 2)\n| where ZScore > 3\n| project UserPrincipalName, TodayCount, AvgDaily = round(AvgDaily, 0), StdDev = round(StdDev, 1), ZScore\n| order by ZScore desc"
+  },
+  {
+    "id": 16,
+    "name": "Botnet IPs - Successful Logins",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "botnet",
+      "compromise"
+    ],
+    "sev": "critical",
+    "desc": "Cross-references IPs from failed attack patterns with successful sign-ins. A successful login from a known attack IP is a high-confidence compromise.",
+    "kql": "let AttackIPs = SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize FailCount = count(), TargetedUsers = dcount(UserPrincipalName) by IPAddress\n| where FailCount > 50 or TargetedUsers > 5\n| project IPAddress;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| where IPAddress in (AttackIPs)\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, AppDisplayName\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 17,
+    "name": "Threat Intel IP Correlation",
+    "cat": "Identity",
+    "sub": "Threat Intel",
+    "plat": "sentinel",
+    "tables": [
+      "SigninLogs",
+      "ThreatIntelligenceIndicator"
+    ],
+    "tags": [
+      "threat intel",
+      "ioc"
+    ],
+    "sev": "high",
+    "desc": "Joins sign-in logs with Sentinel ThreatIntelligenceIndicator table. Requires TI data connector enabled. Sentinel-only query.",
+    "kql": "// NOTE: This query works in Sentinel only (ThreatIntelligenceIndicator table)\nlet TIIPs = ThreatIntelligenceIndicator\n| where TimeGenerated > ago(30d)\n| where isnotempty(NetworkIP)\n| distinct NetworkIP;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where IPAddress in (TIIPs)\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, AppDisplayName, ResultType\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 18,
+    "name": "Off-Hours & Weekend Activity",
+    "cat": "Identity",
+    "sub": "Anomaly",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "off-hours",
+      "weekend"
+    ],
+    "sev": "medium",
+    "desc": "Flags sign-in activity outside business hours (before 7am/after 7pm) and on weekends. Unusual timing combined with other indicators can confirm compromise.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| extend Hour = datetime_part(\"Hour\", TimeGenerated)\n| extend DayOfWeek = dayofweek(TimeGenerated)\n| extend IsOffHours = case(\n    DayOfWeek >= 5d, \"Weekend\",\n    Hour < 7 or Hour > 19, \"After Hours\",\n    \"Business Hours\")\n| where IsOffHours != \"Business Hours\"\n| summarize\n    Events = count(),\n    IPs = make_set(IPAddress, 5),\n    Apps = make_set(AppDisplayName, 5)\n    by UserPrincipalName, IsOffHours\n| where Events > 5\n| order by Events desc"
+  },
+  {
+    "id": 19,
+    "name": "Attack Chain Summary (MITRE)",
+    "cat": "Identity",
+    "sub": "Attack Chain",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "mitre",
+      "kill chain"
+    ],
+    "sev": "high",
+    "desc": "Maps detected attack patterns to MITRE ATT&CK phases: Reconnaissance through Lateral Movement. Provides a single view of active attack chains.",
+    "kql": "let Recon = SigninLogs | where TimeGenerated > ago(7d) | where ResultType != \"0\" | summarize Attempts = count(), IPs = dcount(IPAddress) by UserPrincipalName | where Attempts > 10 | extend Phase = \"1-Reconnaissance\", Technique = \"T1589 - Credential Gathering\";\nlet InitialAccess = SigninLogs | where TimeGenerated > ago(7d) | where ResultType == \"0\" | where RiskLevelDuringSignIn in (\"medium\", \"high\") | summarize Attempts = count(), IPs = dcount(IPAddress) by UserPrincipalName | extend Phase = \"2-Initial Access\", Technique = \"T1078 - Valid Accounts\";\nlet CredAccess = SigninLogs | where TimeGenerated > ago(7d) | where ResultType == \"50074\" | summarize Attempts = count(), IPs = dcount(IPAddress) by UserPrincipalName | where Attempts >= 5 | extend Phase = \"3-Credential Access\", Technique = \"T1621 - MFA Bombing\";\nunion Recon, InitialAccess, CredAccess\n| project Phase, Technique, UserPrincipalName, Attempts, IPs\n| order by Phase asc, Attempts desc"
+  },
+  {
+    "id": 20,
+    "name": "Token Theft - Geographic Impossibility",
+    "cat": "Non-Interactive",
+    "sub": "Token Attacks",
+    "plat": "both",
+    "tables": [
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "token theft",
+      "impossible travel"
+    ],
+    "sev": "critical",
+    "desc": "Detects non-interactive sign-ins from 2+ countries within 120 minutes. Token theft allows attackers to use stolen refresh tokens from their own location.",
+    "kql": "AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| where isnotempty(Country)\n| summarize\n    Countries = make_set(Country, 10),\n    CountryCount = dcount(Country),\n    IPs = make_set(IPAddress, 10),\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated)\n    by UserPrincipalName\n| extend TimeSpan = datetime_diff('minute', LastSeen, FirstSeen)\n| where CountryCount >= 2 and TimeSpan <= 120\n| order by CountryCount desc"
+  },
+  {
+    "id": 21,
+    "name": "Credential Stuffing - Single IP",
+    "cat": "Non-Interactive",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "credential stuffing"
+    ],
+    "sev": "high",
+    "desc": "Identifies single IPs targeting 5+ different user accounts via non-interactive flows. Uses leaked username/password pairs from data breaches.",
+    "kql": "AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize\n    TargetedUsers = dcount(UserPrincipalName),\n    Attempts = count(),\n    Users = make_set(UserPrincipalName, 10)\n    by IPAddress\n| where TargetedUsers >= 5\n| order by TargetedUsers desc"
+  },
+  {
+    "id": 22,
+    "name": "Password Spray (Non-Interactive)",
+    "cat": "Non-Interactive",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "password spray",
+      "non-interactive"
+    ],
+    "sev": "high",
+    "desc": "Password spray targeting non-interactive sign-in endpoints. Attackers use automated tools against OAuth/token endpoints to avoid user-facing detections.",
+    "kql": "AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(7d)\n| where ResultType != \"0\"\n| summarize\n    TargetedUsers = dcount(UserPrincipalName),\n    Attempts = count()\n    by IPAddress, bin(TimeGenerated, 1h)\n| where TargetedUsers >= 10\n| order by TargetedUsers desc"
+  },
+  {
+    "id": 23,
+    "name": "AI Shadow IT (ChatGPT/Claude/Gemini)",
+    "cat": "Non-Interactive",
+    "sub": "Shadow IT",
+    "plat": "both",
+    "tables": [
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "ai",
+      "shadow it",
+      "chatgpt",
+      "claude"
+    ],
+    "sev": "medium",
+    "desc": "Detects unapproved AI service usage by looking for non-interactive sign-ins to known AI application names. Helps enforce AI governance policies.",
+    "kql": "AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(7d)\n| where AppDisplayName has_any (\"ChatGPT\", \"OpenAI\", \"Claude\", \"Anthropic\", \"Gemini\", \"Google AI\", \"Copilot\", \"Midjourney\", \"Stable Diffusion\", \"Perplexity\", \"Jasper\")\n| summarize\n    Events = count(),\n    Users = make_set(UserPrincipalName, 10),\n    UniqueUsers = dcount(UserPrincipalName)\n    by AppDisplayName\n| order by Events desc"
+  },
+  {
+    "id": 24,
+    "name": "Newly Detected Applications",
+    "cat": "Non-Interactive",
+    "sub": "Shadow IT",
+    "plat": "both",
+    "tables": [
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "new application",
+      "first seen"
+    ],
+    "sev": "medium",
+    "desc": "Compares current week's applications against a 90-day baseline. New applications could be shadow IT or malicious OAuth apps.",
+    "kql": "let BaselineApps = AADNonInteractiveUserSignInLogs\n| where TimeGenerated between (ago(90d) .. ago(7d))\n| distinct AppDisplayName;\nAADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(7d)\n| where AppDisplayName !in (BaselineApps)\n| summarize\n    Events = count(),\n    Users = make_set(UserPrincipalName, 5),\n    FirstSeen = min(TimeGenerated)\n    by AppDisplayName, AppId\n| order by Events desc"
+  },
+  {
+    "id": 25,
+    "name": "Weekly Baseline Comparison",
+    "cat": "Non-Interactive",
+    "sub": "Anomaly",
+    "plat": "both",
+    "tables": [
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "baseline",
+      "weekly"
+    ],
+    "sev": "low",
+    "desc": "Compares this week's non-interactive sign-in volume against previous week. >50% increase may indicate automated attacks.",
+    "kql": "let ThisWeek = AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(7d)\n| summarize TW = count(), TW_Failed = countif(ResultType != \"0\");\nlet LastWeek = AADNonInteractiveUserSignInLogs\n| where TimeGenerated between (ago(14d) .. ago(7d))\n| summarize LW = count(), LW_Failed = countif(ResultType != \"0\");\nThisWeek | extend p = 1\n| join kind=leftouter (LastWeek | extend p = 1) on p\n| extend VolumeChange = round((todouble(TW) - LW) / max_of(LW, 1) * 100, 0)\n| extend FailureChange = round((todouble(TW_Failed) - LW_Failed) / max_of(LW_Failed, 1) * 100, 0)\n| project ThisWeek_Total = TW, LastWeek_Total = LW, VolumeChange, ThisWeek_Failed = TW_Failed, LastWeek_Failed = LW_Failed, FailureChange"
+  },
+  {
+    "id": 26,
+    "name": "Lateral Movement via NTLM",
+    "cat": "NTLM",
+    "sub": "Attack Detection",
+    "plat": "xdr",
+    "tables": [
+      "DeviceLogonEvents"
+    ],
+    "tags": [
+      "lateral movement",
+      "ntlm"
+    ],
+    "sev": "critical",
+    "desc": "Detects accounts authenticating to 3+ devices or 2+ devices within 30 minutes using NTLM. Pass-the-Hash attacks use NTLM for lateral movement. Requires MDE.",
+    "kql": "DeviceLogonEvents\n| where TimeGenerated > ago(7d)\n| where LogonType == \"Network\"\n| where Protocol == \"NTLM\"\n| summarize\n    DeviceCount = dcount(DeviceName),\n    Devices = make_set(DeviceName, 10),\n    FirstLogon = min(TimeGenerated),\n    LastLogon = max(TimeGenerated)\n    by AccountName, AccountDomain\n| where DeviceCount >= 3\n| extend TimeSpan = datetime_diff('minute', LastLogon, FirstLogon)\n| extend RiskLevel = case(\n    DeviceCount >= 5, \"CRITICAL - Wide Lateral Movement\",\n    TimeSpan < 30, \"CRITICAL - Rapid Movement\",\n    \"HIGH\")\n| order by DeviceCount desc"
+  },
+  {
+    "id": 27,
+    "name": "MITRE ATT&CK NTLM Techniques",
+    "cat": "NTLM",
+    "sub": "Attack Detection",
+    "plat": "xdr",
+    "tables": [
+      "SecurityEvent",
+      "DeviceLogonEvents"
+    ],
+    "tags": [
+      "mitre",
+      "pass-the-hash",
+      "t1550"
+    ],
+    "sev": "critical",
+    "desc": "Detects MITRE techniques T1110.003 (Password Spraying), T1110.004 (Credential Stuffing) and T1550.002 (Pass the Hash) based on NTLM patterns.",
+    "kql": "DeviceLogonEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"NTLM\"\n| where LogonType == \"Network\"\n| summarize\n    Devices = dcount(DeviceName),\n    Attempts = count(),\n    FailedAttempts = countif(ActionType == \"LogonFailed\")\n    by AccountName\n| extend MITRETechnique = case(\n    Devices >= 3, \"T1550.002 - Pass the Hash\",\n    FailedAttempts > 50, \"T1110.003 - Password Spraying\",\n    Attempts > 100, \"T1110.004 - Credential Stuffing\",\n    \"Investigate\")\n| where MITRETechnique != \"Investigate\"\n| order by Attempts desc"
+  },
+  {
+    "id": 28,
+    "name": "Threat Actor TTP (APT28/29, FIN7)",
+    "cat": "NTLM",
+    "sub": "Threat Intel",
+    "plat": "xdr",
+    "tables": [
+      "SecurityEvent",
+      "DeviceLogonEvents"
+    ],
+    "tags": [
+      "apt28",
+      "apt29",
+      "fin7"
+    ],
+    "sev": "critical",
+    "desc": "Matches NTLM patterns against known APT28 (Fancy Bear), APT29 (Cozy Bear), FIN7 (Carbanak) and PetitPotam TTPs.",
+    "kql": "DeviceLogonEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"NTLM\"\n| where LogonType == \"Network\"\n| summarize\n    Devices = dcount(DeviceName),\n    Attempts = count(),\n    UniqueAccounts = dcount(AccountName)\n    by RemoteIP\n| extend ThreatActor = case(\n    Devices > 5 and UniqueAccounts > 3, \"APT29/Cozy Bear Pattern - Domain Recon\",\n    Attempts > 100 and Devices > 3, \"FIN7/Carbanak Pattern - AD Enumeration\",\n    UniqueAccounts > 10, \"APT28/Fancy Bear Pattern - Credential Harvesting\",\n    \"\")\n| where isnotempty(ThreatActor)\n| order by Attempts desc"
+  },
+  {
+    "id": 29,
+    "name": "NTLMv1 Compliance Check",
+    "cat": "NTLM",
+    "sub": "Compliance",
+    "plat": "xdr",
+    "tables": [
+      "SecurityEvent"
+    ],
+    "tags": [
+      "ntlmv1",
+      "compliance"
+    ],
+    "sev": "high",
+    "desc": "Identifies any NTLMv1 authentication. NTLMv1 is cryptographically broken and must be zero. Any detection requires immediate remediation.",
+    "kql": "SecurityEvent\n| where TimeGenerated > ago(7d)\n| where EventID == 4624\n| where LmPackageName has \"NTLM V1\"\n| summarize\n    NTLMv1Count = count(),\n    Accounts = make_set(TargetUserName, 10),\n    Computers = make_set(Computer, 10),\n    SourceIPs = make_set(IpAddress, 5)\n    by WorkstationName\n| order by NTLMv1Count desc"
+  },
+  {
+    "id": 30,
+    "name": "External IPs - Successful NTLM",
+    "cat": "NTLM",
+    "sub": "External Access",
+    "plat": "xdr",
+    "tables": [
+      "SecurityEvent"
+    ],
+    "tags": [
+      "external",
+      "ntlm",
+      "public ip"
+    ],
+    "sev": "critical",
+    "desc": "Detects successful NTLM authentication from public/external IPs. NTLM should never be exposed to the internet.",
+    "kql": "SecurityEvent\n| where TimeGenerated > ago(7d)\n| where EventID == 4624\n| where LogonType == 3\n| where AuthenticationPackageName == \"NTLM\"\n| where isnotempty(IpAddress) and IpAddress != \"-\" and IpAddress != \"::1\" and IpAddress != \"127.0.0.1\"\n| where not(ipv4_is_private(IpAddress))\n| summarize\n    SuccessCount = count(),\n    Accounts = make_set(TargetUserName, 5),\n    Computers = make_set(Computer, 5)\n    by IpAddress\n| order by SuccessCount desc"
+  },
+  {
+    "id": 31,
+    "name": "NTLM Deprecation Progress",
+    "cat": "NTLM",
+    "sub": "Compliance",
+    "plat": "xdr",
+    "tables": [
+      "SecurityEvent"
+    ],
+    "tags": [
+      "deprecation",
+      "migration"
+    ],
+    "sev": "medium",
+    "desc": "Compares last 30 days NTLM usage against previous period to track deprecation progress and Kerberos migration effectiveness.",
+    "kql": "let Current = SecurityEvent\n| where TimeGenerated > ago(30d)\n| where EventID == 4624\n| summarize NTLM_Current = countif(AuthenticationPackageName == \"NTLM\"), Kerberos_Current = countif(AuthenticationPackageName == \"Kerberos\");\nlet Previous = SecurityEvent\n| where TimeGenerated between (ago(60d) .. ago(30d))\n| where EventID == 4624\n| summarize NTLM_Previous = countif(AuthenticationPackageName == \"NTLM\"), Kerberos_Previous = countif(AuthenticationPackageName == \"Kerberos\");\nCurrent | extend p = 1 | join kind=leftouter (Previous | extend p = 1) on p\n| extend NTLM_Change = round((todouble(NTLM_Current) - NTLM_Previous) / max_of(NTLM_Previous, 1) * 100, 0)\n| project NTLM_Current, NTLM_Previous, NTLM_Change, Kerberos_Current, Kerberos_Previous"
+  },
+  {
+    "id": 32,
+    "name": "BloodHound/SharpHound Detection (MDI)",
+    "cat": "LDAP",
+    "sub": "Attack Tools",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "bloodhound",
+      "sharphound"
+    ],
+    "sev": "critical",
+    "desc": "Detects BloodHound/SharpHound collection via MDI: mass objectClass queries, memberOf enumeration and adminCount lookups. 500+ queries/hour = high confidence. Requires MDI.",
+    "kql": "let Patterns = dynamic([\"objectClass=user\", \"objectClass=group\", \"objectClass=computer\", \"memberOf\", \"adminCount\", \"primaryGroupID\", \"servicePrincipalName\"]);\nIdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has_any (Patterns)\n| summarize\n    QueryCount = count(),\n    Patterns = make_set(extract(@\"(objectClass=[a-zA-Z]+|memberOf|adminCount|servicePrincipalName)\", 0, tostring(AdditionalFields)), 10),\n    FirstQuery = min(TimeGenerated),\n    LastQuery = max(TimeGenerated)\n    by IPAddress, bin(TimeGenerated, 1h)\n| where QueryCount > 10\n| extend Confidence = case(QueryCount > 500, \"CRITICAL - High Confidence SharpHound\", QueryCount > 100, \"HIGH - Likely SharpHound\", \"MEDIUM - Possible\")\n| order by QueryCount desc"
+  },
+  {
+    "id": 33,
+    "name": "BloodHound Detection (Event 1644)",
+    "cat": "LDAP",
+    "sub": "Attack Tools",
+    "plat": "sentinel",
+    "tables": [
+      "Event"
+    ],
+    "tags": [
+      "bloodhound",
+      "1644"
+    ],
+    "sev": "critical",
+    "desc": "Same detection using Directory Service Event 1644 (expensive query log). Requires Field Engineering registry enabled on DCs. Works without MDI.",
+    "kql": "// NOTE: Requires Event 1644 enabled on DCs via registry:\n// HKLM\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Diagnostics\\15 Field Engineering = 5\nlet Patterns = dynamic([\"objectClass=user\", \"objectClass=group\", \"memberOf\", \"adminCount\", \"servicePrincipalName\"]);\nEvent\n| where TimeGenerated > ago(7d)\n| where EventLog == \"Directory Service\"\n| where EventID == 1644\n| where RenderedDescription has_any (Patterns)\n| extend ClientIP = extract(@\"Client IP:\\s*([\\d\\.]+)\", 1, RenderedDescription)\n| extend Filter = extract(@\"Filter:\\s*(.+?)\\s*(Visited|$)\", 1, RenderedDescription)\n| summarize QueryCount = count(), Filters = make_set(Filter, 5) by ClientIP, bin(TimeGenerated, 1h)\n| where QueryCount > 10\n| order by QueryCount desc"
+  },
+  {
+    "id": 34,
+    "name": "PowerView Enumeration (MDI)",
+    "cat": "LDAP",
+    "sub": "Attack Tools",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "powerview",
+      "enumeration"
+    ],
+    "sev": "critical",
+    "desc": "Detects PowerView patterns: samAccountType, userAccountControl and objectCategory queries. PowerView is the most common AD enumeration tool. Requires MDI.",
+    "kql": "let Patterns = dynamic([\"samAccountType\", \"userAccountControl\", \"objectCategory\", \"lastLogon\", \"pwdLastSet\", \"servicePrincipalName\", \"805306368\"]);\nIdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has_any (Patterns)\n| summarize\n    QueryCount = count(),\n    Patterns = make_set(extract(@\"(samAccountType|userAccountControl|objectCategory|servicePrincipalName)\", 1, tostring(AdditionalFields)), 10)\n    by IPAddress, bin(TimeGenerated, 10m)\n| where QueryCount > 5\n| extend Confidence = case(QueryCount > 100, \"CRITICAL\", QueryCount > 30, \"HIGH\", \"MEDIUM\")\n| order by QueryCount desc"
+  },
+  {
+    "id": 35,
+    "name": "KRBTGT Account Access (Golden Ticket)",
+    "cat": "LDAP",
+    "sub": "Privileged",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "krbtgt",
+      "golden ticket"
+    ],
+    "sev": "critical",
+    "desc": "Any LDAP query targeting KRBTGT is suspicious. Attackers query KRBTGT for Golden Ticket attacks granting unlimited domain access. Requires MDI.",
+    "kql": "IdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where TargetAccountDisplayName has \"krbtgt\" or tostring(AdditionalFields) has \"krbtgt\"\n| project TimeGenerated, AccountName, DeviceName, IPAddress, ActionType, AdditionalFields\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 36,
+    "name": "AdminSDHolder Modification",
+    "cat": "LDAP",
+    "sub": "Privileged",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "adminsdholder",
+      "persistence"
+    ],
+    "sev": "critical",
+    "desc": "Detects modifications to AdminSDHolder container. This is a persistence technique — changes propagate to all protected objects every 60 minutes. Requires MDI.",
+    "kql": "IdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has \"AdminSDHolder\" or TargetAccountDisplayName has \"AdminSDHolder\"\n| where ActionType has_any (\"modified\", \"added\", \"deleted\")\n| project TimeGenerated, AccountName, DeviceName, IPAddress, ActionType, AdditionalFields\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 37,
+    "name": "SPN Enumeration (Kerberoasting)",
+    "cat": "LDAP",
+    "sub": "Privileged",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "spn",
+      "kerberoasting"
+    ],
+    "sev": "high",
+    "desc": "Detects LDAP queries for servicePrincipalName attributes. Mass SPN enumeration is the first step of Kerberoasting — offline service account password cracking. Requires MDI.",
+    "kql": "IdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has \"servicePrincipalName\"\n| summarize\n    SPNQueries = count(),\n    FirstQuery = min(TimeGenerated),\n    LastQuery = max(TimeGenerated)\n    by AccountName, DeviceName, IPAddress\n| where SPNQueries > 3\n| extend RiskLevel = case(SPNQueries > 20, \"CRITICAL - Mass SPN Enumeration\", SPNQueries > 10, \"HIGH\", \"MEDIUM\")\n| order by SPNQueries desc"
+  },
+  {
+    "id": 38,
+    "name": "Certificate Template Enum (AD CS)",
+    "cat": "LDAP",
+    "sub": "Privileged",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "adcs",
+      "certificate",
+      "esc1"
+    ],
+    "sev": "critical",
+    "desc": "Detects LDAP queries for certificate template attributes. Indicates preparation for AD CS attacks (ESC1 through ESC8). Requires MDI.",
+    "kql": "IdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has_any (\"pKICertificateTemplate\", \"msPKI-Certificate-Name-Flag\", \"msPKI-Enrollment-Flag\", \"Cert Publishers\")\n| summarize\n    CertQueries = count(),\n    Templates = make_set(TargetAccountDisplayName, 10)\n    by AccountName, DeviceName, IPAddress\n| where CertQueries > 2\n| order by CertQueries desc"
+  },
+  {
+    "id": 39,
+    "name": "Domain Trust Enumeration",
+    "cat": "LDAP",
+    "sub": "Recon",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "trust",
+      "cross-forest"
+    ],
+    "sev": "high",
+    "desc": "Detects LDAP queries for trust-related attributes. Attackers enumerate trusts for cross-forest attacks using SID History or Golden Tickets. Requires MDI.",
+    "kql": "IdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has_any (\"trustedDomain\", \"trustDirection\", \"trustType\", \"trustAttributes\")\n| summarize TrustQueries = count() by AccountName, DeviceName, IPAddress\n| where TrustQueries > 1\n| order by TrustQueries desc"
+  },
+  {
+    "id": 40,
+    "name": "RBCD Configuration Queries",
+    "cat": "LDAP",
+    "sub": "Privileged",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "rbcd",
+      "kerberos abuse"
+    ],
+    "sev": "critical",
+    "desc": "Detects queries for msDS-AllowedToActOnBehalfOfOtherIdentity. RBCD abuse allows impersonating any user to a target service. Requires MDI.",
+    "kql": "IdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has \"msDS-AllowedToActOnBehalfOfOtherIdentity\"\n| project TimeGenerated, AccountName, DeviceName, IPAddress, ActionType, TargetAccountDisplayName\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 41,
+    "name": "Expensive LDAP Queries (Event 1644)",
+    "cat": "LDAP",
+    "sub": "DC Performance",
+    "plat": "sentinel",
+    "tables": [
+      "Event"
+    ],
+    "tags": [
+      "expensive",
+      "performance",
+      "dc"
+    ],
+    "sev": "medium",
+    "desc": "Captures LDAP queries visiting 100+ entries or taking 500+ ms. Identifies both performance issues and recon tools generating heavy directory scans.",
+    "kql": "// NOTE: Requires Event 1644 enabled via registry on DCs\nEvent\n| where TimeGenerated > ago(7d)\n| where EventLog == \"Directory Service\"\n| where EventID == 1644\n| extend ClientIP = extract(@\"Client IP:\\s*([\\d\\.]+)\", 1, RenderedDescription)\n| extend Filter = extract(@\"Filter:\\s*(.+?)\\s*(Visited|$)\", 1, RenderedDescription)\n| extend VisitedEntries = toint(extract(@\"Visited entries:\\s*(\\d+)\", 1, RenderedDescription))\n| extend TimeMs = toint(extract(@\"(\\d+)\\s*ms\", 1, RenderedDescription))\n| where VisitedEntries > 100 or TimeMs > 500\n| project TimeGenerated, Computer, ClientIP, Filter, VisitedEntries, TimeMs\n| order by VisitedEntries desc\n| take 50"
+  },
+  {
+    "id": 42,
+    "name": "Unsigned LDAP Bind (Event 2889)",
+    "cat": "LDAP",
+    "sub": "Security Config",
+    "plat": "sentinel",
+    "tables": [
+      "Event"
+    ],
+    "tags": [
+      "unsigned",
+      "ldap",
+      "bind"
+    ],
+    "sev": "high",
+    "desc": "Detects clients performing unsigned LDAP simple binds. Unsigned binds expose credentials in transit. Enforce LDAP signing (LDAPServerIntegrity=2).",
+    "kql": "Event\n| where TimeGenerated > ago(7d)\n| where EventLog == \"Directory Service\"\n| where EventID == 2889\n| extend ClientIP = extract(@\"IP address:\\s*([\\d\\.]+)\", 1, RenderedDescription)\n| summarize\n    UnsignedBinds = count(),\n    UniqueClients = dcount(ClientIP),\n    Clients = make_set(ClientIP, 10)\n    by Computer\n| order by UnsignedBinds desc"
+  },
+  {
+    "id": 43,
+    "name": "LDAP Relay Attack Indicators",
+    "cat": "LDAP",
+    "sub": "Attack Detection",
+    "plat": "both",
+    "tables": [
+      "SecurityEvent"
+    ],
+    "tags": [
+      "relay",
+      "ntlm",
+      "mitm"
+    ],
+    "sev": "critical",
+    "desc": "Correlates successful NTLM network logons to DCs with recent failed attempts. Pattern indicates NTLM relay attacks against domain controllers.",
+    "kql": "SecurityEvent\n| where TimeGenerated > ago(7d)\n| where EventID == 4624\n| where LogonType == 3\n| where AuthenticationPackageName == \"NTLM\"\n| join kind=inner (\n    SecurityEvent\n    | where TimeGenerated > ago(7d)\n    | where EventID == 4625\n    | project FailedTime = TimeGenerated, FailedAccount = Account, FailedIP = IpAddress\n) on $left.Account == $right.FailedAccount\n| where (TimeGenerated - FailedTime) between (-5m .. 5m)\n| summarize RelayIndicators = count(), SuccessAfterFailure = countif(TimeGenerated > FailedTime) by Account, IpAddress\n| where RelayIndicators > 2\n| order by RelayIndicators desc"
+  },
+  {
+    "id": 44,
+    "name": "LDAP Security Posture Score",
+    "cat": "LDAP",
+    "sub": "Compliance",
+    "plat": "sentinel",
+    "tables": [
+      "Event",
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "posture",
+      "score"
+    ],
+    "sev": "low",
+    "desc": "Calculates a 0-100 security score based on unsigned binds, clear text binds, expensive queries and privileged group recon.",
+    "kql": "let UnsignedBinds = toscalar(Event | where TimeGenerated > ago(7d) | where EventLog == \"Directory Service\" | where EventID == 2889 | count);\nlet ClearTextBinds = toscalar(Event | where TimeGenerated > ago(7d) | where EventLog == \"Directory Service\" | where EventID == 2887 | count);\nlet ExpensiveQueries = toscalar(Event | where TimeGenerated > ago(7d) | where EventLog == \"Directory Service\" | where EventID == 1644 | count);\nlet Score = 100 -\n    (case(UnsignedBinds > 1000, 30, UnsignedBinds > 100, 20, UnsignedBinds > 10, 10, 0) +\n    case(ClearTextBinds > 100, 30, ClearTextBinds > 10, 20, ClearTextBinds > 0, 10, 0) +\n    case(ExpensiveQueries > 100, 20, ExpensiveQueries > 10, 10, 0));\nprint SecurityScore = Score, UnsignedBinds = UnsignedBinds, ClearTextBinds = ClearTextBinds, ExpensiveQueries = ExpensiveQueries,\n    Grade = case(Score >= 90, \"A\", Score >= 80, \"B\", Score >= 70, \"C\", Score >= 60, \"D\", \"F\")"
+  },
+  {
+    "id": 45,
+    "name": "SP Impossible Travel",
+    "cat": "App Identity",
+    "sub": "Geo Anomaly",
+    "plat": "both",
+    "tables": [
+      "AADServicePrincipalSignInLogs"
+    ],
+    "tags": [
+      "impossible travel",
+      "service principal"
+    ],
+    "sev": "critical",
+    "desc": "Detects service principals authenticating from geographically impossible locations. Indicates stolen SP credentials used from attacker infrastructure.",
+    "kql": "AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| extend Country = tostring(parse_json(LocationDetails).countryOrRegion)\n| extend City = tostring(parse_json(LocationDetails).city)\n| where isnotempty(Country)\n| summarize\n    Countries = make_set(Country, 10),\n    CountryCount = dcount(Country),\n    IPs = make_set(IPAddress, 10),\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated)\n    by ServicePrincipalName, ServicePrincipalId\n| extend TimeSpan = datetime_diff('minute', LastSeen, FirstSeen)\n| where CountryCount >= 2 and TimeSpan <= 60\n| order by CountryCount desc"
+  },
+  {
+    "id": 46,
+    "name": "SP Sign-In from New Countries",
+    "cat": "App Identity",
+    "sub": "Geo Anomaly",
+    "plat": "both",
+    "tables": [
+      "AADServicePrincipalSignInLogs"
+    ],
+    "tags": [
+      "new country",
+      "service principal"
+    ],
+    "sev": "critical",
+    "desc": "Compares SP sign-in countries against 30-day baseline. SPs should have consistent geographic patterns — a new country is a strong compromise indicator.",
+    "kql": "let Baseline = AADServicePrincipalSignInLogs\n| where TimeGenerated between (ago(30d) .. ago(7d))\n| where ResultType == \"0\"\n| extend Country = tostring(parse_json(LocationDetails).countryOrRegion)\n| distinct ServicePrincipalId, Country;\nAADServicePrincipalSignInLogs\n| where TimeGenerated > ago(7d)\n| extend Country = tostring(parse_json(LocationDetails).countryOrRegion)\n| join kind=leftanti (Baseline) on ServicePrincipalId, Country\n| summarize Events = count(), IPs = make_set(IPAddress, 5) by ServicePrincipalName, Country\n| order by Events desc"
+  },
+  {
+    "id": 47,
+    "name": "SP Credential Changes",
+    "cat": "App Identity",
+    "sub": "Credential Mgmt",
+    "plat": "both",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "credential",
+      "change",
+      "secret"
+    ],
+    "sev": "high",
+    "desc": "Tracks all service principal credential additions, removals and updates. Unauthorized credential changes indicate attacker adding persistence.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add service principal credentials\", \"Remove service principal credentials\", \"Update application – Certificates and secrets management\")\n| extend SPName = tostring(TargetResources[0].displayName)\n| extend ModifiedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| extend ModifiedByIP = tostring(InitiatedBy.user.ipAddress)\n| project TimeGenerated, OperationName, SPName, ModifiedBy, ModifiedByIP, Result\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 48,
+    "name": "Unused SPs (90+ Days Inactive)",
+    "cat": "App Identity",
+    "sub": "Hygiene",
+    "plat": "both",
+    "tables": [
+      "AADServicePrincipalSignInLogs",
+      "AuditLogs"
+    ],
+    "tags": [
+      "unused",
+      "inactive",
+      "cleanup"
+    ],
+    "sev": "medium",
+    "desc": "Compares all registered SPs against 90-day sign-in activity. Inactive SPs are attack surface — stolen credentials go unnoticed. 180+ days = consider removal.",
+    "kql": "let ActiveSPs = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(90d)\n| distinct ServicePrincipalId;\nlet AllSPs = AuditLogs\n| where TimeGenerated > ago(365d)\n| where OperationName in (\"Add service principal\", \"Update service principal\")\n| extend SPName = tostring(TargetResources[0].displayName)\n| extend SPId = tostring(TargetResources[0].id)\n| extend CreatedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| summarize FirstSeen = min(TimeGenerated), LastAuditEvent = max(TimeGenerated), CreatedBy = take_any(CreatedBy) by SPName, SPId;\nAllSPs\n| join kind=leftanti (ActiveSPs) on $left.SPId == $right.ServicePrincipalId\n| extend DaysInactive = datetime_diff('day', now(), LastAuditEvent)\n| extend RiskLevel = case(DaysInactive > 180, \"HIGH - Consider Removal\", DaysInactive > 90, \"MEDIUM - Review Required\", \"LOW\")\n| order by DaysInactive desc"
+  },
+  {
+    "id": 49,
+    "name": "Botnet: Multiple SPs Same IP",
+    "cat": "App Identity",
+    "sub": "Botnet",
+    "plat": "both",
+    "tables": [
+      "AADServicePrincipalSignInLogs"
+    ],
+    "tags": [
+      "botnet",
+      "credential stuffing"
+    ],
+    "sev": "critical",
+    "desc": "Detects 3+ different service principals authenticating from the same IP. Indicates stolen credentials being tested from C2 infrastructure.",
+    "kql": "AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(7d)\n| where IPAddress != ''\n| summarize\n    UniqueSPs = dcount(ServicePrincipalId),\n    SPNames = make_set(ServicePrincipalName, 10),\n    TotalAttempts = count(),\n    FailedAttempts = countif(ResultType != '0')\n    by IPAddress\n| where UniqueSPs >= 3\n| extend RiskLevel = case(UniqueSPs >= 10, \"CRITICAL - Botnet C2\", UniqueSPs >= 5, \"HIGH\", \"MEDIUM\")\n| order by UniqueSPs desc"
+  },
+  {
+    "id": 50,
+    "name": "Managed Identity New Resource Access",
+    "cat": "App Identity",
+    "sub": "Anomaly",
+    "plat": "both",
+    "tables": [
+      "AADManagedIdentitySignInLogs"
+    ],
+    "tags": [
+      "managed identity",
+      "new resource"
+    ],
+    "sev": "high",
+    "desc": "Compares current MI resource access against 30-day baseline. A managed identity accessing a new resource could indicate compromised Azure workload.",
+    "kql": "let Baseline = AADManagedIdentitySignInLogs\n| where TimeGenerated between (ago(30d) .. ago(7d))\n| where ResultType == \"0\"\n| distinct ServicePrincipalId, ResourceDisplayName;\nAADManagedIdentitySignInLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| join kind=leftanti (Baseline) on ServicePrincipalId, ResourceDisplayName\n| project TimeGenerated, ServicePrincipalName, ServicePrincipalId, ResourceDisplayName\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 51,
+    "name": "SP Without Conditional Access",
+    "cat": "App Identity",
+    "sub": "Compliance",
+    "plat": "both",
+    "tables": [
+      "AADServicePrincipalSignInLogs"
+    ],
+    "tags": [
+      "no ca",
+      "unprotected"
+    ],
+    "sev": "medium",
+    "desc": "Lists service principals authenticating without any Conditional Access policy. These SPs lack geo-fencing and IP restrictions.",
+    "kql": "let SPWithCA = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(7d)\n| where ConditionalAccessStatus in (\"success\", \"failure\")\n| distinct ServicePrincipalId;\nAADServicePrincipalSignInLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| join kind=leftanti (SPWithCA) on ServicePrincipalId\n| summarize SignInCount = count(), UniqueIPs = dcount(IPAddress), Resources = make_set(ResourceDisplayName, 5) by ServicePrincipalName\n| order by SignInCount desc"
+  },
+  {
+    "id": 52,
+    "name": "High-Risk OAuth Permissions",
+    "cat": "OAuth",
+    "sub": "Consent",
+    "plat": "both",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "high-risk",
+      "oauth",
+      "mail.read"
+    ],
+    "sev": "critical",
+    "desc": "Detects consent grants for dangerous permissions: Mail.Read, Mail.Send, Files.ReadWrite.All, Directory.ReadWrite.All. These enable full mailbox and file access.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Consent to application\"\n| extend ConsentType = tostring(TargetResources[0].modifiedProperties[0].newValue)\n| extend AppName = tostring(TargetResources[0].displayName)\n| extend GrantedBy = tostring(InitiatedBy.user.userPrincipalName)\n| where ConsentType has_any (\"Mail.Read\", \"Mail.ReadWrite\", \"Mail.Send\", \"Files.ReadWrite.All\", \"Directory.ReadWrite.All\", \"full_access_as_app\")\n| project TimeGenerated, AppName, GrantedBy, ConsentType\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 53,
+    "name": "Illicit Consent Grant Detection",
+    "cat": "OAuth",
+    "sub": "Consent",
+    "plat": "both",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "illicit consent",
+      "phishing"
+    ],
+    "sev": "critical",
+    "desc": "Identifies consent grants to suspicious applications. Illicit consent grant is a common attack where users are phished into granting app access.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Consent to application\"\n| extend AppName = tostring(TargetResources[0].displayName)\n| extend Permissions = tostring(TargetResources[0].modifiedProperties)\n| extend ConsentUser = tostring(InitiatedBy.user.userPrincipalName)\n| extend IsSuspicious = case(\n    Permissions has_any (\"Mail.Read\", \"Mail.Send\", \"Files.ReadWrite.All\", \"full_access\"), true,\n    AppName has_any (\"test\", \"demo\", \"oauth\", \"token\"), true,\n    false)\n| where IsSuspicious == true\n| project TimeGenerated, ConsentUser, AppName, Permissions\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 54,
+    "name": "Multi-Tenant OAuth Applications",
+    "cat": "OAuth",
+    "sub": "App Governance",
+    "plat": "both",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "multi-tenant",
+      "external"
+    ],
+    "sev": "high",
+    "desc": "Detects apps configured as multi-tenant (AzureADMultipleOrgs). Multi-tenant apps can be accessed by any Azure AD tenant — increases external attack surface.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add application\", \"Update application\")\n| extend ModifiedProps = parse_json(tostring(TargetResources[0].modifiedProperties))\n| mv-expand ModifiedProps\n| where tostring(ModifiedProps.displayName) has_any (\"AvailableToOtherTenants\", \"SignInAudience\")\n| where tostring(ModifiedProps.newValue) has_any (\"AzureADMultipleOrgs\", \"AzureADandPersonalMicrosoftAccount\", \"true\")\n| extend AppName = tostring(TargetResources[0].displayName)\n| extend ModifiedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| project TimeGenerated, AppName, ModifiedBy\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 55,
+    "name": "Graph API Permission Analysis",
+    "cat": "OAuth",
+    "sub": "Permissions",
+    "plat": "both",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "graph api",
+      "permissions"
+    ],
+    "sev": "high",
+    "desc": "Analyzes all Microsoft Graph API permission grants categorized by risk: Mail, Files, Directory, User, Calendar, Teams and Application permissions.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add app role assignment to service principal\", \"Add OAuth2PermissionGrant\", \"Consent to application\")\n| extend AppName = tostring(TargetResources[0].displayName)\n| extend PropValue = tostring(TargetResources[0].modifiedProperties)\n| where PropValue has_any (\"Microsoft Graph\", \"graph.microsoft.com\")\n| extend GrantedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| extend RiskLevel = case(\n    PropValue has_any (\"Mail.ReadWrite\", \"Mail.Send\", \"Directory.ReadWrite.All\"), \"HIGH-RISK\",\n    PropValue has_any (\"Mail.Read\", \"Files.Read.All\", \"User.Read.All\"), \"SENSITIVE\",\n    \"STANDARD\")\n| project TimeGenerated, AppName, GrantedBy, RiskLevel, PropValue\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 56,
+    "name": "MITRE TTP - Non-Human Identity",
+    "cat": "OAuth",
+    "sub": "Threat Detection",
+    "plat": "both",
+    "tables": [
+      "AuditLogs",
+      "AADServicePrincipalSignInLogs"
+    ],
+    "tags": [
+      "mitre",
+      "t1098",
+      "t1550"
+    ],
+    "sev": "high",
+    "desc": "Maps non-human identity events to MITRE ATT&CK: T1098.001 (Additional Cloud Credentials), T1098.003 (Additional Cloud Roles), T1136.003 (Cloud Account Creation).",
+    "kql": "union\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName has_any (\"Add service principal credentials\", \"Update application – Certificates\") | extend TTP = \"T1098.001\", Technique = \"Additional Cloud Credentials\"),\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName has_any (\"Add member to role\", \"Add app role assignment\") | where tostring(TargetResources[0].modifiedProperties) has_any (\"Global Administrator\", \"Exchange Administrator\") | extend TTP = \"T1098.003\", Technique = \"Additional Cloud Roles\"),\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName in (\"Add application\", \"Add service principal\") | extend TTP = \"T1136.003\", Technique = \"Cloud Account Creation\")\n| extend Details = tostring(TargetResources[0].displayName)\n| project TimeGenerated, TTP, Technique, OperationName, Details\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 57,
+    "name": "Domain Impersonation (BEC)",
+    "cat": "Email",
+    "sub": "BEC",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents"
+    ],
+    "tags": [
+      "impersonation",
+      "domain",
+      "bec"
+    ],
+    "sev": "high",
+    "desc": "Detects emails flagged by anti-phishing domain impersonation policies. Shows sender details, recipient targets and delivery actions.",
+    "kql": "EmailEvents\n| where TimeGenerated > ago(7d)\n| where EmailActionPolicy has_any (\"Anti-phishing\", \"domain impersonation\", \"impersonation\")\n| summarize Count = count(), UniqueRecipients = dcount(RecipientEmailAddress), Subjects = make_set(Subject, 5)\n    by SenderFromAddress, SenderFromDomain, SenderDisplayName, DeliveryAction\n| order by Count desc"
+  },
+  {
+    "id": 58,
+    "name": "BEC Financial Keywords",
+    "cat": "Email",
+    "sub": "BEC",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents"
+    ],
+    "tags": [
+      "bec",
+      "invoice",
+      "wire transfer"
+    ],
+    "sev": "high",
+    "desc": "Hunts for inbound emails with financial keywords (urgent, wire, payment, invoice, bank, ACH, payroll) that reached mailboxes.",
+    "kql": "// NOTE: Adjust keywords based on your organization's terminology\nlet Keywords = dynamic([\"urgent\", \"wire\", \"transfer\", \"payment\", \"invoice\", \"bank\", \"account\", \"confidential\", \"immediate\", \"asap\", \"w-2\", \"payroll\", \"ach\", \"direct deposit\"]);\nEmailEvents\n| where TimeGenerated > ago(7d)\n| where EmailDirection == \"Inbound\"\n| where tolower(Subject) has_any (Keywords)\n| summarize Count = count(), DeliveredCount = countif(DeliveryAction == \"Delivered\"), Subjects = make_set(Subject, 5)\n    by SenderFromAddress, SenderFromDomain\n| where Count > 1\n| order by DeliveredCount desc"
+  },
+  {
+    "id": 59,
+    "name": "Display Name Spoofing (Executive)",
+    "cat": "Email",
+    "sub": "BEC",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents"
+    ],
+    "tags": [
+      "spoofing",
+      "ceo",
+      "cfo"
+    ],
+    "sev": "critical",
+    "desc": "Detects external senders using display names matching executive titles from non-internal domains. Classic CEO fraud technique.",
+    "kql": "// NOTE: Replace domain.com with your actual domain\nlet InternalDomains = dynamic([\"domain.com\"]);\nEmailEvents\n| where TimeGenerated > ago(7d)\n| where EmailDirection == \"Inbound\"\n| where tolower(SenderDisplayName) has_any (\"ceo\", \"cfo\", \"cto\", \"ciso\", \"president\", \"director\", \"vp\", \"chief\", \"executive\")\n| where not(SenderFromDomain has_any (InternalDomains))\n| summarize Count = count(), DeliveredCount = countif(DeliveryAction == \"Delivered\"), Domains = make_set(SenderFromDomain, 5)\n    by SenderDisplayName\n| where Count > 1\n| order by DeliveredCount desc"
+  },
+  {
+    "id": 60,
+    "name": "Account Compromise - Outbound Blast",
+    "cat": "Email",
+    "sub": "BEC",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents"
+    ],
+    "tags": [
+      "compromise",
+      "outbound",
+      "mass mail"
+    ],
+    "sev": "critical",
+    "desc": "Identifies internal accounts sending at unusually high rates (>20/hour) or to many external recipients (>50). Indicates compromised account.",
+    "kql": "EmailEvents\n| where TimeGenerated > ago(7d)\n| where EmailDirection == \"Outbound\"\n| summarize\n    TotalSent = count(),\n    UniqueRecipients = dcount(RecipientEmailAddress),\n    ExternalRecipients = dcountif(RecipientEmailAddress, not(RecipientEmailAddress has SenderFromDomain)),\n    UniqueHours = dcount(bin(TimeGenerated, 1h))\n    by SenderFromAddress\n| extend EmailsPerHour = round(toreal(TotalSent) / max_of(UniqueHours, 1), 2)\n| where EmailsPerHour > 20 or ExternalRecipients > 50\n| order by EmailsPerHour desc"
+  },
+  {
+    "id": 61,
+    "name": "AiTM: Phishing → Sign-in Correlation",
+    "cat": "Email",
+    "sub": "AiTM",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents",
+      "SigninLogs"
+    ],
+    "tags": [
+      "aitm",
+      "correlation",
+      "compromise"
+    ],
+    "sev": "critical",
+    "desc": "Correlates users who received delivered phishing emails with successful sign-ins within 24 hours. <30 min = high-confidence AiTM compromise.",
+    "kql": "let PhishRecipients = EmailEvents\n| where TimeGenerated > ago(7d)\n| where ThreatTypes has \"Phish\" and DeliveryAction in (\"Delivered\", \"Junked\")\n| summarize PhishEmails = count(), LastPhish = max(TimeGenerated) by RecipientEmailAddress;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| join kind=inner (PhishRecipients) on $left.UserPrincipalName == $right.RecipientEmailAddress\n| where TimeGenerated > LastPhish and datetime_diff('hour', TimeGenerated, LastPhish) <= 24\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| extend MinutesAfterPhish = datetime_diff('minute', TimeGenerated, LastPhish)\n| summarize SignIns = count(), Countries = make_set(Country, 5), AvgMinutes = avg(MinutesAfterPhish)\n    by UserPrincipalName, PhishEmails\n| extend Risk = case(AvgMinutes < 30, \"CRITICAL\", AvgMinutes < 60, \"HIGH\", \"MEDIUM\")\n| order by AvgMinutes asc"
+  },
+  {
+    "id": 62,
+    "name": "URL Click → Sign-in Correlation",
+    "cat": "Email",
+    "sub": "AiTM",
+    "plat": "xdr",
+    "tables": [
+      "UrlClickEvents",
+      "SigninLogs"
+    ],
+    "tags": [
+      "url click",
+      "sign-in",
+      "token theft"
+    ],
+    "sev": "critical",
+    "desc": "Joins users who clicked through malicious URLs with successful sign-ins within 60 minutes. Multi-country = almost certain credential theft.",
+    "kql": "let ClickedUsers = UrlClickEvents\n| where TimeGenerated > ago(7d)\n| where IsClickedThrough == true\n| where ThreatTypes has_any (\"Phish\", \"Malware\")\n| summarize ClickCount = count(), LastClick = max(TimeGenerated), URLs = make_set(Url, 3) by AccountUpn\n| project UserPrincipalName = AccountUpn, ClickCount, LastClick, URLs;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| join kind=inner ClickedUsers on UserPrincipalName\n| where TimeGenerated > LastClick\n| where datetime_diff('minute', TimeGenerated, LastClick) <= 60\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| summarize SignIns = count(), Countries = make_set(Country, 5), IPs = make_set(IPAddress, 5)\n    by UserPrincipalName, ClickCount\n| extend RiskLevel = case(SignIns > 5, \"CRITICAL\", array_length(Countries) > 1, \"CRITICAL\", \"HIGH\")\n| order by SignIns desc"
+  },
+  {
+    "id": 63,
+    "name": "AiTM Toolkit URLs (Evilginx)",
+    "cat": "Email",
+    "sub": "AiTM",
+    "plat": "xdr",
+    "tables": [
+      "EmailUrlInfo"
+    ],
+    "tags": [
+      "evilginx",
+      "modlishka",
+      "proxy"
+    ],
+    "sev": "critical",
+    "desc": "Scans email URLs for known AiTM/phishing toolkit patterns: evilginx, modlishka, muraena, gophish and suspicious login-like patterns.",
+    "kql": "let Patterns = dynamic([\"evilginx\", \"modlishka\", \"muraena\", \"gophish\", \"credsniper\", \"-login\", \"login-\", \"signin-\", \"auth-\", \"verify-\", \"secure-\"]);\nEmailUrlInfo\n| where TimeGenerated > ago(7d)\n| where tolower(Url) has_any (Patterns) or tolower(UrlDomain) has_any (Patterns)\n| join kind=inner (EmailEvents | where TimeGenerated > ago(7d) | project NetworkMessageId, RecipientEmailAddress, SenderFromAddress, Subject, DeliveryAction) on NetworkMessageId\n| summarize Count = count(), DeliveredCount = countif(DeliveryAction == \"Delivered\"), Recipients = make_set(RecipientEmailAddress, 10) by UrlDomain\n| order by DeliveredCount desc"
+  },
+  {
+    "id": 64,
+    "name": "Delivered Phishing Investigation",
+    "cat": "Email",
+    "sub": "Phishing",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents"
+    ],
+    "tags": [
+      "delivered",
+      "phishing",
+      "inbox"
+    ],
+    "sev": "critical",
+    "desc": "Lists all emails classified as phishing that were delivered to mailboxes. Each result requires investigation.",
+    "kql": "EmailEvents\n| where TimeGenerated > ago(7d)\n| where ThreatTypes has \"Phish\"\n| where DeliveryAction == \"Delivered\"\n| project TimeGenerated, RecipientEmailAddress, SenderFromAddress, SenderDisplayName, Subject, SenderFromDomain, DeliveryLocation, NetworkMessageId\n| order by TimeGenerated desc\n| take 100"
+  },
+  {
+    "id": 65,
+    "name": "Malware Attack Sources",
+    "cat": "Email",
+    "sub": "Malware",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents"
+    ],
+    "tags": [
+      "malware",
+      "source",
+      "attachment"
+    ],
+    "sev": "critical",
+    "desc": "Identifies top sender domains delivering malware. Highlights any malware that reached mailboxes (delivered) vs properly blocked.",
+    "kql": "EmailEvents\n| where TimeGenerated > ago(7d)\n| where ThreatTypes has \"Malware\"\n| summarize Count = count(), Blocked = countif(DeliveryAction in (\"Blocked\", \"Quarantined\")), Delivered = countif(DeliveryAction == \"Delivered\"), Recipients = dcount(RecipientEmailAddress)\n    by SenderFromDomain, SenderFromAddress\n| order by Delivered desc, Count desc\n| take 20"
+  },
+  {
+    "id": 66,
+    "name": "Malicious URL Clickers",
+    "cat": "Email",
+    "sub": "URL Protection",
+    "plat": "xdr",
+    "tables": [
+      "UrlClickEvents"
+    ],
+    "tags": [
+      "clicked through",
+      "malicious url"
+    ],
+    "sev": "critical",
+    "desc": "Lists users who clicked through Safe Links warnings. These users need immediate follow-up: password reset, session revocation and endpoint scan.",
+    "kql": "UrlClickEvents\n| where TimeGenerated > ago(7d)\n| where IsClickedThrough == true\n| where isnotempty(ThreatTypes)\n| summarize ClickCount = count(), URLs = make_set(Url, 5), Workloads = make_set(Workload, 3)\n    by AccountUpn, ThreatTypes\n| order by ClickCount desc"
+  },
+  {
+    "id": 67,
+    "name": "SPF/DKIM/DMARC Failures",
+    "cat": "Email",
+    "sub": "Email Auth",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents"
+    ],
+    "tags": [
+      "spf",
+      "dkim",
+      "dmarc"
+    ],
+    "sev": "high",
+    "desc": "Analyzes email authentication failures by sender domain. DMARC fail + delivered = spoofing risk. Helps identify domains needing enforcement.",
+    "kql": "EmailEvents\n| where TimeGenerated > ago(7d)\n| where EmailDirection == \"Inbound\"\n| where AuthenticationDetails has_any (\"fail\", \"none\", \"softfail\")\n| extend SPF = extract(@\"spf=([a-z]+)\", 1, tolower(AuthenticationDetails))\n| extend DKIM = extract(@\"dkim=([a-z]+)\", 1, tolower(AuthenticationDetails))\n| extend DMARC = extract(@\"dmarc=([a-z]+)\", 1, tolower(AuthenticationDetails))\n| where SPF in (\"fail\", \"softfail\") or DMARC == \"fail\"\n| summarize FailCount = count(), DeliveredCount = countif(DeliveryAction == \"Delivered\") by SenderFromDomain, SPF, DKIM, DMARC\n| where FailCount > 5\n| order by DeliveredCount desc"
+  },
+  {
+    "id": 68,
+    "name": "ZAP Post-Delivery Actions",
+    "cat": "Email",
+    "sub": "Remediation",
+    "plat": "xdr",
+    "tables": [
+      "EmailPostDeliveryEvents"
+    ],
+    "tags": [
+      "zap",
+      "auto purge"
+    ],
+    "sev": "low",
+    "desc": "Tracks Zero-Hour Auto Purge activity: success/failure rates, threat types and affected users. Validates ZAP is working correctly.",
+    "kql": "EmailPostDeliveryEvents\n| where TimeGenerated > ago(7d)\n| summarize Count = count(), SuccessCount = countif(ActionResult == \"Success\"), Recipients = dcount(RecipientEmailAddress)\n    by Action, ActionTrigger, ThreatTypes\n| extend SuccessRate = round(toreal(SuccessCount) / Count * 100, 1)\n| order by Count desc"
+  },
+  {
+    "id": 69,
+    "name": "External Forwarding Rules",
+    "cat": "Email",
+    "sub": "Post-Compromise",
+    "plat": "xdr",
+    "tables": [
+      "OfficeActivity"
+    ],
+    "tags": [
+      "forwarding",
+      "inbox rule"
+    ],
+    "sev": "critical",
+    "desc": "Detects inbox rules forwarding to external addresses. Most common post-compromise persistence technique.",
+    "kql": "OfficeActivity\n| where TimeGenerated > ago(7d)\n| where Operation in (\"New-InboxRule\", \"Set-InboxRule\", \"Set-Mailbox\")\n| where Parameters has_any (\"ForwardTo\", \"ForwardAsAttachmentTo\", \"RedirectTo\", \"ForwardingSmtpAddress\")\n| extend Target = extract(@\"(ForwardTo|RedirectTo|ForwardingSmtpAddress)[^@]*@([\\w.-]+)\", 2, tostring(Parameters))\n| where isnotempty(Target)\n| project TimeGenerated, UserId, Operation, Target\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 70,
+    "name": "Teams Safe Links Analysis",
+    "cat": "Collaboration",
+    "sub": "Teams",
+    "plat": "xdr",
+    "tables": [
+      "UrlClickEvents"
+    ],
+    "tags": [
+      "teams",
+      "safe links"
+    ],
+    "sev": "high",
+    "desc": "Analyzes URL clicks within Teams, showing blocked vs clicked-through threats. Teams is increasingly targeted.",
+    "kql": "UrlClickEvents\n| where TimeGenerated > ago(7d)\n| where Workload == \"Teams\"\n| where isnotempty(ThreatTypes) or ActionType has \"Blocked\"\n| summarize ThreatClicks = count(), BlockedClicks = countif(ActionType has \"Blocked\"), ClickedThrough = countif(IsClickedThrough == true)\n    by AccountUpn\n| order by ClickedThrough desc"
+  },
+  {
+    "id": 71,
+    "name": "Mass File Operations (Ransomware)",
+    "cat": "Collaboration",
+    "sub": "Data Protection",
+    "plat": "xdr",
+    "tables": [
+      "OfficeActivity"
+    ],
+    "tags": [
+      "ransomware",
+      "mass delete"
+    ],
+    "sev": "critical",
+    "desc": "Detects mass file deletions/renames/downloads (>50/hour) in SharePoint/OneDrive. Combined delete+rename = strong ransomware indicator.",
+    "kql": "OfficeActivity\n| where TimeGenerated > ago(7d)\n| where OfficeWorkload in (\"SharePoint\", \"OneDrive\")\n| where Operation has_any (\"FileDeleted\", \"FileRenamed\", \"FileDownloaded\")\n| summarize OpCount = count(), DeleteCount = countif(Operation has \"Deleted\"), RenameCount = countif(Operation has \"Renamed\"), DownloadCount = countif(Operation has \"Downloaded\")\n    by UserId, bin(TimeGenerated, 1h)\n| where OpCount > 50\n| extend Indicator = case(DeleteCount > 30 and RenameCount > 30, \"RANSOMWARE\", DownloadCount > 100, \"EXFILTRATION\", \"HIGH VOLUME\")\n| order by OpCount desc"
+  },
+  {
+    "id": 72,
+    "name": "External/Guest User Activity",
+    "cat": "Collaboration",
+    "sub": "Data Protection",
+    "plat": "xdr",
+    "tables": [
+      "OfficeActivity"
+    ],
+    "tags": [
+      "external",
+      "guest",
+      "sharing"
+    ],
+    "sev": "high",
+    "desc": "Monitors external/guest user file operations across Teams, SharePoint and OneDrive. Risk scored by operation type.",
+    "kql": "OfficeActivity\n| where TimeGenerated > ago(7d)\n| where OfficeWorkload in (\"SharePoint\", \"OneDrive\", \"MicrosoftTeams\")\n| where UserId contains \"#ext#\" or UserId contains \"urn:\" or ExternalAccess == true\n| summarize EventCount = count(), FileAccess = countif(Operation has_any (\"Accessed\", \"Downloaded\", \"Viewed\")), FileModify = countif(Operation has_any (\"Modified\", \"Uploaded\"))\n    by UserId\n| extend RiskScore = FileAccess + (FileModify * 2)\n| order by RiskScore desc\n| take 20"
+  },
+  {
+    "id": 73,
+    "name": "Risky File Types Upload",
+    "cat": "Collaboration",
+    "sub": "Data Protection",
+    "plat": "xdr",
+    "tables": [
+      "OfficeActivity"
+    ],
+    "tags": [
+      "exe",
+      "ps1",
+      "risky upload"
+    ],
+    "sev": "high",
+    "desc": "Detects uploads of executable/script file types to SharePoint, OneDrive and Teams. These files should not normally be in collaboration platforms.",
+    "kql": "let Risky = dynamic([\".exe\", \".bat\", \".cmd\", \".ps1\", \".vbs\", \".js\", \".hta\", \".scr\", \".msi\", \".dll\", \".iso\", \".img\"]);\nOfficeActivity\n| where TimeGenerated > ago(7d)\n| where OfficeWorkload in (\"SharePoint\", \"OneDrive\", \"MicrosoftTeams\")\n| where Operation has_any (\"FileUploaded\", \"FileCreated\")\n| extend Ext = tolower(extract(@\"\\.[a-zA-Z0-9]+$\", 0, SourceFileName))\n| where Ext in (Risky)\n| summarize Count = count(), Users = make_set(UserId, 5) by Ext, SourceFileName\n| order by Count desc"
+  },
+  {
+    "id": 74,
+    "name": "Multi-Stage Attack Chain (Email → Cred)",
+    "cat": "XDR",
+    "sub": "Attack Chain",
+    "plat": "xdr",
+    "tables": [
+      "AlertInfo",
+      "AlertEvidence"
+    ],
+    "tags": [
+      "attack chain",
+      "multi-stage"
+    ],
+    "sev": "critical",
+    "desc": "Correlates email security alerts with identity alerts for the same user within 72 hours. Finds complete phishing → credential theft → takeover chains.",
+    "kql": "let EmailAlerts = AlertInfo | where TimeGenerated > ago(7d) | where ServiceSource has_any (\"Office 365\", \"MDO\", \"Microsoft 365 Defender\") | project AlertId, EmailTime = TimeGenerated, EmailTitle = Title;\nlet IdAlerts = AlertInfo | where TimeGenerated > ago(7d) | where ServiceSource has_any (\"Azure AD\", \"Microsoft Entra\", \"MCAS\") | project AlertId, IdTime = TimeGenerated, IdTitle = Title;\nAlertEvidence | where TimeGenerated > ago(7d) | where isnotempty(AccountUpn) | project AlertId, AccountUpn\n| join kind=inner EmailAlerts on AlertId\n| join kind=inner (AlertEvidence | where TimeGenerated > ago(7d) | where isnotempty(AccountUpn) | project IdAlertId = AlertId, AccountUpn | join kind=inner IdAlerts on $left.IdAlertId == $right.AlertId) on AccountUpn\n| where IdTime > EmailTime and IdTime < EmailTime + 72h\n| summarize EmailAlerts = make_set(EmailTitle, 5), IdAlerts = make_set(IdTitle, 5), TimeToCompromise = min(datetime_diff('minute', IdTime, EmailTime)) by AccountUpn\n| order by TimeToCompromise asc"
+  },
+  {
+    "id": 75,
+    "name": "Phishing → Risky Sign-In Correlation",
+    "cat": "XDR",
+    "sub": "Attack Chain",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents",
+      "SigninLogs"
+    ],
+    "tags": [
+      "phishing",
+      "risky sign-in"
+    ],
+    "sev": "critical",
+    "desc": "Joins delivered phishing emails with risky sign-in events within 24 hours. Shows average time-to-compromise and source IPs.",
+    "kql": "let SuspiciousEmails = EmailEvents\n| where TimeGenerated > ago(7d)\n| where ThreatTypes has \"Phish\" and DeliveryAction == \"Delivered\"\n| project RecipientEmailAddress, EmailTime = TimeGenerated;\nunion SigninLogs, AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(7d)\n| where RiskLevelDuringSignIn in (\"medium\", \"high\")\n| join kind=inner SuspiciousEmails on $left.UserPrincipalName == $right.RecipientEmailAddress\n| where TimeGenerated > EmailTime and TimeGenerated < EmailTime + 24h\n| extend MinutesToCompromise = datetime_diff('minute', TimeGenerated, EmailTime)\n| summarize RiskySignIns = count(), AvgMinutes = avg(MinutesToCompromise), IPs = make_set(IPAddress, 5)\n    by UserPrincipalName\n| order by RiskySignIns desc"
+  },
+  {
+    "id": 76,
+    "name": "Post-Compromise Inbox Rules Alerts",
+    "cat": "XDR",
+    "sub": "Post-Compromise",
+    "plat": "xdr",
+    "tables": [
+      "AlertInfo",
+      "AlertEvidence"
+    ],
+    "tags": [
+      "inbox rule",
+      "forwarding"
+    ],
+    "sev": "critical",
+    "desc": "Pulls XDR alerts for suspicious inbox rules, mail forwarding and email exfiltration. Post-compromise indicator.",
+    "kql": "AlertInfo\n| where TimeGenerated > ago(7d)\n| where Title has_any (\"inbox rule\", \"forwarding rule\", \"mail forwarding\", \"redirect\", \"auto-forward\")\n| join kind=leftouter (AlertEvidence | where TimeGenerated > ago(7d) | summarize Users = make_set(AccountUpn, 10), Targets = make_set(RemoteUrl, 10) by AlertId) on AlertId\n| project TimeGenerated, Severity, Title, Users, Targets, ServiceSource\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 77,
+    "name": "Combined Email + Identity Alert Users",
+    "cat": "XDR",
+    "sub": "Attack Chain",
+    "plat": "xdr",
+    "tables": [
+      "AlertInfo",
+      "AlertEvidence"
+    ],
+    "tags": [
+      "combined",
+      "high risk user"
+    ],
+    "sev": "critical",
+    "desc": "Identifies users appearing in both email and identity alerts. Both domains = high-confidence compromise requiring immediate response.",
+    "kql": "let EmailUsers = AlertEvidence | where TimeGenerated > ago(7d) | join kind=inner (AlertInfo | where TimeGenerated > ago(7d) | where ServiceSource has_any (\"Office 365\", \"MDO\")) on AlertId | where isnotempty(AccountUpn) | summarize EmailAlerts = dcount(AlertId) by AccountUpn;\nlet IdUsers = AlertEvidence | where TimeGenerated > ago(7d) | join kind=inner (AlertInfo | where TimeGenerated > ago(7d) | where ServiceSource has_any (\"Azure AD\", \"Microsoft Entra\", \"MCAS\")) on AlertId | where isnotempty(AccountUpn) | summarize IdAlerts = dcount(AlertId) by AccountUpn;\nEmailUsers | join kind=inner IdUsers on AccountUpn\n| extend TotalAlerts = EmailAlerts + IdAlerts\n| order by TotalAlerts desc"
+  },
+  {
+    "id": 78,
+    "name": "Tagged Incidents (BEC/AiTM/Credential)",
+    "cat": "XDR",
+    "sub": "Incidents",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "bec",
+      "aitm",
+      "credential"
+    ],
+    "sev": "high",
+    "desc": "Pulls Sentinel incidents tagged with BEC, AiTM or credential phishing labels. Filtered view of most critical identity-related incidents. Sentinel-only.",
+    "kql": "// NOTE: This query works in Sentinel only (SecurityIncident table)\nSecurityIncident\n| where TimeGenerated > ago(7d)\n| where Labels has_any (\"BEC\", \"AiTM\", \"Credential\", \"Phish\", \"fraud\")\n    or Title has_any (\"BEC\", \"AiTM\", \"credential phish\", \"token theft\")\n| extend OwnerName = tostring(Owner.assignedTo)\n| extend AlertCount = array_length(AlertIds)\n| project TimeGenerated, IncidentNumber, Severity, Status, Title, OwnerName, AlertCount\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 79,
+    "name": "Trusted vs Untrusted Location",
+    "cat": "Geolocation",
+    "sub": "Location",
+    "plat": "both",
+    "tables": [
+      "AADServicePrincipalSignInLogs"
+    ],
+    "tags": [
+      "trusted",
+      "untrusted"
+    ],
+    "sev": "medium",
+    "desc": "Compares sign-in IPs against trusted named locations and known Azure IP ranges. Activity from untrusted locations needs investigation.",
+    "kql": "// NOTE: Update TrustedCountries with your organization's trusted countries\nlet TrustedCountries = dynamic([\"United States\", \"Canada\", \"United Kingdom\", \"Germany\", \"France\", \"Netherlands\"]);\nunion\n    (AADServicePrincipalSignInLogs | where TimeGenerated > ago(7d) | extend IdentityType = \"Service Principal\", IdentityName = ServicePrincipalName),\n    (AADManagedIdentitySignInLogs | where TimeGenerated > ago(7d) | extend IdentityType = \"Managed Identity\", IdentityName = ServicePrincipalName)\n| extend Country = tostring(geo_info_from_ip_address(IPAddress).country)\n| extend IsTrusted = ipv4_is_private(IPAddress) or Country in (TrustedCountries)\n| where IsTrusted == false\n| summarize Events = count(), Identities = make_set(IdentityName, 5), SuccessCount = countif(ResultType == \"0\") by IPAddress, Country\n| order by SuccessCount desc"
+  },
+  {
+    "id": 80,
+    "name": "Threat IP → Sign-in Detection",
+    "cat": "Geolocation",
+    "sub": "Correlation",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents",
+      "SigninLogs"
+    ],
+    "tags": [
+      "threat ip",
+      "correlation"
+    ],
+    "sev": "critical",
+    "desc": "Cross-references email threat source IPs with sign-in logs. If a user signs in from the same IP that sent phishing email, the account is likely compromised.",
+    "kql": "let ThreatIPs = EmailEvents\n| where TimeGenerated > ago(7d)\n| where isnotempty(ThreatTypes) and isnotempty(SenderIPv4)\n| distinct SenderIPv4;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where IPAddress in (ThreatIPs)\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| summarize SignInCount = count(), UniqueUsers = dcount(UserPrincipalName), Users = make_set(UserPrincipalName, 5), SuccessCount = countif(ResultType == \"0\")\n    by IPAddress, Country\n| order by SuccessCount desc"
+  }
+]

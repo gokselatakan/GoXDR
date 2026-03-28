@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GoXDR - KQL Query Library</title>
+<meta name="description" content="KQL detection queries for Microsoft Sentinel and Defender XDR. Ready to paste and run.">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', -apple-system, sans-serif; background: #080c14; color: #e2e8f0; min-height: 100vh; -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 14px 12px; }
+  button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
+  .header { text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #1e293b; }
+  .logo { font-size: 26px; font-weight: 800; color: #3b82f6; }
+  .logo .x { color: #f97316; }
+  .subtitle { font-size: 13px; font-weight: 600; color: #94a3b8; margin-top: 2px; }
+  .tagline { font-size: 11px; color: #475569; }
+  .stats { display: flex; gap: 6px; margin-bottom: 12px; }
+  .stat { flex: 1; background: #111827; border-radius: 6px; padding: 6px 0; text-align: center; border: 1px solid #1e293b; }
+  .stat-val { font-size: 16px; font-weight: 700; }
+  .stat-lbl { font-size: 9px; color: #64748b; }
+  .search-wrap { position: relative; margin-bottom: 10px; }
+  .search { width: 100%; padding: 11px 40px 11px 36px; font-size: 14px; background: #0f172a; border: 2px solid #1e293b; border-radius: 10px; color: #e2e8f0; outline: none; }
+  .search:focus { border-color: #3b82f6; }
+  .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; }
+  .search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: #334155; border: none; color: #e2e8f0; border-radius: 6px; padding: 4px 10px; font-size: 12px; }
+  .filters { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+  .filters2 { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .cat-btn { padding: 5px 12px; font-size: 11px; border-radius: 14px; border: none; background: #1e293b; color: #94a3b8; }
+  .cat-btn.active { background: #3b82f6; color: #fff; font-weight: 600; }
+  .sev-btn { padding: 4px 10px; font-size: 10px; border-radius: 10px; text-transform: uppercase; font-weight: 700; background: transparent; }
+  .plat-btn { padding: 4px 10px; font-size: 10px; border-radius: 10px; border: 1px solid #334155; background: transparent; color: #64748b; }
+  .plat-btn.active { background: #1e293b; color: #93c5fd; }
+  .sep { color: #1e293b; margin: 0 2px; font-size: 12px; }
+  .group-hdr { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 10px 12px; background: #111827; border: 1px solid #1e293b; border-radius: 8px; }
+  .group-hdr.open { background: #0f1729; border: 2px solid #2563eb; border-radius: 8px 8px 0 0; border-bottom: 1px solid #1e293b; }
+  .group-cat { font-size: 11px; color: #3b82f6; font-weight: 700; }
+  .group-sep { color: #334155; font-size: 10px; }
+  .group-sub { font-size: 11px; color: #94a3b8; }
+  .group-count { font-size: 10px; color: #94a3b8; background: #1e293b; padding: 2px 7px; border-radius: 8px; font-weight: 600; }
+  .group-arrow { font-size: 10px; transition: transform 0.2s; display: inline-block; }
+  .group-body { background: #0b1120; border: 1px solid #1e293b; border-top: none; border-radius: 0 0 8px 8px; padding: 4px 0; }
+  .q-btn { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; margin: 2px 4px; width: calc(100% - 8px); }
+  .q-btn.sel { background: #1e293b; border-color: #334155; border-radius: 6px 6px 0 0; }
+  .q-btn.hl { background: #162032; }
+  .sev-dot { min-width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+  .q-name { font-size: 12px; color: #e2e8f0; font-weight: 500; }
+  .q-name.sel { color: #f1f5f9; font-weight: 600; }
+  .plat-badge { font-size: 8px; padding: 2px 5px; border-radius: 4px; font-weight: 700; white-space: nowrap; }
+  .tbl-tag { font-size: 9px; font-family: monospace; color: #7dd3fc; background: #0c2d48; padding: 2px 4px; border-radius: 3px; }
+  .tag { font-size: 9px; color: #64748b; background: #0f172a; padding: 2px 4px; border-radius: 3px; }
+  .tag.hl { color: #fbbf24; background: #422006; }
+  .q-arrow { color: #334155; font-size: 10px; margin-top: 4px; transition: transform 0.15s; }
+  .q-arrow.sel { color: #3b82f6; transform: rotate(180deg); }
+  .detail { background: #111827; border: 1px solid #334155; border-top: none; border-radius: 0 0 6px 6px; padding: 12px; margin: 0 4px; width: calc(100% - 8px); }
+  .detail-desc { font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 10px; }
+  .detail-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .detail-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+  .detail-tag { font-size: 10px; color: #94a3b8; background: #1e293b; padding: 2px 6px; border-radius: 4px; }
+  .detail-tbl { font-size: 10px; font-family: monospace; color: #7dd3fc; background: #0c2d48; padding: 2px 6px; border-radius: 4px; border: 1px solid #164e63; }
+  .kql-wrap { position: relative; }
+  .copy-btn { position: absolute; top: 8px; right: 8px; background: #334155; border: none; color: #e2e8f0; border-radius: 6px; padding: 5px 12px; font-size: 11px; font-weight: 600; z-index: 1; }
+  .copy-btn.ok { background: #166534; color: #86efac; }
+  .kql-code { background: #0a0f1a; border: 1px solid #1e293b; border-radius: 8px; padding: 12px; padding-top: 16px; font-size: 11px; line-height: 1.5; color: #93c5fd; overflow: auto; max-height: 400px; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; }
+  .empty { text-align: center; padding: 36px; color: #475569; }
+  .reset-btn { padding: 8px 20px; background: #1e293b; border: none; color: #93c5fd; border-radius: 8px; font-size: 12px; margin-top: 8px; }
+  .footer { text-align: center; margin-top: 24px; padding-top: 12px; border-top: 1px solid #1e293b; }
+  .loading { text-align: center; padding: 60px; color: #64748b; }
+  .sev-badge { font-size: 10px; padding: 2px 8px; border-radius: 6px; font-weight: 700; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>
+const e = React.createElement;
+const { useState, useMemo, useCallback, useEffect } = React;
+
+const SEV = { critical: { bg: "#450a0a", tx: "#fca5a5", br: "#991b1b", dot: "#ef4444" }, high: { bg: "#431407", tx: "#fdba74", br: "#9a3412", dot: "#f97316" }, medium: { bg: "#422006", tx: "#fcd34d", br: "#92400e", dot: "#eab308" }, low: { bg: "#052e16", tx: "#86efac", br: "#166534", dot: "#22c55e" } };
+const PL = { both: { l: "Sentinel + XDR", bg: "#1e3a5f", tx: "#93c5fd" }, sentinel: { l: "Sentinel", bg: "#1a2e44", tx: "#7dd3fc" }, xdr: { l: "XDR", bg: "#2d1b4e", tx: "#c4b5fd" } };
+
+function App() {
+  const [queries, setQueries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [cat, setCat] = useState("All");
+  const [sev, setSev] = useState("all");
+  const [plat, setPlat] = useState("all");
+  const [openG, setOpenG] = useState({});
+  const [selQ, setSelQ] = useState(null);
+  const [copied, setCopied] = useState(null);
+
+  useEffect(() => {
+    fetch("queries.json?" + Date.now())
+      .then(r => r.json())
+      .then(d => { setQueries(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const CATS = useMemo(() => [...new Set(queries.map(q => q.cat))], [queries]);
+  const toggleG = useCallback(k => setOpenG(p => ({...p, [k]: !p[k]})), []);
+  const toggleQ = useCallback(id => setSelQ(p => p === id ? null : id), []);
+  const copyKQL = useCallback((id, kql) => {
+    navigator.clipboard.writeText(kql).then(() => { setCopied(id); setTimeout(() => setCopied(null), 2000); });
+  }, []);
+
+  const filtered = useMemo(() => {
+    const s = search.toLowerCase();
+    return queries.filter(q => {
+      if (cat !== "All" && q.cat !== cat) return false;
+      if (sev !== "all" && q.sev !== sev) return false;
+      if (plat === "sentinel" && q.plat === "xdr") return false;
+      if (plat === "xdr" && q.plat === "sentinel") return false;
+      if (!s) return true;
+      return q.name.toLowerCase().includes(s) || q.tags.some(t => t.includes(s)) || q.tables.some(t => t.toLowerCase().includes(s)) || q.sub.toLowerCase().includes(s);
+    });
+  }, [search, cat, sev, plat, queries]);
+
+  const grouped = useMemo(() => {
+    const g = {};
+    filtered.forEach(q => { const k = q.cat + "|" + q.sub; if (!g[k]) g[k] = { cat: q.cat, sub: q.sub, qs: [] }; g[k].qs.push(q); });
+    return Object.entries(g);
+  }, [filtered]);
+
+  const isOpen = k => search.length > 0 || !!openG[k];
+  const sl = search.toLowerCase();
+
+  if (loading) return e("div", { className: "wrap loading" }, e("div", { className: "logo" }, "Go", e("span", { className: "x" }, "X"), "DR"), e("p", { style: { marginTop: 12 } }, "Loading queries..."));
+
+  return e("div", { className: "wrap" },
+    // Header
+    e("div", { className: "header" },
+      e("div", { className: "logo" }, "Go", e("span", { className: "x" }, "X"), "DR"),
+      e("div", { className: "subtitle" }, "KQL Query Library"),
+      e("div", { className: "tagline" }, "Queries with KQL code \u00b7 Sentinel + Defender XDR \u00b7 Copy and run")
+    ),
+
+    // Stats
+    e("div", { className: "stats" },
+      [{ l: "Total", v: filtered.length, c: "#3b82f6" }, { l: "Critical", v: filtered.filter(q => q.sev === "critical").length, c: "#ef4444" }, { l: "High", v: filtered.filter(q => q.sev === "high").length, c: "#f97316" }].map(s =>
+        e("div", { key: s.l, className: "stat" }, e("div", { className: "stat-val", style: { color: s.c } }, s.v), e("div", { className: "stat-lbl" }, s.l))
+      )
+    ),
+
+    // Search
+    e("div", { className: "search-wrap" },
+      e("input", { type: "text", className: "search", placeholder: "identity, aitm, spray, bec, oauth, ntlm...", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
+      e("span", { className: "search-icon" }, "\ud83d\udd0d"),
+      search && e("button", { className: "search-clear", onClick: () => { setSearch(""); setSelQ(null); } }, "\u2715")
+    ),
+
+    // Category filters
+    e("div", { className: "filters" },
+      ["All", ...CATS].map(c => e("button", { key: c, className: "cat-btn" + (cat === c ? " active" : ""), onClick: () => { setCat(c); setSelQ(null); } }, c))
+    ),
+
+    // Severity + Platform filters
+    e("div", { className: "filters2" },
+      Object.keys(SEV).map(s => e("button", { key: s, className: "sev-btn", style: { border: "1px solid " + SEV[s].br, background: sev === s ? SEV[s].bg : "transparent", color: sev === s ? SEV[s].tx : "#64748b" }, onClick: () => { setSev(sev === s ? "all" : s); setSelQ(null); } }, s)),
+      e("span", { className: "sep" }, "\u2502"),
+      [{ v: "all", l: "All" }, { v: "sentinel", l: "Sentinel" }, { v: "xdr", l: "XDR" }].map(p => e("button", { key: p.v, className: "plat-btn" + (plat === p.v ? " active" : ""), onClick: () => { setPlat(plat === p.v ? "all" : p.v); setSelQ(null); } }, p.l))
+    ),
+
+    // Groups
+    grouped.map(([k, g]) => {
+      const exp = isOpen(k);
+      return e("div", { key: k, style: { marginBottom: 6 } },
+        e("button", { className: "group-hdr" + (exp ? " open" : ""), onClick: () => toggleG(k) },
+          e("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+            e("span", { className: "group-cat" }, g.cat),
+            e("span", { className: "group-sep" }, "\u203a"),
+            e("span", { className: "group-sub" }, g.sub)
+          ),
+          e("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+            e("span", { className: "group-count" }, g.qs.length),
+            e("span", { className: "group-arrow", style: { color: exp ? "#3b82f6" : "#475569", transform: exp ? "rotate(180deg)" : "none" } }, "\u25bc")
+          )
+        ),
+        exp && e("div", { className: "group-body" },
+          g.qs.map(q => {
+            const sv = SEV[q.sev]; const pl = PL[q.plat]; const sel = selQ === q.id;
+            const hl = search && (q.name.toLowerCase().includes(sl) || q.tags.some(t => t.includes(sl)));
+            return e("div", { key: q.id },
+              e("button", { className: "q-btn" + (sel ? " sel" : "") + (hl && !sel ? " hl" : ""), onClick: () => toggleQ(q.id) },
+                e("span", { className: "sev-dot", style: { background: sv.dot, boxShadow: "0 0 6px " + sv.dot + "40" } }),
+                e("div", { style: { flex: 1, minWidth: 0 } },
+                  e("div", { style: { display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" } },
+                    e("span", { className: "q-name" + (sel ? " sel" : "") }, q.name),
+                    e("span", { className: "plat-badge", style: { background: pl.bg, color: pl.tx } }, pl.l)
+                  ),
+                  !sel && e("div", { style: { display: "flex", gap: 3, flexWrap: "wrap", marginTop: 3 } },
+                    q.tables.map(t => e("span", { key: t, className: "tbl-tag" }, t)),
+                    q.tags.slice(0, 3).map(t => e("span", { key: t, className: "tag" + (search && t.includes(sl) ? " hl" : "") }, t))
+                  )
+                ),
+                e("span", { className: "q-arrow" + (sel ? " sel" : "") }, "\u25be")
+              ),
+              sel && e("div", { className: "detail" },
+                e("p", { className: "detail-desc" }, q.desc),
+                e("div", { className: "detail-badges" },
+                  e("span", { className: "sev-badge", style: { background: sv.bg, color: sv.tx, border: "1px solid " + sv.br } }, q.sev),
+                  e("span", { className: "sev-badge", style: { background: pl.bg, color: pl.tx } }, pl.l),
+                  q.tables.map(t => e("span", { key: t, className: "detail-tbl" }, t))
+                ),
+                e("div", { className: "detail-tags" },
+                  q.tags.map(t => e("span", { key: t, className: "detail-tag" }, t))
+                ),
+                e("div", { className: "kql-wrap" },
+                  e("button", { className: "copy-btn" + (copied === q.id ? " ok" : ""), onClick: () => copyKQL(q.id, q.kql) }, copied === q.id ? "\u2713 Copied!" : "Copy KQL"),
+                  e("pre", { className: "kql-code" }, q.kql)
+                )
+              )
+            );
+          })
+        )
+      );
+    }),
+
+    // Empty
+    filtered.length === 0 && e("div", { className: "empty" },
+      e("div", { style: { fontSize: 28 } }, "\ud83d\udd0d"),
+      e("div", { style: { fontSize: 13, margin: "8px 0" } }, 'No queries match "' + search + '"'),
+      e("button", { className: "reset-btn", onClick: () => { setSearch(""); setCat("All"); setSev("all"); setPlat("all"); setSelQ(null); } }, "Reset")
+    ),
+
+    // Footer
+    e("div", { className: "footer" },
+      e("div", { className: "logo", style: { fontSize: 18 } }, "Go", e("span", { className: "x" }, "X"), "DR")
+    )
+  );
+}
+
+ReactDOM.render(e(App), document.getElementById("root"));
+</script>
+</body>
+</html>
