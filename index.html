@@ -8,13 +8,14 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', -apple-system, sans-serif; background: #080c14; color: #e2e8f0; min-height: 100vh; -webkit-text-size-adjust: 100%; }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 24px; }
+  .hero { background: #080c14; padding: 40px 24px 24px; text-align: center; border-bottom: 1px solid #1e293b; margin-bottom: 20px; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px 24px; }
   button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
-  .header { text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #1e293b; }
-  .logo { font-size: 32px; font-weight: 800; color: #3b82f6; }
+  .header { text-align: center; margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  .logo { font-size: 44px; font-weight: 800; color: #3b82f6; letter-spacing: -1px; }
   .logo .x { color: #f97316; }
-  .subtitle { font-size: 16px; font-weight: 600; color: #94a3b8; margin-top: 4px; }
-  .tagline { font-size: 13px; color: #475569; }
+  .subtitle { font-size: 18px; font-weight: 600; color: #94a3b8; margin-top: 4px; }
+  .tagline { font-size: 14px; color: #475569; margin-top: 2px; }
   .stats { display: flex; gap: 8px; margin-bottom: 16px; }
   .stat { flex: 1; background: #111827; border-radius: 8px; padding: 10px 0; text-align: center; border: 1px solid #1e293b; }
   .stat-val { font-size: 22px; font-weight: 700; }
@@ -128,27 +129,30 @@ function App() {
 
   if (loading) return e("div", { className: "wrap loading" }, e("div", { className: "logo" }, "Go", e("span", { className: "x" }, "X"), "DR"), e("p", { style: { marginTop: 12 } }, "Loading queries..."));
 
-  return e("div", { className: "wrap" },
-    // Header
-    e("div", { className: "header" },
-      e("div", { className: "logo" }, "Go", e("span", { className: "x" }, "X"), "DR"),
-      e("div", { className: "subtitle" }, "KQL Query Library"),
-      e("div", { className: "tagline" }, "Queries with KQL code \u00b7 Sentinel + Defender XDR \u00b7 Copy and run")
-    ),
-
-    // Stats
-    e("div", { className: "stats" },
-      [{ l: "Total", v: filtered.length, c: "#3b82f6" }, { l: "Critical", v: filtered.filter(q => q.sev === "critical").length, c: "#ef4444" }, { l: "High", v: filtered.filter(q => q.sev === "high").length, c: "#f97316" }].map(s =>
-        e("div", { key: s.l, className: "stat" }, e("div", { className: "stat-val", style: { color: s.c } }, s.v), e("div", { className: "stat-lbl" }, s.l))
+  return e("div", null,
+    // Hero Header
+    e("div", { className: "hero" },
+      e("div", { className: "header" },
+        e("div", { className: "logo" }, "Go", e("span", { className: "x" }, "X"), "DR"),
+        e("div", { className: "subtitle" }, "KQL Query Library"),
+        e("div", { className: "tagline" }, "Queries with KQL code \u00b7 Sentinel + Defender XDR \u00b7 Copy and run")
+      ),
+      // Stats inside hero
+      e("div", { style: { maxWidth: 600, margin: "20px auto 0", display: "flex", gap: 8 } },
+        [{ l: "Total", v: filtered.length, c: "#3b82f6" }, { l: "Critical", v: filtered.filter(q => q.sev === "critical").length, c: "#ef4444" }, { l: "High", v: filtered.filter(q => q.sev === "high").length, c: "#f97316" }].map(s =>
+          e("div", { key: s.l, className: "stat" }, e("div", { className: "stat-val", style: { color: s.c } }, s.v), e("div", { className: "stat-lbl" }, s.l))
+        )
+      ),
+      // Search inside hero
+      e("div", { style: { maxWidth: 700, margin: "16px auto 0", position: "relative" } },
+        e("input", { type: "text", className: "search", placeholder: "identity, aitm, spray, bec, oauth, ntlm...", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
+        e("span", { className: "search-icon" }, "\ud83d\udd0d"),
+        search && e("button", { className: "search-clear", onClick: () => { setSearch(""); setSelQ(null); } }, "\u2715")
       )
     ),
 
-    // Search
-    e("div", { className: "search-wrap" },
-      e("input", { type: "text", className: "search", placeholder: "identity, aitm, spray, bec, oauth, ntlm...", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
-      e("span", { className: "search-icon" }, "\ud83d\udd0d"),
-      search && e("button", { className: "search-clear", onClick: () => { setSearch(""); setSelQ(null); } }, "\u2715")
-    ),
+    // Content
+    e("div", { className: "wrap" },
 
     // Category filters
     e("div", { className: "filters" },
@@ -228,7 +232,8 @@ function App() {
     e("div", { className: "footer" },
       e("div", { className: "logo", style: { fontSize: 18 } }, "Go", e("span", { className: "x" }, "X"), "DR")
     )
-  );
+    ) // close wrap
+  ); // close outer div
 }
 
 ReactDOM.render(e(App), document.getElementById("root"));
