@@ -4,73 +4,93 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>GoXDR - KQL Query Library</title>
-<meta name="description" content="KQL detection queries for Microsoft Sentinel and Defender XDR. Ready to paste and run.">
+<meta name="description" content="KQL detection and threat hunting queries for Microsoft Sentinel and Defender XDR.">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', -apple-system, sans-serif; background: #080c14; color: #e2e8f0; min-height: 100vh; -webkit-text-size-adjust: 100%; }
-  .hero { background: #080c14; padding: 40px 24px 24px; text-align: center; border-bottom: 1px solid #1e293b; margin-bottom: 20px; }
+  :root {
+    --bg: #080c14; --bg2: #111827; --bg3: #0b1120; --bg4: #0f172a; --bg5: #0a0f1a;
+    --border: #1e293b; --border2: #334155; --border-active: #2563eb;
+    --text: #e2e8f0; --text2: #94a3b8; --text3: #64748b; --text4: #475569;
+    --blue: #3b82f6; --orange: #f97316;
+    --code-bg: #0c2d48; --code-text: #7dd3fc; --code-block: #93c5fd;
+    --tag-bg: #0f172a; --tag-text: #64748b;
+    --search-bg: #0f172a;
+  }
+  .light {
+    --bg: #f8fafc; --bg2: #ffffff; --bg3: #f1f5f9; --bg4: #e2e8f0; --bg5: #f8fafc;
+    --border: #e2e8f0; --border2: #cbd5e1; --border-active: #3b82f6;
+    --text: #1e293b; --text2: #475569; --text3: #64748b; --text4: #94a3b8;
+    --blue: #2563eb; --orange: #ea580c;
+    --code-bg: #e0f2fe; --code-text: #0369a1; --code-block: #1e40af;
+    --tag-bg: #f1f5f9; --tag-text: #64748b;
+    --search-bg: #ffffff;
+  }
+  body { font-family: 'Segoe UI', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; -webkit-text-size-adjust: 100%; transition: background 0.3s, color 0.3s; }
+  .hero { background: var(--bg); padding: 40px 24px 24px; text-align: center; border-bottom: 1px solid var(--border); margin-bottom: 20px; position: relative; }
   .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 24px; }
   button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
-  .header { text-align: center; margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
-  .logo { font-size: 44px; font-weight: 800; color: #3b82f6; letter-spacing: -1px; }
-  .logo .x { color: #f97316; }
-  .subtitle { font-size: 18px; font-weight: 600; color: #94a3b8; margin-top: 4px; }
-  .tagline { font-size: 14px; color: #475569; margin-top: 2px; }
+  .header { text-align: center; }
+  .logo { font-size: 44px; font-weight: 800; color: var(--blue); letter-spacing: -1px; }
+  .logo .x { color: var(--orange); }
+  .subtitle { font-size: 18px; font-weight: 600; color: var(--text2); margin-top: 4px; }
+  .tagline { font-size: 14px; color: var(--text4); margin-top: 2px; }
+  .theme-btn { position: absolute; top: 16px; right: 24px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; font-size: 16px; color: var(--text); }
   .stats { display: flex; gap: 8px; margin-bottom: 16px; }
-  .stat { flex: 1; background: #111827; border-radius: 8px; padding: 10px 0; text-align: center; border: 1px solid #1e293b; }
+  .stat { flex: 1; background: var(--bg2); border-radius: 8px; padding: 10px 0; text-align: center; border: 1px solid var(--border); }
   .stat-val { font-size: 22px; font-weight: 700; }
-  .stat-lbl { font-size: 11px; color: #64748b; }
-  .search-wrap { position: relative; margin-bottom: 10px; }
-  .search { width: 100%; padding: 14px 44px 14px 40px; font-size: 15px; background: #0f172a; border: 2px solid #1e293b; border-radius: 10px; color: #e2e8f0; outline: none; }
-  .search:focus { border-color: #3b82f6; }
+  .stat-lbl { font-size: 11px; color: var(--text3); }
+  .search { width: 100%; padding: 14px 44px 14px 40px; font-size: 15px; background: var(--search-bg); border: 2px solid var(--border); border-radius: 10px; color: var(--text); outline: none; }
+  .search:focus { border-color: var(--blue); }
+  .search::placeholder { color: var(--text4); }
   .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; }
-  .search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: #334155; border: none; color: #e2e8f0; border-radius: 6px; padding: 4px 10px; font-size: 12px; }
+  .search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: var(--border2); border: none; color: var(--text); border-radius: 6px; padding: 4px 10px; font-size: 12px; }
   .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .filters2 { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
-  .cat-btn { padding: 8px 20px; font-size: 14px; border-radius: 16px; border: none; background: #1e293b; color: #94a3b8; }
-  .cat-btn.active { background: #3b82f6; color: #fff; font-weight: 600; }
+  .cat-btn { padding: 8px 20px; font-size: 14px; border-radius: 16px; border: none; background: var(--bg2); color: var(--text2); border: 1px solid var(--border); }
+  .cat-btn.active { background: var(--blue); color: #fff; font-weight: 600; border-color: var(--blue); }
   .sev-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; text-transform: uppercase; font-weight: 700; background: transparent; }
-  .plat-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #334155; background: transparent; color: #64748b; }
-  .plat-btn.active { background: #1e293b; color: #93c5fd; }
-  .sep { color: #1e293b; margin: 0 2px; font-size: 12px; }
-  .group-hdr { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 14px 18px; background: #111827; border: 1px solid #1e293b; border-radius: 8px; }
-  .group-hdr.open { background: #0f1729; border: 2px solid #2563eb; border-radius: 8px 8px 0 0; border-bottom: 1px solid #1e293b; }
-  .group-cat { font-size: 15px; color: #3b82f6; font-weight: 700; }
-  .group-sep { color: #334155; font-size: 13px; }
-  .group-sub { font-size: 15px; color: #94a3b8; }
-  .group-count { font-size: 13px; color: #94a3b8; background: #1e293b; padding: 3px 10px; border-radius: 8px; font-weight: 600; }
+  .plat-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid var(--border2); background: transparent; color: var(--text3); }
+  .plat-btn.active { background: var(--bg2); color: var(--blue); border-color: var(--blue); }
+  .sep { color: var(--border); margin: 0 2px; font-size: 12px; }
+  .group-hdr { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 14px 18px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; }
+  .group-hdr.open { background: var(--bg4); border: 2px solid var(--border-active); border-radius: 8px 8px 0 0; border-bottom: 1px solid var(--border); }
+  .group-cat { font-size: 15px; color: var(--blue); font-weight: 700; }
+  .group-sep { color: var(--border2); font-size: 13px; }
+  .group-sub { font-size: 15px; color: var(--text2); }
+  .group-count { font-size: 13px; color: var(--text2); background: var(--bg4); padding: 3px 10px; border-radius: 8px; font-weight: 600; }
   .group-arrow { font-size: 13px; transition: transform 0.2s; display: inline-block; }
-  .group-body { background: #0b1120; border: 1px solid #1e293b; border-top: none; border-radius: 0 0 8px 8px; padding: 4px 0; }
-  .q-btn { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; margin: 2px 4px; width: calc(100% - 8px); }
-  .q-btn.sel { background: #1e293b; border-color: #334155; border-radius: 6px 6px 0 0; }
-  .q-btn.hl { background: #162032; }
+  .group-body { background: var(--bg3); border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 4px 0; }
+  .q-btn { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; margin: 2px 4px; width: calc(100% - 8px); color: var(--text); }
+  .q-btn.sel { background: var(--bg2); border-color: var(--border2); border-radius: 6px 6px 0 0; }
+  .q-btn.hl { background: var(--bg4); }
   .sev-dot { min-width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-  .q-name { font-size: 14px; color: #e2e8f0; font-weight: 500; }
-  .q-name.sel { color: #f1f5f9; font-weight: 600; }
+  .q-name { font-size: 14px; color: var(--text); font-weight: 500; }
+  .q-name.sel { font-weight: 600; }
   .plat-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; white-space: nowrap; }
-  .tbl-tag { font-size: 11px; font-family: monospace; color: #7dd3fc; background: #0c2d48; padding: 2px 5px; border-radius: 3px; }
-  .tag { font-size: 11px; color: #64748b; background: #0f172a; padding: 2px 5px; border-radius: 3px; }
+  .tbl-tag { font-size: 11px; font-family: monospace; color: var(--code-text); background: var(--code-bg); padding: 2px 5px; border-radius: 3px; }
+  .tag { font-size: 11px; color: var(--tag-text); background: var(--tag-bg); padding: 2px 5px; border-radius: 3px; }
   .tag.hl { color: #fbbf24; background: #422006; }
-  .q-arrow { color: #334155; font-size: 10px; margin-top: 4px; transition: transform 0.15s; }
-  .q-arrow.sel { color: #3b82f6; transform: rotate(180deg); }
-  .detail { background: #111827; border: 1px solid #334155; border-top: none; border-radius: 0 0 6px 6px; padding: 16px; margin: 0 4px; width: calc(100% - 8px); }
-  .detail-desc { font-size: 14px; color: #cbd5e1; line-height: 1.6; margin-bottom: 12px; }
-  .detail-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .q-arrow { color: var(--border2); font-size: 10px; margin-top: 4px; transition: transform 0.15s; }
+  .q-arrow.sel { color: var(--blue); transform: rotate(180deg); }
+  .detail { background: var(--bg2); border: 1px solid var(--border2); border-top: none; border-radius: 0 0 6px 6px; padding: 16px; margin: 0 4px; width: calc(100% - 8px); }
+  .detail-desc { font-size: 14px; color: var(--text2); line-height: 1.6; margin-bottom: 12px; }
+  .detail-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
   .detail-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }
-  .detail-tag { font-size: 12px; color: #94a3b8; background: #1e293b; padding: 3px 8px; border-radius: 4px; }
-  .detail-tbl { font-size: 12px; font-family: monospace; color: #7dd3fc; background: #0c2d48; padding: 3px 8px; border-radius: 4px; border: 1px solid #164e63; }
+  .detail-tag { font-size: 12px; color: var(--text2); background: var(--bg4); padding: 3px 8px; border-radius: 4px; }
+  .detail-tbl { font-size: 12px; font-family: monospace; color: var(--code-text); background: var(--code-bg); padding: 3px 8px; border-radius: 4px; }
   .kql-wrap { position: relative; }
-  .copy-btn { position: absolute; top: 10px; right: 10px; background: #334155; border: none; color: #e2e8f0; border-radius: 6px; padding: 6px 16px; font-size: 13px; font-weight: 600; z-index: 1; }
+  .copy-btn { position: absolute; top: 10px; right: 10px; background: var(--border2); border: none; color: var(--text); border-radius: 6px; padding: 6px 16px; font-size: 13px; font-weight: 600; z-index: 1; }
   .copy-btn.ok { background: #166534; color: #86efac; }
-  .kql-code { background: #0a0f1a; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; padding-top: 20px; font-size: 13px; line-height: 1.6; color: #93c5fd; overflow: auto; max-height: 500px; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; }
-  .empty { text-align: center; padding: 36px; color: #475569; }
-  .reset-btn { padding: 8px 20px; background: #1e293b; border: none; color: #93c5fd; border-radius: 8px; font-size: 12px; margin-top: 8px; }
-  .footer { text-align: center; margin-top: 24px; padding-top: 12px; border-top: 1px solid #1e293b; }
-  .loading { text-align: center; padding: 60px; color: #64748b; }
+  .kql-code { background: var(--bg5); border: 1px solid var(--border); border-radius: 8px; padding: 16px; padding-top: 20px; font-size: 13px; line-height: 1.6; color: var(--code-block); overflow: auto; max-height: 500px; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; }
+  .empty { text-align: center; padding: 36px; color: var(--text4); }
+  .reset-btn { padding: 8px 20px; background: var(--bg2); border: 1px solid var(--border); color: var(--blue); border-radius: 8px; font-size: 12px; margin-top: 8px; }
+  .footer { text-align: center; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .loading { text-align: center; padding: 60px; color: var(--text3); }
   .sev-badge { font-size: 12px; padding: 3px 10px; border-radius: 6px; font-weight: 700; text-transform: uppercase; }
-  .new-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #166534; background: transparent; color: #64748b; }
+  .new-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #166534; background: transparent; color: var(--text3); }
   .new-btn.active { background: #052e16; color: #86efac; border-color: #166534; }
   .new-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: #052e16; color: #4ade80; font-weight: 700; border: 1px solid #166534; margin-left: 4px; vertical-align: middle; }
+  .date-badge { font-size: 11px; color: var(--text3); padding: 3px 8px; }
 </style>
 </head>
 <body>
@@ -95,14 +115,24 @@ function App() {
   const [selQ, setSelQ] = useState(null);
   const [copied, setCopied] = useState(null);
   const [showNew, setShowNew] = useState(false);
+  const [dark, setDark] = useState(true);
 
-  const isNew = (q) => { if (!q.added) return false; const d = new Date(q.added); const now = new Date(); return (now - d) < 14 * 86400000; };
+  useEffect(() => { document.body.className = dark ? "" : "light"; }, [dark]);
+
+  // isNew: query added on the latest date in the dataset
+  const latestDate = useMemo(() => {
+    if (!queries.length) return "";
+    const dates = queries.map(q => q.added || "").filter(Boolean).sort();
+    return dates[dates.length - 1];
+  }, [queries]);
+
+  const isNew = useCallback((q) => q.added === latestDate, [latestDate]);
 
   useEffect(() => {
     fetch("queries.json?v=" + Date.now())
       .then(r => r.json())
-      .then(d => { console.log("Loaded " + d.length + " queries, first added: " + d[0].added + ", last added: " + d[d.length-1].added); setQueries(d); setLoading(false); })
-      .catch(err => { console.error("Load error:", err); setLoading(false); });
+      .then(d => { setQueries(d); setLoading(false); })
+      .catch(() => setLoading(false));
   }, []);
 
   const CATS = useMemo(() => [...new Set(queries.map(q => q.cat))], [queries]);
@@ -123,7 +153,7 @@ function App() {
       if (!s) return true;
       return q.name.toLowerCase().includes(s) || q.tags.some(t => t.includes(s)) || q.tables.some(t => t.toLowerCase().includes(s)) || q.sub.toLowerCase().includes(s);
     });
-  }, [search, cat, sev, plat, queries, showNew]);
+  }, [search, cat, sev, plat, queries, showNew, isNew]);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -131,26 +161,26 @@ function App() {
     return Object.entries(g);
   }, [filtered]);
 
-  const isOpen = k => search.length > 0 || !!openG[k];
+  const isOpen = k => search.length > 0 || showNew || !!openG[k];
   const sl = search.toLowerCase();
+  const newCount = useMemo(() => queries.filter(q => isNew(q)).length, [queries, isNew]);
 
   if (loading) return e("div", { className: "wrap loading" }, e("div", { className: "logo" }, "Go", e("span", { className: "x" }, "X"), "DR"), e("p", { style: { marginTop: 12 } }, "Loading queries..."));
 
   return e("div", null,
-    // Hero Header
+    // Hero
     e("div", { className: "hero" },
+      e("button", { className: "theme-btn", onClick: () => setDark(!dark), title: dark ? "Switch to Light Mode" : "Switch to Dark Mode" }, dark ? "\u2600\ufe0f" : "\ud83c\udf19"),
       e("div", { className: "header" },
         e("div", { className: "logo" }, "Go", e("span", { className: "x" }, "X"), "DR"),
         e("div", { className: "subtitle" }, "KQL Query Library"),
         e("div", { className: "tagline" }, "Queries with KQL code \u00b7 Sentinel + Defender XDR")
       ),
-      // Stats inside hero
       e("div", { style: { maxWidth: 600, margin: "20px auto 0", display: "flex", gap: 8 } },
         [{ l: "Total", v: filtered.length, c: "#3b82f6" }, { l: "Critical", v: filtered.filter(q => q.sev === "critical").length, c: "#ef4444" }, { l: "High", v: filtered.filter(q => q.sev === "high").length, c: "#f97316" }].map(s =>
           e("div", { key: s.l, className: "stat" }, e("div", { className: "stat-val", style: { color: s.c } }, s.v), e("div", { className: "stat-lbl" }, s.l))
         )
       ),
-      // Search inside hero
       e("div", { style: { maxWidth: 900, margin: "16px auto 0", position: "relative" } },
         e("input", { type: "text", className: "search", placeholder: "Click here to search queries... identity, aitm, password spray, bec, oauth, ntlm, token theft, bloodhound, kerberoasting", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
         e("span", { className: "search-icon" }, "\ud83d\udd0d"),
@@ -160,19 +190,15 @@ function App() {
 
     // Content
     e("div", { className: "wrap" },
-
-    // Category filters
     e("div", { className: "filters" },
       ["All", ...CATS].map(c => e("button", { key: c, className: "cat-btn" + (cat === c ? " active" : ""), onClick: () => { setCat(c); setSelQ(null); } }, c))
     ),
-
-    // Severity + Platform filters
     e("div", { className: "filters2" },
-      Object.keys(SEV).map(s => e("button", { key: s, className: "sev-btn", style: { border: "1px solid " + SEV[s].br, background: sev === s ? SEV[s].bg : "transparent", color: sev === s ? SEV[s].tx : "#64748b" }, onClick: () => { setSev(sev === s ? "all" : s); setSelQ(null); } }, s)),
+      Object.keys(SEV).map(s => e("button", { key: s, className: "sev-btn", style: { border: "1px solid " + SEV[s].br, background: sev === s ? SEV[s].bg : "transparent", color: sev === s ? SEV[s].tx : "var(--text3)" }, onClick: () => { setSev(sev === s ? "all" : s); setSelQ(null); } }, s)),
       e("span", { className: "sep" }, "\u2502"),
       [{ v: "all", l: "All" }, { v: "sentinel", l: "Sentinel" }, { v: "xdr", l: "XDR" }].map(p => e("button", { key: p.v, className: "plat-btn" + (plat === p.v ? " active" : ""), onClick: () => { setPlat(plat === p.v ? "all" : p.v); setSelQ(null); } }, p.l)),
       e("span", { className: "sep" }, "\u2502"),
-      e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => setShowNew(!showNew) }, "\u2728 Recently Added")
+      e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => setShowNew(!showNew) }, "\u2728 Recently Added (" + newCount + ")")
     ),
 
     // Groups
@@ -187,7 +213,7 @@ function App() {
           ),
           e("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
             e("span", { className: "group-count" }, g.qs.length),
-            e("span", { className: "group-arrow", style: { color: exp ? "#3b82f6" : "#475569", transform: exp ? "rotate(180deg)" : "none" } }, "\u25bc")
+            e("span", { className: "group-arrow", style: { color: exp ? "var(--blue)" : "var(--text4)", transform: exp ? "rotate(180deg)" : "none" } }, "\u25bc")
           )
         ),
         exp && e("div", { className: "group-body" },
@@ -215,7 +241,7 @@ function App() {
                 e("div", { className: "detail-badges" },
                   e("span", { className: "sev-badge", style: { background: sv.bg, color: sv.tx, border: "1px solid " + sv.br } }, q.sev),
                   e("span", { className: "sev-badge", style: { background: pl.bg, color: pl.tx } }, pl.l),
-                  q.added && e("span", { style: { fontSize: 11, color: "#64748b", padding: "3px 8px" } }, "Added: " + q.added),
+                  q.added && e("span", { className: "date-badge" }, "\ud83d\udcc5 " + q.added),
                   q.tables.map(t => e("span", { key: t, className: "detail-tbl" }, t))
                 ),
                 e("div", { className: "detail-tags" },
@@ -232,19 +258,17 @@ function App() {
       );
     }),
 
-    // Empty
     filtered.length === 0 && e("div", { className: "empty" },
       e("div", { style: { fontSize: 28 } }, "\ud83d\udd0d"),
       e("div", { style: { fontSize: 13, margin: "8px 0" } }, 'No queries match "' + search + '"'),
-      e("button", { className: "reset-btn", onClick: () => { setSearch(""); setCat("All"); setSev("all"); setPlat("all"); setSelQ(null); } }, "Reset")
+      e("button", { className: "reset-btn", onClick: () => { setSearch(""); setCat("All"); setSev("all"); setPlat("all"); setSelQ(null); setShowNew(false); } }, "Reset")
     ),
 
-    // Footer
     e("div", { className: "footer" },
       e("div", { className: "logo", style: { fontSize: 18 } }, "Go", e("span", { className: "x" }, "X"), "DR")
     )
     ) // close wrap
-  ); // close outer div
+  ); // close outer
 }
 
 ReactDOM.render(e(App), document.getElementById("root"));
