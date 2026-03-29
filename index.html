@@ -99,10 +99,10 @@ function App() {
   const isNew = (q) => { if (!q.added) return false; const d = new Date(q.added); const now = new Date(); return (now - d) < 14 * 86400000; };
 
   useEffect(() => {
-    fetch("queries.json?" + Date.now())
+    fetch("queries.json?v=" + Date.now())
       .then(r => r.json())
-      .then(d => { setQueries(d); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then(d => { console.log("Loaded " + d.length + " queries, first added: " + d[0].added + ", last added: " + d[d.length-1].added); setQueries(d); setLoading(false); })
+      .catch(err => { console.error("Load error:", err); setLoading(false); });
   }, []);
 
   const CATS = useMemo(() => [...new Set(queries.map(q => q.cat))], [queries]);
@@ -215,6 +215,7 @@ function App() {
                 e("div", { className: "detail-badges" },
                   e("span", { className: "sev-badge", style: { background: sv.bg, color: sv.tx, border: "1px solid " + sv.br } }, q.sev),
                   e("span", { className: "sev-badge", style: { background: pl.bg, color: pl.tx } }, pl.l),
+                  q.added && e("span", { style: { fontSize: 11, color: "#64748b", padding: "3px 8px" } }, "Added: " + q.added),
                   q.tables.map(t => e("span", { key: t, className: "detail-tbl" }, t))
                 ),
                 e("div", { className: "detail-tags" },
