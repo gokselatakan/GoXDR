@@ -183,7 +183,7 @@
   },
   {
     "id": 11,
-    "name": "Anonymous IP / VPN / Tor Detection",
+    "name": "Anonymous IP / VPN / Tor - IP Threat Scoring",
     "cat": "Identity",
     "sub": "Suspicious Source",
     "plat": "both",
@@ -196,9 +196,9 @@
       "tor"
     ],
     "sev": "medium",
-    "desc": "Identifies sign-ins flagged with anonymized IP risk events. Tor exit nodes and anonymous VPNs are commonly used by attackers.",
-    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where RiskEventTypes_V2 has_any (\"anonymizedIPAddress\", \"maliciousIPAddress\")\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| summarize\n    Events = count(),\n    IPs = make_set(IPAddress, 5),\n    Countries = make_set(Country, 5),\n    Apps = make_set(AppDisplayName, 5)\n    by UserPrincipalName, RiskLevelDuringSignIn\n| order by Events desc",
-    "added": "2026-03-24"
+    "desc": "Identifies sign-ins from anonymized, suspicious or unfamiliar IPs and groups by IP address with threat scoring. Shows success count, unique users and countries per IP. Critical rating for any successful sign-in from an anonymous IP, High for multiple attempts, Medium for single detections.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where RiskEventTypes_V2 has_any (\"anonymizedIPAddress\", \"suspiciousIPAddress\", \"unfamiliarFeatures\")\n| summarize \n    Count = count(),\n    SuccessCount = countif(ResultType == \"0\"),\n    Users = make_set(UserPrincipalName, 10),\n    UniqueUsers = dcount(UserPrincipalName),\n    Countries = make_set(tostring(LocationDetails.countryOrRegion), 5)\n    by IPAddress\n| extend ThreatLevel = case(\n    SuccessCount > 0, \"CRITICAL - Successful from Anonymous IP\",\n    Count > 10, \"HIGH - Multiple Attempts\",\n    \"MEDIUM - Detected\")\n| project ThreatLevel, IPAddress, Count, SuccessCount, UniqueUsers, Users, Countries\n| order by SuccessCount desc, Count desc",
+    "added": "2026-03-30"
   },
   {
     "id": 12,
@@ -220,7 +220,7 @@
   },
   {
     "id": 13,
-    "name": "Users Without MFA",
+    "name": "Users Without MFA - Risk Scored",
     "cat": "Identity",
     "sub": "Compliance",
     "plat": "both",
@@ -232,9 +232,9 @@
       "compliance"
     ],
     "sev": "medium",
-    "desc": "Lists users authenticating with single-factor only. These accounts are the easiest targets and should be prioritized for MFA enforcement.",
-    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| where AuthenticationRequirement == \"singleFactorAuthentication\"\n| summarize\n    SingleFactorLogins = count(),\n    IPs = make_set(IPAddress, 5),\n    Apps = make_set(AppDisplayName, 5),\n    LastLogin = max(TimeGenerated)\n    by UserPrincipalName\n| order by SingleFactorLogins desc",
-    "added": "2026-03-24"
+    "desc": "Lists users authenticating with single-factor only, scored by risk level based on login volume. CRITICAL for 100+ single-factor logins, HIGH for 50+, MEDIUM for 20+. Shows unique IPs, countries and apps per user. Top 50 highest-risk accounts. These users are prime targets for credential attacks.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| where AuthenticationRequirement == \"singleFactorAuthentication\"\n| summarize \n    SingleFactorLogins = count(),\n    UniqueIPs = dcount(IPAddress),\n    Countries = make_set(tostring(LocationDetails.countryOrRegion), 5),\n    Apps = make_set(AppDisplayName, 5),\n    LastLogin = max(TimeGenerated)\n    by UserPrincipalName\n| extend SecurityRisk = case(\n    SingleFactorLogins > 100, \"CRITICAL - High Exposure\",\n    SingleFactorLogins > 50, \"HIGH - Elevated Risk\",\n    SingleFactorLogins > 20, \"MEDIUM\",\n    \"LOW\")\n| project SecurityRisk, UserPrincipalName, SingleFactorLogins, UniqueIPs, Countries, Apps, LastLogin\n| order by SingleFactorLogins desc\n| take 50",
+    "added": "2026-03-30"
   },
   {
     "id": 14,
@@ -1543,5 +1543,714 @@
     "added": "2026-03-29",
     "desc": "Summarizes Entra ID Protection risk events over 90 days by risk level, activity type and detection type. Shows distinct user count and detection count per category, ranked by risk severity. Useful for understanding your risk landscape and identifying the most common attack patterns flagged by Identity Protection.",
     "kql": "let RiskRanking = datatable (RiskLevel:string, RiskRank:int)[\n    \"low\", 1,\n    \"medium\", 2,\n    \"high\", 3\n];\nAADUserRiskEvents\n| where TimeGenerated > ago(90d)\n// CorrelationId ties together all related sign-in events for a single user sign-in attempt\n| summarize arg_max(TimeGenerated, *) by CorrelationId\n| summarize \n    DistinctUserCount = dcount(UserPrincipalName), \n    DetectionCount = count() \n    by \n    RiskLevel,\n    Activity, \n    RiskEventType\n| join kind=leftouter RiskRanking on RiskLevel\n| sort by RiskRank, Activity desc\n| project-away RiskRank, RiskLevel1"
+  },
+  {
+    "id": 84,
+    "name": "PowerShell Clipboard Abuse Detection",
+    "cat": "XDR",
+    "sub": "Endpoint",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "powershell",
+      "clipboard",
+      "get-clipboard",
+      "set-clipboard",
+      "data theft"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Detects PowerShell processes executing clipboard-related commands (Get-Clipboard, Set-Clipboard). Attackers abuse these cmdlets to silently read sensitive data from clipboard (passwords, tokens) or inject malicious content (e.g. replacing crypto wallet addresses). Often goes unnoticed in environments without endpoint monitoring. Can be configured as a Defender XDR custom detection rule.",
+    "kql": "DeviceProcessEvents\n| where ProcessCommandLine contains \"clipboard\"\n| where FileName has \"powershell.exe\"\n| summarize by Timestamp, ProcessCommandLine, DeviceId, DeviceName, AccountName, FileName, ReportId"
+  },
+  {
+    "id": 85,
+    "name": "New User Account Creation Tracking",
+    "cat": "Identity",
+    "sub": "Account Lifecycle",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "new user",
+      "account creation",
+      "guest account",
+      "entra id"
+    ],
+    "sev": "medium",
+    "added": "2026-03-30",
+    "desc": "Tracks successful new user account creation events in Entra ID via CloudAppEvents. Identifies who created the account and whether it was enabled immediately. Useful for detecting unauthorized account creation or shadow admin activity.",
+    "kql": "CloudAppEvents\n| where Timestamp > ago(5d)\n| where ActionType == \"Add user.\"\n| where RawEventData.ResultStatus == \"Success\"\n| mv-expand Property = RawEventData.ModifiedProperties\n| where Property.Name == \"AccountEnabled\" and Property.NewValue has \"true\"\n| project Timestamp, AccountObjectId, AccountDisplayName, newGuestAccount = RawEventData.ObjectId, UserAgent\n| order by Timestamp desc"
+  },
+  {
+    "id": 86,
+    "name": "Account Disabled Event Tracking",
+    "cat": "Identity",
+    "sub": "Account Lifecycle",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "disabled account",
+      "account lifecycle",
+      "offboarding"
+    ],
+    "sev": "medium",
+    "added": "2026-03-30",
+    "desc": "Detects when user accounts are disabled in Entra ID. Shows who performed the action. Useful for verifying offboarding procedures and detecting unauthorized account disabling.",
+    "kql": "CloudAppEvents\n| where Timestamp > ago(5d)\n| where ActionType == \"Update user.\"\n| where RawEventData.ResultStatus == \"Success\"\n| mv-expand Property = RawEventData.ModifiedProperties\n| where Property.Name == \"AccountEnabled\" and Property.NewValue has \"false\"\n| extend DisabledBy = tostring(RawEventData.InitiatedBy.user.userPrincipalName)\n| project Timestamp, AccountObjectId, AccountDisplayName, disabledAccount = RawEventData.ObjectId, UserAgent, DisabledBy\n| order by Timestamp desc"
+  },
+  {
+    "id": 87,
+    "name": "All-in-One IP Investigation Search",
+    "cat": "XDR",
+    "sub": "Investigation",
+    "plat": "xdr",
+    "tables": [
+      "AADSignInEventsBeta",
+      "CloudAppEvents",
+      "IdentityLogonEvents",
+      "DeviceNetworkEvents",
+      "EmailEvents",
+      "AlertEvidence",
+      "DeviceInfo"
+    ],
+    "tags": [
+      "ip search",
+      "investigation",
+      "threat hunting",
+      "cross-table",
+      "ioc"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Searches a specific IP address across all major Defender XDR tables in a single query. Covers sign-in logs, cloud app events, identity logon events, device network events, email events, alert evidence and device info. Essential for rapid IP-based threat investigation and IOC hunting.",
+    "kql": "// NOTE: Replace X.X.X.X with the IP address you want to investigate\nlet ip = \"X.X.X.X\";\nsearch in (AADSignInEventsBeta, AADSignInEventsBeta, CloudAppEvents, IdentityLogonEvents, CloudAuditEvents, UrlClickEvents, DeviceNetworkInfo, CloudAuditEvents, DeviceFileEvents, AlertEvidence, ExposureGraphNodes, BehaviorEntities, DeviceEvents, DeviceLogonEvents, DeviceNetworkEvents, EmailEvents, DeviceInfo)\nTimestamp between (ago(7d) .. now())\nand (\nIPAddress == ip\nor RequestSourceIP == ip\nor RemoteIP == ip\nor FileOriginIP == ip\nor SenderIPv4 == ip\nor DestinationIPAddress == ip\nor PublicIP == ip\nor LocalIP == ip\nor NodeProperties.rawData.publicIP == ip\n) \n| order by Timestamp desc"
+  },
+  {
+    "id": 88,
+    "name": "All-in-One UPN Investigation Search",
+    "cat": "XDR",
+    "sub": "Investigation",
+    "plat": "xdr",
+    "tables": [
+      "AADSignInEventsBeta",
+      "CloudAppEvents",
+      "DeviceProcessEvents",
+      "EmailEvents",
+      "AlertEvidence",
+      "IdentityLogonEvents"
+    ],
+    "tags": [
+      "upn search",
+      "investigation",
+      "threat hunting",
+      "cross-table",
+      "user activity"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Searches a specific user (UPN) across all major Defender XDR tables in a single query. Covers sign-ins, cloud apps, device events, email events, alerts and identity events. Essential for rapid user-based incident investigation when you need the full picture of an account's activity.",
+    "kql": "// NOTE: Replace account@domain.com with the UPN you want to investigate\nlet upn = \"account@domain.com\";\nsearch in (AlertEvidence, BehaviorEntities, BehaviorInfo, AADSignInEventsBeta,\nIdentityInfo, IdentityLogonEvents, UrlClickEvents, DeviceEvents, DeviceFileEvents,\nDeviceImageLoadEvents, DeviceLogonEvents, DeviceNetworkEvents, DeviceProcessEvents,\nDeviceRegistryEvents, CloudAppEvents, EmailAttachmentInfo, EmailEvents, \nEmailPostDeliveryEvents, CloudAuditEvents, ExposureGraphNodes)\nTimestamp between (ago(3d) .. now())\nand (\nAccountUpn == upn\nor InitiatingProcessAccountUpn == upn\nor tostring(RawEventData.UserId) == upn\nor SenderFromAddress == upn\nor RecipientEmailAddress == upn\nor RawEventData contains upn\nor NodeProperties.rawData contains upn\n)\n| order by Timestamp desc"
+  },
+  {
+    "id": 89,
+    "name": "Deleted Account Detection",
+    "cat": "Identity",
+    "sub": "Account Lifecycle",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "deleted account",
+      "account lifecycle",
+      "insider risk"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Detects when user accounts are deleted from Entra ID. Account deletion could indicate malicious insider activity, unauthorized admin actions or improper offboarding. Shows who performed the deletion.",
+    "kql": "CloudAppEvents\n| where Timestamp > ago(5d)\n| where ActionType == \"Delete user.\"\n| where RawEventData.ResultStatus == \"Success\"\n| project Timestamp, AccountObjectId, AccountDisplayName, deletedAccount = RawEventData.ObjectId, UserAgent\n| order by Timestamp desc"
+  },
+  {
+    "id": 90,
+    "name": "Personal Email Exfiltration Detection",
+    "cat": "Email",
+    "sub": "Data Exfiltration",
+    "plat": "xdr",
+    "tables": [
+      "EmailEvents"
+    ],
+    "tags": [
+      "exfiltration",
+      "personal email",
+      "gmail",
+      "yahoo",
+      "insider risk",
+      "dlp"
+    ],
+    "sev": "critical",
+    "added": "2026-03-30",
+    "desc": "Detects outbound emails from corporate accounts to personal email providers (Gmail, Yahoo, Outlook.com, Hotmail, iCloud). A key indicator of data exfiltration by insiders. Especially critical when emails contain attachments.",
+    "kql": "// NOTE: Replace domain1.com and domain2.com with your organization's email domains\nEmailEvents\n| where TimeGenerated > ago(1d)\n| where EmailDirection == \"Outbound\"\n| where SenderFromAddress matches regex @\"(domain.com)$\"\n| extend RecipientDomain = tolower(tostring(extract(@\"@(.+)\", 1, RecipientEmailAddress)))\n| where RecipientDomain matches regex @\"(gmail\\.com|yahoo\\.com|outlook\\.com|hotmail\\.com|icloud\\.com)\"\n| project\n    TimeGenerated,\n    SenderFromAddress,\n    RecipientEmailAddress,\n    RecipientDomain,\n    Subject,\n    AttachmentCount,\n    DeliveryAction,\n    DeliveryLocation\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 91,
+    "name": "Vulnerability Backlog by Severity",
+    "cat": "XDR",
+    "sub": "Vulnerability Mgmt",
+    "plat": "xdr",
+    "tables": [
+      "DeviceTvmSoftwareVulnerabilities"
+    ],
+    "tags": [
+      "vulnerability",
+      "tvm",
+      "severity",
+      "backlog",
+      "patching"
+    ],
+    "sev": "medium",
+    "added": "2026-03-30",
+    "desc": "Summarizes the vulnerability backlog across all devices by severity level. Shows total vulnerability count and affected device count per severity. Useful for executive reporting and prioritizing patching efforts.",
+    "kql": "DeviceTvmSoftwareVulnerabilities\n| distinct VulnerabilitySeverityLevel, DeviceName\n| summarize VulnCount = count(), AffectedDevices = dcount(DeviceName) by VulnerabilitySeverityLevel"
+  },
+  {
+    "id": 92,
+    "name": "High/Critical Alert Trend (60 Days)",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityAlert"
+    ],
+    "tags": [
+      "alert trend",
+      "soc metrics",
+      "high severity",
+      "timechart"
+    ],
+    "sev": "medium",
+    "added": "2026-03-30",
+    "desc": "Tracks daily count of high and critical severity alerts over 60 days, grouped by alert name. Helps identify which detection rules are generating increasing alerts and whether your security posture is improving or degrading.",
+    "kql": "SecurityAlert\n| where TimeGenerated > ago(60d)\n| where AlertSeverity in (\"High\", \"Critical\")\n| summarize AlertCount = count() by bin(TimeGenerated, 1d), DisplayName\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 93,
+    "name": "MTTR by Responder with Percentiles",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "incident",
+      "soc metrics",
+      "responder",
+      "closed",
+      "monthly"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Calculates Mean Time to Resolve (MTTR) per SOC responder with average, P50, P90 and max resolution times in human-readable format. Also shows alerts per incident average. Essential for SOC performance evaluation and identifying responders who may need additional support.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Responder = coalesce(tostring(Owner.assignedTo), tostring(Owner.userPrincipalName), tostring(Owner))\n| extend MTTR_min = tolong((ClosedTime - CreatedTime) / 1m)\n| extend AlertsPerIncident = toint(coalesce(array_length(todynamic(AlertIds)), 0))\n| summarize\n    TotalClosed = count(),\n    AlertsPerIncident_avg = round(avg(todouble(AlertsPerIncident)), 2),\n    MTTR_avg_min = tolong(avg(MTTR_min)),\n    MTTR_p50_min = tolong(percentile(MTTR_min, 50)),\n    MTTR_p90_min = tolong(percentile(MTTR_min, 90)),\n    MTTR_max_min = max(MTTR_min)\n  by Responder\n| extend\n    MTTR_avg_readable = strcat(tolong(MTTR_avg_min/60), \"h \", MTTR_avg_min % 60, \"m\"),\n    MTTR_p50_readable = strcat(tolong(MTTR_p50_min/60), \"h \", MTTR_p50_min % 60, \"m\"),\n    MTTR_p90_readable = strcat(tolong(MTTR_p90_min/60), \"h \", MTTR_p90_min % 60, \"m\"),\n    MTTR_max_readable = strcat(tolong(MTTR_max_min/60), \"h \", MTTR_max_min % 60, \"m\")\n| order by MTTR_avg_min asc"
+  },
+  {
+    "id": 94,
+    "name": "Non-Interactive Sign-In from New Country (Baseline)",
+    "cat": "Non-Interactive",
+    "sub": "Geo Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "new country",
+      "baseline",
+      "non-interactive",
+      "geo anomaly"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Compares last 24 hours of non-interactive sign-ins against a 7-day country baseline. Any country not seen in the baseline is flagged. Covers both successful sign-ins and MFA-interrupted attempts (ResultType 0 and 50074). Shows affected users, IPs and cities per new country.",
+    "kql": "let BaselineCountries = AADNonInteractiveUserSignInLogs\n| where TimeGenerated between (ago(7d) .. ago(1d))\n| where ResultType == 0 or ResultType == 50074\n| extend ParsedLocation = parse_json(LocationDetails)\n| extend Country = tostring(ParsedLocation.countryOrRegion)\n| where isnotempty(Country)\n| distinct Country;\nAADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(1d)\n| where ResultType == 0 or ResultType == 50074\n| extend ParsedLocation = parse_json(LocationDetails)\n| extend Country = tostring(ParsedLocation.countryOrRegion)\n| extend City = tostring(ParsedLocation.city)\n| where isnotempty(Country)\n| join kind=leftanti (BaselineCountries) on Country\n| summarize \n    SignIns = count(),\n    UniqueUsers = dcount(UserPrincipalName),\n    Users = make_set(UserPrincipalName, 10),\n    UniqueIPs = dcount(IPAddress),\n    IPs = make_set(IPAddress, 10),\n    Cities = make_set(City, 5)\n    by Country\n| order by SignIns desc"
+  },
+  {
+    "id": 95,
+    "name": "Successful Sign-In from Unmanaged Device (CMSI)",
+    "cat": "Identity",
+    "sub": "Device Trust",
+    "plat": "xdr",
+    "tables": [
+      "AADSignInEventsBeta"
+    ],
+    "tags": [
+      "cmsi",
+      "unmanaged",
+      "device trust",
+      "no device id"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Detects successful sign-ins that hit the CMSI (Conditional Access Session Control) endpoint from devices with no Entra ID device registration. CMSI:CMSI indicates a Continuous Access Evaluation or session reauthentication check. Unmanaged devices hitting this endpoint are suspicious — they passed initial auth but have no device trust.",
+    "kql": "AADSignInEventsBeta\n| where Timestamp > ago(30d)\n| where ErrorCode == 0\n| where EndpointCall == \"Cmsi:Cmsi\"\n| where isempty(AadDeviceId)\n// Optionally filter only on sign-ins with a risk level associated with the sign-in\n//| where RiskLevelDuringSignIn in(10, 50, 100)\n| project-reorder Timestamp, AccountUpn, EndpointCall, IPAddress, ErrorCode, RiskLevelDuringSignIn, Application, ApplicationId, Country, IPAddress\n| order by Timestamp desc"
+  },
+  {
+    "id": 96,
+    "name": "External Email Forwarding Rules (CloudAppEvents)",
+    "cat": "Email",
+    "sub": "Post-Compromise",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "forwarding",
+      "inbox rule",
+      "exfiltration",
+      "post-compromise"
+    ],
+    "sev": "critical",
+    "added": "2026-03-30",
+    "desc": "Detects inbox rules and mailbox forwarding configurations that send email to external addresses, using CloudAppEvents table. Filters out known internal domains. This is the most common post-compromise persistence technique — attackers set up forwarding to maintain silent access to communications.",
+    "kql": "// NOTE: Replace domain.com with your organization's domains. Add more lines for additional internal domains.\nCloudAppEvents\n| where ActionType in~ (\"Set-Mailbox\", \"New-InboxRule\", \"Set-InboxRule\", \"UpdateInboxRules\")\n| extend ForwardingAddress = extract(@\"Forward.*?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})\", 1, tostring(ActivityObjects))\n| where isnotempty(ForwardingAddress)\n| where not(ForwardingAddress contains \"@domain.com\")\n| project Timestamp, ActionType, CountryCode, City, ISP, IPAddress, AccountDisplayName, ForwardingAddress, ActivityObjects, ReportId, AccountId \n| order by Timestamp desc"
+  },
+  {
+    "id": 97,
+    "name": "AI/Copilot Impossible Travel Detection",
+    "cat": "Identity",
+    "sub": "AI Security",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "copilot",
+      "ai",
+      "impossible travel",
+      "agent",
+      "shadow ai"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Detects impossible travel patterns specifically for AI and Copilot applications. If a user signs into Copilot from two different locations within 60 minutes, it indicates potential token theft or credential compromise targeting AI services.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where AppDisplayName has \"Copilot\" or AppDisplayName has \"AI\" or AppDisplayName has \"Agent\"\n| where ResultType == \"0\"\n| where Location != \"\"\n| project TimeGenerated, UserPrincipalName, Location, IPAddress, AppDisplayName\n| order by UserPrincipalName, TimeGenerated asc\n| serialize\n| extend \n    PrevLocation = prev(Location, 1),\n    PrevTime = prev(TimeGenerated, 1),\n    PrevUser = prev(UserPrincipalName, 1)\n| where UserPrincipalName == PrevUser and Location != PrevLocation\n| extend TimeDiffMinutes = datetime_diff('minute', TimeGenerated, PrevTime)\n| where TimeDiffMinutes <= 60 and TimeDiffMinutes > 0\n| project TimeGenerated, UserPrincipalName, Location, PrevLocation, \n          TimeDiffMinutes, IPAddress, AppDisplayName\n| extend ThreatIndicator = \"Impossible Travel Detected\"\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 98,
+    "name": "AI/Copilot Usage Baseline (30 Days)",
+    "cat": "Identity",
+    "sub": "AI Security",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "copilot",
+      "ai",
+      "baseline",
+      "usage",
+      "success rate"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Establishes a 30-day usage baseline for all AI and Copilot applications in your environment. Shows sign-in count, unique users, unique IPs, success/failure rate and top users per application. Essential for understanding AI adoption and detecting anomalous AI usage patterns.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(30d)\n| where AppDisplayName has \"Copilot\" or AppDisplayName has \"AI\" or AppDisplayName has \"Agent\"\n| summarize \n    SignInCount = count(),\n    UniqueUsers = dcount(UserPrincipalName),\n    UniqueIPs = dcount(IPAddress),\n    FailedAttempts = countif(ResultType != \"0\"),\n    SuccessRate = round(100.0 * countif(ResultType == \"0\") / count(), 2),\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated),\n    IPList = make_set(IPAddress, 20),\n    TopUsers = make_set(UserPrincipalName, 10)\nby AppDisplayName\n| extend FailureRate = round(100.0 * FailedAttempts / SignInCount, 2)\n| order by SignInCount desc"
+  },
+  {
+    "id": 99,
+    "name": "Azure AI Security Finding Report",
+    "cat": "XDR",
+    "sub": "AI Security",
+    "plat": "xdr",
+    "tables": [
+      "ExposureGraphEdges"
+    ],
+    "tags": [
+      "ai",
+      "exposure graph",
+      "security findings",
+      "risk level",
+      "azure ai"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Pulls AI-related security findings from Microsoft Security Exposure Management. Uses the ExposureGraphEdges table to identify security risks associated with AI workloads, including finding dates and risk levels. Essential for tracking AI-specific security posture.",
+    "kql": "ExposureGraphEdges \n| where TargetNodeCategories[0] == \"AI\"\n| where SourceNodeCategories[1] == \"security_finding\"\n| extend FindingDateRaw = parse_json(EdgeProperties)[\"rawData\"][\"publishedDate\"]\n| extend FindingDate = todatetime(FindingDateRaw)\n| extend SecurityRiskLevel = parse_json(EdgeProperties)[\"rawData\"][\"risk\"][\"riskLevel\"]\n| project FindingDate, TargetNodeName, SourceNodeName\n| sort by FindingDate desc"
+  },
+  {
+    "id": 100,
+    "name": "MTTR by Incident Severity",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "mttr",
+      "severity",
+      "soc metrics",
+      "resolution time"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Breaks down Mean Time to Resolve by incident severity level with P50 and P90 percentiles. Shows whether critical incidents are being resolved faster than low-severity ones. Key metric for SLA compliance and SOC maturity assessment.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend MTTR_min = tolong((ClosedTime - CreatedTime) / 1m)\n| summarize\n    ClosedCount  = count(),\n    MTTR_avg_min = tolong(avg(MTTR_min)),\n    MTTR_p50_min = tolong(percentile(MTTR_min, 50)),\n    MTTR_p90_min = tolong(percentile(MTTR_min, 90))\n  by Severity\n| extend\n    MTTR_avg_readable = strcat(tolong(MTTR_avg_min/60), \"h \", MTTR_avg_min % 60, \"m\"),\n    MTTR_p50_readable = strcat(tolong(MTTR_p50_min/60), \"h \", MTTR_p50_min % 60, \"m\"),\n    MTTR_p90_readable = strcat(tolong(MTTR_p90_min/60), \"h \", MTTR_p90_min % 60, \"m\")\n| order by Severity asc"
+  },
+  {
+    "id": 101,
+    "name": "SOC Executive Summary (Close Rate + Backlog)",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "soc metrics",
+      "close rate",
+      "backlog",
+      "mttr",
+      "executive"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Single-row executive summary showing total created, total closed, close rate percentage, MTTR averages (P50/P90), open backlog count and average backlog age. Designed for SOC leadership reporting and board-level security metrics.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| extend IsClosed = iff(Status == \"Closed\" and isnotempty(ClosedTime), 1, 0)\n| extend MTTR_min = iif(IsClosed == 1 and isnotempty(CreatedTime),\n                        tolong((ClosedTime - CreatedTime) / 1m),\n                        long(null))\n| summarize\n    TotalCreated = dcount(IncidentNumber),\n    TotalClosed  = sum(IsClosed),\n    CloseRate_pct = iif(dcount(IncidentNumber) > 0,\n                        round(100.0 * todouble(sum(IsClosed)) / todouble(dcount(IncidentNumber)), 1),\n                        0.0),\n    MTTR_avg_min = tolong(avg(MTTR_min)),\n    MTTR_p50_min = tolong(percentile(MTTR_min, 50)),\n    MTTR_p90_min = tolong(percentile(MTTR_min, 90)),\n    BacklogOpen  = dcountif(IncidentNumber, IsClosed == 0),\n    Backlog_Age_avg_min = tolong(avgif(tolong((now() - CreatedTime) / 1m), IsClosed == 0))"
+  },
+  {
+    "id": 102,
+    "name": "Responder Closed Incidents by Rule Name",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "responder",
+      "incident title",
+      "rule name",
+      "soc metrics"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Shows how many incidents each responder closed, broken down by incident title (detection rule name). Helps identify which types of incidents each analyst handles most frequently and supports workload specialization analysis.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend ResponderRaw = coalesce(tostring(Owner.assignedTo), tostring(Owner.userPrincipalName))\n| where isnotempty(ResponderRaw) and ResponderRaw !in~ (\"Unassigned\")\n| extend Responder = iff(ResponderRaw contains \"@\", tostring(split(ResponderRaw, \"@\")[0]), ResponderRaw)\n| summarize ClosedUnique = count() by Responder, Title\n| order by Responder asc, ClosedUnique desc"
+  },
+  {
+    "id": 103,
+    "name": "Monthly MTTR Trend",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "mttr",
+      "monthly",
+      "trend",
+      "soc metrics"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Shows monthly MTTR trend with P50 and P90 percentiles. Tracks whether your SOC resolution time is improving or degrading month over month. Essential for continuous improvement tracking.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(CreatedTime) and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Month = format_datetime(ClosedTime, \"yyyy-MM\")\n| extend ResolveMinutes = (ClosedTime - CreatedTime) / 1m\n| summarize\n    ClosedUnique = count(),\n    MTTR_Min = avg(ResolveMinutes),\n    P50_Min = percentile(ResolveMinutes, 50),\n    P90_Min = percentile(ResolveMinutes, 90)\n  by Month\n| order by Month asc"
+  },
+  {
+    "id": 104,
+    "name": "Monthly Closed Incidents Count",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "monthly",
+      "closed",
+      "incident count",
+      "soc metrics"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Simple monthly count of uniquely closed incidents. Provides the most basic SOC throughput metric for dashboards and executive reporting.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\"\n| where isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Month = format_datetime(ClosedTime, \"yyyy-MM\")\n| summarize ClosedUniqueIncidents = count() by Month\n| order by Month asc"
+  },
+  {
+    "id": 105,
+    "name": "Yearly Responder Breakdown by Incident Type",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "yearly",
+      "responder",
+      "incident type",
+      "soc metrics"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Annual breakdown of closed incidents per responder and incident title. Shows which analysts handled which detection rules over the full year. Useful for annual performance reviews and workload distribution analysis.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2025-01-01);\nlet end   = datetime(2026-01-01);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Month = format_datetime(ClosedTime, \"yyyy-MM\")\n| extend ResponderRaw = coalesce(tostring(Owner.assignedTo), tostring(Owner.userPrincipalName))\n| where isnotempty(ResponderRaw) and ResponderRaw !in~ (\"Unassigned\")\n| extend Responder = iff(ResponderRaw contains \"@\", tostring(split(ResponderRaw, \"@\")[0]), ResponderRaw)\n| summarize ClosedIncidents = dcount(IncidentNumber) by Month, Responder, Title\n| order by Month asc, Responder asc, ClosedIncidents desc"
+  },
+  {
+    "id": 106,
+    "name": "Single Responder Monthly Trend",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "responder",
+      "monthly",
+      "individual",
+      "soc metrics"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Tracks a specific responder's monthly closed incident count over a year. Useful for individual performance tracking and 1:1 review preparation.",
+    "kql": "// NOTE: Replace accountid with the responder's account name and adjust dates\nlet start = datetime(2025-01-01);\nlet end   = datetime(2026-01-01);\nlet responder = \"accountid\";\nSecurityIncident\n| where Status == \"Closed\"\n| where isnotempty(CreatedTime) and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Month = format_datetime(ClosedTime, \"yyyy-MM\")\n| extend ResponderRaw = coalesce(tostring(Owner.assignedTo), tostring(Owner.userPrincipalName))\n| where isnotempty(ResponderRaw) and ResponderRaw !in~ (\"Unassigned\")\n| extend Responder = iff(ResponderRaw contains \"@\", tostring(split(ResponderRaw, \"@\")[0]), ResponderRaw)\n| where Responder =~ responder\n| summarize ClosedCount = count() by Month\n| order by Month asc"
+  },
+  {
+    "id": 107,
+    "name": "Top 10 Closed Incident Types",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "top 10",
+      "incident types",
+      "soc metrics",
+      "piechart"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Shows the top 10 most frequently closed incident types (by title/detection rule name). Helps identify which detections generate the most work and may be candidates for automation or tuning.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2025-01-01);\nlet end   = datetime(2026-01-01);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| summarize ClosedUnique = count() by Title\n| top 10 by ClosedUnique desc"
+  },
+  {
+    "id": 108,
+    "name": "Yearly Responder MTTR Performance",
+    "cat": "XDR",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident"
+    ],
+    "tags": [
+      "yearly",
+      "mttr",
+      "responder",
+      "performance",
+      "soc metrics"
+    ],
+    "sev": "low",
+    "added": "2026-03-30",
+    "desc": "Annual MTTR performance per responder with closed count, average/P50/P90 resolution times. Designed for year-end SOC performance reviews and identifying training needs.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet monthStart = datetime(2025-01-01);\nlet monthEnd   = datetime(2026-01-01);\nSecurityIncident\n| where Status == \"Closed\"\n| where isnotempty(CreatedTime) and isnotempty(ClosedTime)\n| where ClosedTime >= monthStart and ClosedTime < monthEnd\n| extend ResponderRaw = coalesce(tostring(Owner.assignedTo), tostring(Owner.userPrincipalName))\n| where isnotempty(ResponderRaw) and ResponderRaw !in~ (\"Unassigned\")\n| extend Responder = iff(ResponderRaw contains \"@\", tostring(split(ResponderRaw, \"@\")[0]), ResponderRaw)\n| extend ResolveMinutes = (ClosedTime - CreatedTime) / 1m\n| summarize\n    ClosedCount = count(),\n    MTTR_Min = avg(ResolveMinutes),\n    P50_Min  = percentile(ResolveMinutes, 50),\n    P90_Min  = percentile(ResolveMinutes, 90)\n  by Responder\n| order by ClosedCount desc"
+  },
+  {
+    "id": 109,
+    "name": "OAuth Consent and App Registration Summary",
+    "cat": "OAuth",
+    "sub": "Consent",
+    "plat": "both",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "consent",
+      "app registration",
+      "oauth",
+      "service principal",
+      "permissions"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Summarizes all OAuth consent grants, app role assignments, permission grants, new app registrations and service principal additions over 7 days. Shows which apps received consent, how many times and by whom. Broader than illicit consent detection — covers all consent activity for governance review.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Consent to application\", \"Add app role assignment\", \"Add OAuth2PermissionGrant\", \"Add application\", \"Add service principal\")\n| extend InitiatedBy = tostring(InitiatedBy.user.userPrincipalName)\n| extend TargetApp = tostring(TargetResources[0].displayName)\n| extend TargetAppId = tostring(TargetResources[0].id)\n| summarize \n    ConsentCount = count(),\n    LastConsent = max(TimeGenerated),\n    Users = make_set(InitiatedBy, 10)\n    by OperationName, TargetApp, TargetAppId\n| order by ConsentCount desc"
+  },
+  {
+    "id": 110,
+    "name": "Active Account Password Age Report",
+    "cat": "Identity",
+    "sub": "Password Hygiene",
+    "plat": "xdr",
+    "tables": [
+      "IdentityAccountInfo",
+      "IdentityInfo"
+    ],
+    "tags": [
+      "password age",
+      "password hygiene",
+      "sensitive accounts",
+      "password never expires",
+      "mdi"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Comprehensive password age report for all active (non-disabled) accounts combining MDI IdentityAccountInfo and IdentityInfo tables. Shows days/years since last password change, PasswordNeverExpires and PasswordNotRequired flags, sensitive account tagging and OU path. Requires MDI.",
+    "kql": "let accountinfo = IdentityAccountInfo\n| where TimeGenerated > ago(30d)\n| summarize arg_max(TimeGenerated,*) by IdentityId\n| extend DaysSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), int(null),\n        datetime_diff('day', now(), LastPasswordChangeTime))\n| extend YearsSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), int(null),\n        datetime_diff('year', now(), LastPasswordChangeTime))   \n| extend Sensitive = array_index_of(Tags, \"Sensitive\") != -1\n| extend SensitiveLabel = iff(Sensitive == 1, \"Sensitive\", \"Not Sensitive\")\n| project IdentityId, AccountUpn, AccountStatus, LastPasswordChangeTime, DaysSinceLastPasswordChange, YearsSinceLastPasswordChange, Sid, Sensitive, SensitiveLabel;\nlet IdInfo = IdentityInfo\n| where TimeGenerated > ago(30d)\n| summarize arg_max(TimeGenerated,*) by IdentityId\n| extend PasswordNeverExpires = array_index_of(UserAccountControl, \"PasswordNeverExpires\") != -1,\n         PasswordNotRequired = array_index_of(UserAccountControl, \"PasswordNotRequired\") != -1\n| extend OUPath = extract(@\"CN=[^,]+,(.*)\", 1, DistinguishedName)\n| project IdentityId, AccountName, AccountDomain, AccountDisplayName, OnPremSid, OnPremObjectId, AccountUpn, PasswordNeverExpires, PasswordNotRequired, Type, OUPath;\nIdInfo\n| join kind=leftouter (accountinfo) on .IdentityId == .IdentityId\n| project IdentityId, AccountName, AccountStatus, AccountDomain, AccountDisplayName, AccountUpn, Sensitive, SensitiveLabel, LastPasswordChangeTime, DaysSinceLastPasswordChange, YearsSinceLastPasswordChange, PasswordNeverExpires, PasswordNotRequired, Type, OUPath\n| sort by DaysSinceLastPasswordChange desc \n| where AccountStatus != \"Disabled\""
+  },
+  {
+    "id": 111,
+    "name": "Password Age Distribution by Bucket",
+    "cat": "Identity",
+    "sub": "Password Hygiene",
+    "plat": "xdr",
+    "tables": [
+      "IdentityAccountInfo",
+      "IdentityInfo"
+    ],
+    "tags": [
+      "password age",
+      "distribution",
+      "compliance",
+      "chart",
+      "mdi"
+    ],
+    "sev": "medium",
+    "added": "2026-03-30",
+    "desc": "Groups active accounts into password age buckets (0-1 years, 1-2 years, 2-5 years, 5-10 years, 10+ years). Provides a clear view of password hygiene across the organization. Essential for compliance reporting and identifying accounts with dangerously old passwords. Requires MDI.",
+    "kql": "let accountinfo = IdentityAccountInfo\n| where TimeGenerated > ago(30d)\n| summarize arg_max(TimeGenerated,*) by IdentityId\n| extend DaysSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), int(null),\n        datetime_diff('day', now(), LastPasswordChangeTime))\n| project IdentityId, AccountUpn, AccountStatus, LastPasswordChangeTime, DaysSinceLastPasswordChange;\nlet IdInfo = IdentityInfo\n| where TimeGenerated > ago(30d)\n| summarize arg_max(TimeGenerated,*) by IdentityId\n| project IdentityId, AccountName;\nIdInfo\n| join kind=leftouter (accountinfo) on .IdentityId == .IdentityId\n| where AccountStatus != \"Disabled\"\n| where isnotnull(LastPasswordChangeTime)\n| extend PasswordAgeBucket =\n    case(\n        DaysSinceLastPasswordChange <= 365, \"0-1 years\",\n        DaysSinceLastPasswordChange <= 2*365, \"1-2 years\",\n        DaysSinceLastPasswordChange <= 5*365, \"2-5 years\",\n        DaysSinceLastPasswordChange <= 10*365, \"5-10 years\",\n        \"10+ years\")\n| summarize Accounts = dcount(IdentityId) by PasswordAgeBucket\n| sort by Accounts desc"
+  },
+  {
+    "id": 112,
+    "name": "ChatGPT Enterprise Sign-In Monitoring",
+    "cat": "Identity",
+    "sub": "AI Security",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "chatgpt",
+      "ai",
+      "enterprise app",
+      "conditional access",
+      "shadow ai"
+    ],
+    "sev": "medium",
+    "added": "2026-03-30",
+    "desc": "Monitors all sign-in activity to the ChatGPT Enterprise application (AppID: e0476654-c1d5-430b-ab80-70cbd947616a) over 180 days. Shows which users accessed ChatGPT, from where, how Conditional Access evaluated the attempt and whether MFA was required. Essential for AI governance.",
+    "kql": "let ChatGPTAppId = \"e0476654-c1d5-430b-ab80-70cbd947616a\";\nSigninLogs\n| where TimeGenerated >= ago(180d)\n| where AppId == ChatGPTAppId\n| extend\n    Country = tostring(LocationDetails.countryOrRegion),\n    City    = tostring(LocationDetails.city)\n| project\n    TimeGenerated,\n    UserDisplayName,\n    UserPrincipalName,\n    IPAddress,\n    Country,\n    City,\n    ConditionalAccessStatus,\n    ClientAppUsed,\n    AuthenticationRequirement,\n    ResultType,\n    ResultDescription\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 113,
+    "name": "Entra ID Admin Role Assignments",
+    "cat": "Identity",
+    "sub": "Privileged",
+    "plat": "xdr",
+    "tables": [
+      "IdentityInfo"
+    ],
+    "tags": [
+      "admin roles",
+      "entra id",
+      "privileged accounts",
+      "global admin",
+      "pim"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Lists all users with Entra ID admin role assignments from the last 30 days. Shows which accounts hold which administrative roles. Essential for privileged access reviews, least privilege enforcement and identifying over-privileged accounts.",
+    "kql": "IdentityInfo\n| where Timestamp > ago(30d)\n| where AssignedRoles != \"\"\n| mv-expand AssignedRoles\n| extend EntraAdminRole = tostring(AssignedRoles)\n| project Timestamp, EntraAdminRole, AccountDisplayName\n| where AccountDisplayName != \"\"\n| sort by EntraAdminRole asc, Timestamp desc"
+  },
+  {
+    "id": 114,
+    "name": "Weak MFA Method Registration Detection",
+    "cat": "Identity",
+    "sub": "MFA Attacks",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "weak mfa",
+      "sms",
+      "voice call",
+      "mfa downgrade",
+      "authentication method"
+    ],
+    "sev": "critical",
+    "added": "2026-03-30",
+    "desc": "Detects when users register or are configured with weak MFA methods: voice call (mobile/office/other), SMS (two-way/one-way). These methods are vulnerable to SIM swapping, SS7 attacks and social engineering. Any registration of weak methods should be investigated — could indicate an attacker downgrading MFA to bypass stronger methods.",
+    "kql": "let WeakMethods = dynamic([0, 1, 2, 3, 4, 5]);\nlet WeakMethodNames = dynamic([\"TwoWayVoiceMobile\",\"TwoWaySms\",\"TwoWayVoiceOffice\",\"TwoWayVoiceOtherMobile\",\"TwoWaySmsOtherMobile\",\"OneWaySms\"]);\nCloudAppEvents\n| where Timestamp > ago(7d)\n| where ActionType == \"Update user.\"\n| where RawEventData contains \"StrongAuthenticationMethod\"\n| extend Target = tostring(RawEventData.ObjectId)\n| extend Actor = tostring(RawEventData.UserId)\n| mv-expand ModifiedProperties = parse_json(RawEventData.ModifiedProperties)\n| where ModifiedProperties.Name == \"StrongAuthenticationMethod\"\n| extend NewValue = parse_json(tostring(ModifiedProperties.NewValue))\n| mv-apply NewValue on (\n    extend MethodType = toint(NewValue.MethodType)\n    | where MethodType in (WeakMethods)\n    | summarize AddedWeakMethods = make_set(strcat(MethodType, \": \", iff(MethodType < array_length(WeakMethodNames), tostring(WeakMethodNames[MethodType]), \"Unknown\")))\n)\n| where array_length(AddedWeakMethods) > 0\n| extend AddedWeakMethodsStr = tostring(AddedWeakMethods)\n| project Timestamp, Actor, Target, AddedWeakMethodsStr, ReportId\n| distinct *\n| order by Timestamp desc"
+  },
+  {
+    "id": 115,
+    "name": "Sensitive Accounts List (Exposure Graph)",
+    "cat": "Identity",
+    "sub": "Privileged",
+    "plat": "xdr",
+    "tables": [
+      "ExposureGraphNodes"
+    ],
+    "tags": [
+      "sensitive accounts",
+      "exposure graph",
+      "privileged",
+      "ad groups"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Lists all user accounts tagged as Sensitive in Microsoft Security Exposure Management, along with their nested AD group memberships. Sensitive accounts are high-value targets — this query helps verify the sensitive account list is accurate and complete.",
+    "kql": "ExposureGraphNodes\n| where NodeLabel == 'user'\n| extend Tags = parse_json(tostring(parse_json(tostring(NodeProperties.rawData)).tags.[0]))\n| extend NestedADGroups = parse_json(tostring(parse_json(tostring(NodeProperties.rawData)).nestedAdGroupNames))\n| mv-expand NestedADGroups\n| where Tags == 'Sensitive'"
+  },
+  {
+    "id": 116,
+    "name": "Temporary Access Pass (TAP) Usage",
+    "cat": "Identity",
+    "sub": "Credential Mgmt",
+    "plat": "both",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "temporary access pass",
+      "tap",
+      "credential",
+      "onboarding"
+    ],
+    "sev": "high",
+    "added": "2026-03-30",
+    "desc": "Tracks all Temporary Access Pass creation and usage events. TAPs are time-limited credentials used for onboarding or recovery. Unauthorized TAP creation could indicate an attacker bypassing standard authentication to gain access to an account.",
+    "kql": "AuditLogs\n| where Result == \"success\"\n| where ResultDescription has \"temporary access pass\"\n| project TimeGenerated, ResultDescription, OperationName, Identity, InitiatedBy, TargetResources\n| order by TimeGenerated desc"
+  },
+  {
+    "id": 117,
+    "name": "User URL Click Investigation",
+    "cat": "Email",
+    "sub": "URL Protection",
+    "plat": "xdr",
+    "tables": [
+      "UrlClickEvents"
+    ],
+    "tags": [
+      "url click",
+      "investigation",
+      "safe links",
+      "user activity"
+    ],
+    "sev": "medium",
+    "added": "2026-03-30",
+    "desc": "Investigates all URLs clicked by specific target users that were allowed through Safe Links. Shows URL domains, click counts and timestamps. Useful for post-incident investigation when you need to know exactly what a compromised user clicked on.",
+    "kql": "// NOTE: Replace account@domain.com with the user(s) you want to investigate\nlet TargetUsers = dynamic([\"account@domain.com\"]);\nUrlClickEvents\n| where Timestamp > ago(7d)\n| where AccountUpn in~ (TargetUsers)\n| where ActionType == \"ClickAllowed\"\n| extend UrlDomain = extract(\"https?://([^/]+)\", 1, Url)\n| summarize \n    ClickedBy = make_set(AccountUpn),\n    ClickedByCount = dcount(AccountUpn),\n    ClickTimes = make_set(Timestamp),\n    TotalClicks = count()\n    by Url, UrlDomain, NetworkMessageId\n| order by ClickedByCount desc, TotalClicks desc"
   }
 ]
