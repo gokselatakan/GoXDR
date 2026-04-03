@@ -16,6 +16,12 @@ A curated collection of KQL detection and threat hunting queries ready to paste 
 
 **[https://gokselatakan.github.io/GoXDR/](https://gokselatakan.github.io/GoXDR/)**
 
+## Official Website
+https://gokselatakan.github.io/GoXDR/
+
+## Source of Truth
+This repository is the official and primary source of [GoXDR](https://goxdr.fyi/).
+
 ## Categories
 
 - Identity (Auth Attacks, MFA, Token Attacks, Geo Anomaly, Device Trust, AI Security)
@@ -38,4 +44,4 @@ A curated collection of KQL detection and threat hunting queries ready to paste 
 
 ## License
 
-This project is licensed under [CC BY 4.0](LICENSE). You are free to use and share with attribution to GoXDR.
+This project is licensed under [CC BY 4.0](LICENSE).
