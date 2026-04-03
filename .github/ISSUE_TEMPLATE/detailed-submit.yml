@@ -1,0 +1,98 @@
+name: Detailed Query Submit
+description: Submit a query with full details if you know the category, tables and severity.
+title: "[Query] "
+labels: ["new-query"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Your query will be reviewed and added to the library with proper attribution.**
+        By submitting, you agree that your query may be included in GoXDR with credit to your name/profile.
+  - type: input
+    id: query-name
+    attributes:
+      label: Query Name
+      placeholder: e.g. Brute Force Detection from External IPs
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Identity
+        - Non-Interactive
+        - NTLM
+        - LDAP
+        - App Identity
+        - OAuth
+        - Email
+        - Collaboration
+        - XDR
+        - Geolocation
+        - SOC Metrics
+        - AI Security
+        - Vulnerability Management
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Sentinel
+        - XDR (Defender)
+        - Both
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: tables
+    attributes:
+      label: Tables Used
+      description: e.g. SigninLogs, EmailEvents, DeviceProcessEvents. Write "Not sure" if unknown.
+      placeholder: SigninLogs, AADNonInteractiveUserSignInLogs
+    validations:
+      required: false
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What does this query detect and why is it important?
+    validations:
+      required: true
+  - type: textarea
+    id: kql
+    attributes:
+      label: KQL Code
+      render: kql
+    validations:
+      required: true
+  - type: checkboxes
+    id: tested
+    attributes:
+      label: Tested In
+      options:
+        - label: Tested in production environment
+        - label: Tested in lab/dev environment
+        - label: Not tested yet
+  - type: input
+    id: attribution
+    attributes:
+      label: Your Name / Profile (for attribution)
+      description: How should we credit you? GitHub username, LinkedIn URL or display name.
+    validations:
+      required: false
