@@ -1,0 +1,40 @@
+name: Quick Query Submit
+description: Just paste your KQL query. We'll review, categorize and add it to the library.
+title: "[Query] "
+labels: ["new-query", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Your query will be reviewed, categorized and added to the library with proper attribution.**
+        By submitting, you agree that your query may be included in GoXDR with credit to your name/profile.
+  - type: textarea
+    id: kql
+    attributes:
+      label: Your KQL Query
+      description: Paste your KQL query here
+      render: kql
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Brief Description (optional)
+      description: What does this query detect? A sentence or two is enough.
+    validations:
+      required: false
+  - type: checkboxes
+    id: tested
+    attributes:
+      label: Tested In
+      options:
+        - label: Tested in production environment
+        - label: Tested in lab/dev environment
+        - label: Not tested yet
+  - type: input
+    id: attribution
+    attributes:
+      label: Your Name / Profile (for attribution)
+      description: How should we credit you? GitHub username, LinkedIn URL or display name.
+    validations:
+      required: false
