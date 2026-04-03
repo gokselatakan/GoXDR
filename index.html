@@ -271,7 +271,12 @@ function App() {
 
     e("div", { className: "footer" },
       e("div", { className: "logo", style: { fontSize: 18 } }, "Go", e("span", { className: "x" }, "X"), "DR"),
-      e("div", { style: { fontSize: 12, color: "var(--text4)", marginTop: 6 } }, "Created by ", e("a", { href: "https://www.linkedin.com/in/gokselatakan/", target: "_blank", rel: "noopener", style: { color: "var(--blue)", textDecoration: "none" } }, "GoX"))
+      e("div", { style: { display: "flex", gap: 12, justifyContent: "center", marginTop: 10 } },
+        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=submit-query.md&title=New+Query+Submission", target: "_blank", rel: "noopener", style: { fontSize: 12, color: "var(--blue)", textDecoration: "none", padding: "6px 14px", border: "1px solid var(--blue)", borderRadius: 8 } }, "Submit a Query"),
+        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=feedback.md&title=Feedback", target: "_blank", rel: "noopener", style: { fontSize: 12, color: "var(--text3)", textDecoration: "none", padding: "6px 14px", border: "1px solid var(--border)", borderRadius: 8 } }, "Feedback")
+      ),
+      e("div", { style: { fontSize: 12, color: "var(--text4)", marginTop: 8 } }, "Created by ", e("a", { href: "https://www.linkedin.com/in/gokselatakan/", target: "_blank", rel: "noopener", style: { color: "var(--blue)", textDecoration: "none" } }, "GoX")),
+      e("div", { style: { fontSize: 10, color: "var(--text4)", marginTop: 4 } }, "Open source ", e("a", { href: "https://github.com/gokselatakan/GoXDR", target: "_blank", rel: "noopener", style: { color: "var(--text3)", textDecoration: "none" } }, "GitHub"), " \u00b7 CC BY 4.0")
     )
     ) // close wrap
   ); // close outer
