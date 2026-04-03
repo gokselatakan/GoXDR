@@ -104,7 +104,7 @@
       "compromise"
     ],
     "sev": "critical",
-    "desc": "Identifies successful MFA completion following a fatigue/bombing attack. The user likely approved the push by mistake — immediate session revocation needed.",
+    "desc": "Identifies successful MFA completion following a fatigue/bombing attack. The user likely approved the push by mistake. Immediate session revocation needed.",
     "kql": "let MFABombedUsers = SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"50074\"\n| summarize MFAPrompts = count() by UserPrincipalName, bin(TimeGenerated, 10m)\n| where MFAPrompts >= 5\n| project UserPrincipalName;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| where UserPrincipalName in (MFABombedUsers)\n| where AuthenticationRequirement == \"multiFactorAuthentication\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, AppDisplayName\n| order by TimeGenerated desc",
     "added": "2026-03-24"
   },
@@ -655,7 +655,7 @@
       "persistence"
     ],
     "sev": "critical",
-    "desc": "Detects modifications to AdminSDHolder container. This is a persistence technique — changes propagate to all protected objects every 60 minutes. Requires MDI.",
+    "desc": "Detects modifications to AdminSDHolder container. This is a persistence technique. Changes propagate to all protected objects every 60 minutes. Requires MDI.",
     "kql": "IdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has \"AdminSDHolder\" or TargetAccountDisplayName has \"AdminSDHolder\"\n| where ActionType has_any (\"modified\", \"added\", \"deleted\")\n| project TimeGenerated, AccountName, DeviceName, IPAddress, ActionType, AdditionalFields\n| order by TimeGenerated desc",
     "added": "2026-03-25"
   },
@@ -673,7 +673,7 @@
       "kerberoasting"
     ],
     "sev": "high",
-    "desc": "Detects LDAP queries for servicePrincipalName attributes. Mass SPN enumeration is the first step of Kerberoasting — offline service account password cracking. Requires MDI.",
+    "desc": "Detects LDAP queries for servicePrincipalName attributes. Mass SPN enumeration is the first step of Kerberoasting. Offline service account password cracking. Requires MDI.",
     "kql": "IdentityDirectoryEvents\n| where TimeGenerated > ago(7d)\n| where Protocol == \"Ldap\"\n| where tostring(AdditionalFields) has \"servicePrincipalName\"\n| summarize\n    SPNQueries = count(),\n    FirstQuery = min(TimeGenerated),\n    LastQuery = max(TimeGenerated)\n    by AccountName, DeviceName, IPAddress\n| where SPNQueries > 3\n| extend RiskLevel = case(SPNQueries > 20, \"CRITICAL - Mass SPN Enumeration\", SPNQueries > 10, \"HIGH\", \"MEDIUM\")\n| order by SPNQueries desc",
     "added": "2026-03-25"
   },
@@ -840,7 +840,7 @@
       "service principal"
     ],
     "sev": "critical",
-    "desc": "Compares SP sign-in countries against 30-day baseline. SPs should have consistent geographic patterns — a new country is a strong compromise indicator.",
+    "desc": "Compares SP sign-in countries against 30-day baseline. SPs should have consistent geographic patterns. A new country is a strong compromise indicator.",
     "kql": "let Baseline = AADServicePrincipalSignInLogs\n| where TimeGenerated between (ago(30d) .. ago(7d))\n| where ResultType == \"0\"\n| extend Country = tostring(parse_json(LocationDetails).countryOrRegion)\n| distinct ServicePrincipalId, Country;\nAADServicePrincipalSignInLogs\n| where TimeGenerated > ago(7d)\n| extend Country = tostring(parse_json(LocationDetails).countryOrRegion)\n| join kind=leftanti (Baseline) on ServicePrincipalId, Country\n| summarize Events = count(), IPs = make_set(IPAddress, 5) by ServicePrincipalName, Country\n| order by Events desc",
     "added": "2026-03-26"
   },
@@ -879,7 +879,7 @@
       "cleanup"
     ],
     "sev": "medium",
-    "desc": "Compares all registered SPs against 90-day sign-in activity. Inactive SPs are attack surface — stolen credentials go unnoticed. 180+ days = consider removal.",
+    "desc": "Compares all registered SPs against 90-day sign-in activity. Inactive SPs are attack surface. Stolen credentials go unnoticed. 180+ days = consider removal.",
     "kql": "let ActiveSPs = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(90d)\n| distinct ServicePrincipalId;\nlet AllSPs = AuditLogs\n| where TimeGenerated > ago(365d)\n| where OperationName in (\"Add service principal\", \"Update service principal\")\n| extend SPName = tostring(TargetResources[0].displayName)\n| extend SPId = tostring(TargetResources[0].id)\n| extend CreatedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| summarize FirstSeen = min(TimeGenerated), LastAuditEvent = max(TimeGenerated), CreatedBy = take_any(CreatedBy) by SPName, SPId;\nAllSPs\n| join kind=leftanti (ActiveSPs) on $left.SPId == $right.ServicePrincipalId\n| extend DaysInactive = datetime_diff('day', now(), LastAuditEvent)\n| extend RiskLevel = case(DaysInactive > 180, \"HIGH - Consider Removal\", DaysInactive > 90, \"MEDIUM - Review Required\", \"LOW\")\n| order by DaysInactive desc",
     "added": "2026-03-26"
   },
@@ -988,7 +988,7 @@
       "external"
     ],
     "sev": "high",
-    "desc": "Detects apps configured as multi-tenant (AzureADMultipleOrgs). Multi-tenant apps can be accessed by any Azure AD tenant — increases external attack surface.",
+    "desc": "Detects apps configured as multi-tenant (AzureADMultipleOrgs). Multi-tenant apps can be accessed by any Azure AD tenant. Increases external attack surface.",
     "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add application\", \"Update application\")\n| extend ModifiedProps = parse_json(tostring(TargetResources[0].modifiedProperties))\n| mv-expand ModifiedProps\n| where tostring(ModifiedProps.displayName) has_any (\"AvailableToOtherTenants\", \"SignInAudience\")\n| where tostring(ModifiedProps.newValue) has_any (\"AzureADMultipleOrgs\", \"AzureADandPersonalMicrosoftAccount\", \"true\")\n| extend AppName = tostring(TargetResources[0].displayName)\n| extend ModifiedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| project TimeGenerated, AppName, ModifiedBy\n| order by TimeGenerated desc",
     "added": "2026-03-26"
   },
@@ -1520,7 +1520,7 @@
       "device trust"
     ],
     "sev": "critical",
-    "desc": "XDR version using AADSignInEventsBeta table. Detects successful sign-ins and MFA-interrupted attempts from unmanaged and non-compliant devices with medium (50) or high (100) risk level. No device registration means the device is unknown to Entra ID — strong indicator of credential theft or AiTM session hijack.",
+    "desc": "XDR version using AADSignInEventsBeta table. Detects successful sign-ins and MFA-interrupted attempts from unmanaged and non-compliant devices with medium (50) or high (100) risk level. No device registration means the device is unknown to Entra ID. Strong indicator of credential theft or AiTM session hijack.",
     "kql": "AADSignInEventsBeta\n| where Timestamp > ago(7d)\n| where ErrorCode == 0 or ErrorCode == 50074\n| where IsManaged != 1\n| where IsCompliant != 1\n| where RiskLevelDuringSignIn in (50, 100)\n| where ClientAppUsed == \"Browser\"\n| where isempty(DeviceTrustType)\n| where isnotempty(State) or isnotempty(Country) or isnotempty(City)\n| where isnotempty(IPAddress)\n| where isnotempty(AccountObjectId)\n| where isempty(DeviceName)\n| where isempty(AadDeviceId)\n| extend ReportId = strcat(AccountObjectId, \"-\", tostring(Timestamp))\n| extend SignInStatus = case(\n    ErrorCode == 0, \"Success\",\n    ErrorCode == 50074, \"MFA Interrupted\",\n    \"Other\")\n| project Timestamp, ReportId, AccountObjectId, IPAddress, AccountDisplayName, Country, City, Application, RiskLevelDuringSignIn, SignInStatus, ErrorCode",
     "added": "2026-03-28"
   },
@@ -1562,7 +1562,7 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Detects PowerShell processes executing clipboard-related commands (Get-Clipboard, Set-Clipboard). Attackers abuse these cmdlets to silently read sensitive data from clipboard (passwords, tokens) or inject malicious content (e.g. replacing crypto wallet addresses). Often goes unnoticed in environments without endpoint monitoring. Can be configured as a Defender XDR custom detection rule.",
+    "desc": "Detects PowerShell processes executing clipboard-related commands (Get-Clipboard, Set-Clipboard). Attackers abuse these cmdlets to silently read sensitive data from clipboard (passwords, tokens) or inject malicious content (e.g. Replacing crypto wallet addresses). Often goes unnoticed in environments without endpoint monitoring. Can be configured as a Defender XDR custom detection rule.",
     "kql": "DeviceProcessEvents\n| where ProcessCommandLine contains \"clipboard\"\n| where FileName has \"powershell.exe\"\n| summarize by Timestamp, ProcessCommandLine, DeviceId, DeviceName, AccountName, FileName, ReportId"
   },
   {
@@ -1797,7 +1797,7 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Detects successful sign-ins that hit the CMSI (Conditional Access Session Control) endpoint from devices with no Entra ID device registration. CMSI:CMSI indicates a Continuous Access Evaluation or session reauthentication check. Unmanaged devices hitting this endpoint are suspicious — they passed initial auth but have no device trust.",
+    "desc": "Detects successful sign-ins that hit the CMSI (Conditional Access Session Control) endpoint from devices with no Entra ID device registration. CMSI:CMSI indicates a Continuous Access Evaluation or session reauthentication check. Unmanaged devices hitting this endpoint are suspicious. They passed initial auth but have no device trust.",
     "kql": "AADSignInEventsBeta\n| where Timestamp > ago(30d)\n| where ErrorCode == 0\n| where EndpointCall == \"Cmsi:Cmsi\"\n| where isempty(AadDeviceId)\n// Optionally filter only on sign-ins with a risk level associated with the sign-in\n//| where RiskLevelDuringSignIn in(10, 50, 100)\n| project-reorder Timestamp, AccountUpn, EndpointCall, IPAddress, ErrorCode, RiskLevelDuringSignIn, Application, ApplicationId, Country, IPAddress\n| order by Timestamp desc"
   },
   {
@@ -1817,7 +1817,7 @@
     ],
     "sev": "critical",
     "added": "2026-03-30",
-    "desc": "Detects inbox rules and mailbox forwarding configurations that send email to external addresses, using CloudAppEvents table. Filters out known internal domains. This is the most common post-compromise persistence technique — attackers set up forwarding to maintain silent access to communications.",
+    "desc": "Detects inbox rules and mailbox forwarding configurations that send email to external addresses, using CloudAppEvents table. Filters out known internal domains. This is the most common post-compromise persistence technique. Attackers set up forwarding to maintain silent access to communications.",
     "kql": "// NOTE: Replace domain.com with your organization's domains. Add more lines for additional internal domains.\nCloudAppEvents\n| where ActionType in~ (\"Set-Mailbox\", \"New-InboxRule\", \"Set-InboxRule\", \"UpdateInboxRules\")\n| extend ForwardingAddress = extract(@\"Forward.*?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})\", 1, tostring(ActivityObjects))\n| where isnotempty(ForwardingAddress)\n| where not(ForwardingAddress contains \"@domain.com\")\n| project Timestamp, ActionType, CountryCode, City, ISP, IPAddress, AccountDisplayName, ForwardingAddress, ActivityObjects, ReportId, AccountId \n| order by Timestamp desc"
   },
   {
@@ -2083,7 +2083,7 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Summarizes all OAuth consent grants, app role assignments, permission grants, new app registrations and service principal additions over 7 days. Shows which apps received consent, how many times and by whom. Broader than illicit consent detection — covers all consent activity for governance review.",
+    "desc": "Summarizes all OAuth consent grants, app role assignments, permission grants, new app registrations and service principal additions over 7 days. Shows which apps received consent, how many times and by whom. Broader than illicit consent detection. Covers all consent activity for governance review.",
     "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Consent to application\", \"Add app role assignment\", \"Add OAuth2PermissionGrant\", \"Add application\", \"Add service principal\")\n| extend InitiatedBy = tostring(InitiatedBy.user.userPrincipalName)\n| extend TargetApp = tostring(TargetResources[0].displayName)\n| extend TargetAppId = tostring(TargetResources[0].id)\n| summarize \n    ConsentCount = count(),\n    LastConsent = max(TimeGenerated),\n    Users = make_set(InitiatedBy, 10)\n    by OperationName, TargetApp, TargetAppId\n| order by ConsentCount desc"
   },
   {
@@ -2190,7 +2190,7 @@
     ],
     "sev": "critical",
     "added": "2026-03-30",
-    "desc": "Detects when users register or are configured with weak MFA methods: voice call (mobile/office/other), SMS (two-way/one-way). These methods are vulnerable to SIM swapping, SS7 attacks and social engineering. Any registration of weak methods should be investigated — could indicate an attacker downgrading MFA to bypass stronger methods.",
+    "desc": "Detects when users register or are configured with weak MFA methods: voice call (mobile/office/other), SMS (two-way/one-way). These methods are vulnerable to SIM swapping, SS7 attacks and social engineering. Any registration of weak methods should be investigated. Could indicate an attacker downgrading MFA to bypass stronger methods.",
     "kql": "let WeakMethods = dynamic([0, 1, 2, 3, 4, 5]);\nlet WeakMethodNames = dynamic([\"TwoWayVoiceMobile\",\"TwoWaySms\",\"TwoWayVoiceOffice\",\"TwoWayVoiceOtherMobile\",\"TwoWaySmsOtherMobile\",\"OneWaySms\"]);\nCloudAppEvents\n| where Timestamp > ago(7d)\n| where ActionType == \"Update user.\"\n| where RawEventData contains \"StrongAuthenticationMethod\"\n| extend Target = tostring(RawEventData.ObjectId)\n| extend Actor = tostring(RawEventData.UserId)\n| mv-expand ModifiedProperties = parse_json(RawEventData.ModifiedProperties)\n| where ModifiedProperties.Name == \"StrongAuthenticationMethod\"\n| extend NewValue = parse_json(tostring(ModifiedProperties.NewValue))\n| mv-apply NewValue on (\n    extend MethodType = toint(NewValue.MethodType)\n    | where MethodType in (WeakMethods)\n    | summarize AddedWeakMethods = make_set(strcat(MethodType, \": \", iff(MethodType < array_length(WeakMethodNames), tostring(WeakMethodNames[MethodType]), \"Unknown\")))\n)\n| where array_length(AddedWeakMethods) > 0\n| extend AddedWeakMethodsStr = tostring(AddedWeakMethods)\n| project Timestamp, Actor, Target, AddedWeakMethodsStr, ReportId\n| distinct *\n| order by Timestamp desc"
   },
   {
@@ -2210,7 +2210,7 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Lists all user accounts tagged as Sensitive in Microsoft Security Exposure Management, along with their nested AD group memberships. Sensitive accounts are high-value targets — this query helps verify the sensitive account list is accurate and complete.",
+    "desc": "Lists all user accounts tagged as Sensitive in Microsoft Security Exposure Management, along with their nested AD group memberships. Sensitive accounts are high-value targets. This query helps verify the sensitive account list is accurate and complete.",
     "kql": "ExposureGraphNodes\n| where NodeLabel == 'user'\n| extend Tags = parse_json(tostring(parse_json(tostring(NodeProperties.rawData)).tags.[0]))\n| extend NestedADGroups = parse_json(tostring(parse_json(tostring(NodeProperties.rawData)).nestedAdGroupNames))\n| mv-expand NestedADGroups\n| where Tags == 'Sensitive'"
   },
   {
