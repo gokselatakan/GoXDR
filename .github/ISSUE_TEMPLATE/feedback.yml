@@ -1,0 +1,31 @@
+name: Feedback
+description: Report a broken query, suggest improvements or share ideas
+title: "[Feedback] "
+labels: ["feedback"]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Feedback Type
+      options:
+        - Bug / Broken query
+        - Query improvement
+        - Feature request
+        - New category suggestion
+        - General feedback
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Tell us what's on your mind
+    validations:
+      required: true
+  - type: input
+    id: related-query
+    attributes:
+      label: Related Query (if applicable)
+      description: Query name or ID number
+    validations:
+      required: false
