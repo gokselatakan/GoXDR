@@ -102,6 +102,13 @@
   .new-btn.active { background: #052e16; color: #86efac; border-color: #166534; }
   .new-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: #052e16; color: #4ade80; font-weight: 700; border: 1px solid #166534; margin-left: 4px; vertical-align: middle; }
   .date-badge { font-size: 11px; color: var(--text3); padding: 3px 8px; }
+  .hero-btn { font-size: 13px; text-decoration: none; padding: 8px 18px; border-radius: 10px; font-weight: 600; display: inline-block; }
+  .submit-btn { color: var(--blue); border: 1px solid var(--blue); }
+  .submit-btn:hover { background: var(--blue); color: #fff; }
+  .feedback-btn { color: #f97316; border: 1px solid #f97316; }
+  .feedback-btn:hover { background: #f97316; color: #fff; }
+  .footer-submit { font-size: 12px; color: var(--blue); text-decoration: none; padding: 6px 14px; border: 1px solid var(--blue); border-radius: 8px; display: inline-block; }
+  .footer-feedback { font-size: 12px; color: #f97316; text-decoration: none; padding: 6px 14px; border: 1px solid #f97316; border-radius: 8px; display: inline-block; }
 </style>
 </head>
 <body>
@@ -196,6 +203,12 @@ function App() {
         e("input", { type: "text", className: "search", placeholder: "Click here to search queries... identity, aitm, password spray, bec, oauth, ntlm, token theft, bloodhound, kerberoasting", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
         e("span", { className: "search-icon" }, "\ud83d\udd0d"),
         search && e("button", { className: "search-clear", onClick: () => { setSearch(""); setSelQ(null); } }, "\u2715")
+      ),
+      // Submit buttons under search
+      e("div", { style: { display: "flex", gap: 10, justifyContent: "center", marginTop: 14, flexWrap: "wrap" } },
+        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=quick-submit.yml", target: "_blank", rel: "noopener", className: "hero-btn submit-btn" }, "Submit Query"),
+        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=detailed-submit.yml", target: "_blank", rel: "noopener", className: "hero-btn submit-btn" }, "Detailed Submit"),
+        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=feedback.yml", target: "_blank", rel: "noopener", className: "hero-btn feedback-btn" }, "Feedback")
       )
     ),
 
@@ -278,9 +291,9 @@ function App() {
     e("div", { className: "footer" },
       e("div", { className: "logo", style: { fontSize: 18 } }, "Go", e("span", { className: "x" }, "X"), "DR"),
       e("div", { style: { display: "flex", gap: 10, justifyContent: "center", marginTop: 10, flexWrap: "wrap" } },
-        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=quick-submit.yml", target: "_blank", rel: "noopener", style: { fontSize: 12, color: "var(--blue)", textDecoration: "none", padding: "6px 14px", border: "1px solid var(--blue)", borderRadius: 8 } }, "Submit Query"),
-        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=detailed-submit.yml", target: "_blank", rel: "noopener", style: { fontSize: 12, color: "var(--blue)", textDecoration: "none", padding: "6px 14px", border: "1px solid var(--blue)", borderRadius: 8 } }, "Detailed Submit"),
-        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=feedback.yml", target: "_blank", rel: "noopener", style: { fontSize: 12, color: "var(--text3)", textDecoration: "none", padding: "6px 14px", border: "1px solid var(--border)", borderRadius: 8 } }, "Feedback")
+        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=quick-submit.yml", target: "_blank", rel: "noopener", className: "footer-submit" }, "Submit Query"),
+        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=detailed-submit.yml", target: "_blank", rel: "noopener", className: "footer-submit" }, "Detailed Submit"),
+        e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=feedback.yml", target: "_blank", rel: "noopener", className: "footer-feedback" }, "Feedback")
       ),
       e("div", { style: { fontSize: 12, color: "var(--text4)", marginTop: 8 } }, "Created by ", e("a", { href: "https://www.linkedin.com/in/gokselatakan/", target: "_blank", rel: "noopener", style: { color: "var(--blue)", textDecoration: "none" } }, "GoX"))
     )
