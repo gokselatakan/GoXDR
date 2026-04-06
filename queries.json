@@ -2252,5 +2252,1025 @@
     "added": "2026-03-30",
     "desc": "Investigates all URLs clicked by specific target users that were allowed through Safe Links. Shows URL domains, click counts and timestamps. Useful for post-incident investigation when you need to know exactly what a compromised user clicked on.",
     "kql": "// NOTE: Replace account@domain.com with the user(s) you want to investigate\nlet TargetUsers = dynamic([\"account@domain.com\"]);\nUrlClickEvents\n| where Timestamp > ago(7d)\n| where AccountUpn in~ (TargetUsers)\n| where ActionType == \"ClickAllowed\"\n| extend UrlDomain = extract(\"https?://([^/]+)\", 1, Url)\n| summarize \n    ClickedBy = make_set(AccountUpn),\n    ClickedByCount = dcount(AccountUpn),\n    ClickTimes = make_set(Timestamp),\n    TotalClicks = count()\n    by Url, UrlDomain, NetworkMessageId\n| order by ClickedByCount desc, TotalClicks desc"
+  },
+  {
+    "id": 118,
+    "name": "Azure Activity - Resource Group Deletion",
+    "cat": "Azure Activity",
+    "sub": "Destructive Actions",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "azure",
+      "resource group",
+      "deletion",
+      "destructive"
+    ],
+    "sev": "high",
+    "desc": "Detects deletion of Azure resource groups which could indicate destructive activity or unauthorized cleanup.",
+    "kql": "AzureActivity\n| where TimeGenerated > ago(7d)\n| where OperationNameValue == \"MICROSOFT.RESOURCES/SUBSCRIPTIONS/RESOURCEGROUPS/DELETE\"\n| where ActivityStatusValue == \"Success\"\n| project TimeGenerated, Caller, CallerIpAddress, ResourceGroup, SubscriptionId\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 119,
+    "name": "Azure Activity - Role Assignment Changes",
+    "cat": "Azure Activity",
+    "sub": "Privileged",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "rbac",
+      "role assignment",
+      "privilege escalation"
+    ],
+    "sev": "high",
+    "desc": "Tracks Azure RBAC role assignment creations and deletions to detect privilege escalation or unauthorized access grants.",
+    "kql": "AzureActivity\n| where TimeGenerated > ago(7d)\n| where OperationNameValue has_any (\"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE\", \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/DELETE\")\n| where ActivityStatusValue == \"Success\"\n| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ResourceGroup, SubscriptionId\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 120,
+    "name": "Azure Activity - Policy Assignment Changes",
+    "cat": "Azure Activity",
+    "sub": "Compliance",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "azure policy",
+      "compliance",
+      "posture"
+    ],
+    "sev": "medium",
+    "desc": "Monitors Azure Policy assignment changes which could weaken security posture if compliance policies are removed.",
+    "kql": "AzureActivity\n| where TimeGenerated > ago(7d)\n| where OperationNameValue has_any (\"MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/WRITE\", \"MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/DELETE\")\n| where ActivityStatusValue == \"Success\"\n| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ResourceGroup, SubscriptionId\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 121,
+    "name": "Azure Activity - Subscription Operations by External Caller",
+    "cat": "Azure Activity",
+    "sub": "Suspicious Source",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "external caller",
+      "subscription",
+      "unauthorized"
+    ],
+    "sev": "high",
+    "desc": "Identifies subscription-level write or delete operations initiated by callers outside the primary tenant domain.",
+    "kql": "// NOTE: Replace domain.com with your organization's primary domain\nAzureActivity\n| where TimeGenerated > ago(7d)\n| where CategoryValue == \"Administrative\"\n| where ActivityStatusValue == \"Success\"\n| where Caller !has \"domain.com\"\n| where isnotempty(Caller)\n| where OperationNameValue has_any (\"WRITE\", \"DELETE\")\n| summarize OperationCount = count(), Operations = make_set(OperationNameValue) by Caller, CallerIpAddress\n| order by OperationCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 122,
+    "name": "Azure Activity - NSG Rule Modifications",
+    "cat": "Azure Activity",
+    "sub": "Network Security",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "nsg",
+      "network",
+      "firewall",
+      "exposure"
+    ],
+    "sev": "high",
+    "desc": "Detects changes to Network Security Group rules which could expose resources to unauthorized network access.",
+    "kql": "AzureActivity\n| where TimeGenerated > ago(7d)\n| where OperationNameValue has \"MICROSOFT.NETWORK/NETWORKSECURITYGROUPS\"\n| where OperationNameValue has_any (\"WRITE\", \"DELETE\")\n| where ActivityStatusValue == \"Success\"\n| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ResourceGroup, Resource\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 123,
+    "name": "Azure Activity - Diagnostic Setting Removal",
+    "cat": "Azure Activity",
+    "sub": "Anti-Forensics",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "logging",
+      "evasion",
+      "anti-forensics",
+      "diagnostic"
+    ],
+    "sev": "high",
+    "desc": "Detects removal of diagnostic settings from Azure resources. Attackers disable logging to cover their tracks and avoid detection.",
+    "kql": "AzureActivity\n| where TimeGenerated > ago(7d)\n| where OperationNameValue has \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE\"\n| where ActivityStatusValue == \"Success\"\n| project TimeGenerated, Caller, CallerIpAddress, Resource, ResourceGroup\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 124,
+    "name": "Azure Activity - Virtual Machine Deletion",
+    "cat": "Azure Activity",
+    "sub": "Destructive Actions",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "vm",
+      "deletion",
+      "destructive"
+    ],
+    "sev": "high",
+    "desc": "Monitors Azure VM deletion events for detecting destructive activities or unauthorized resource removal.",
+    "kql": "AzureActivity\n| where TimeGenerated > ago(7d)\n| where OperationNameValue == \"MICROSOFT.COMPUTE/VIRTUALMACHINES/DELETE\"\n| where ActivityStatusValue == \"Success\"\n| project TimeGenerated, Caller, CallerIpAddress, Resource, ResourceGroup, SubscriptionId\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 125,
+    "name": "Azure Key Vault - Access Policy Changes",
+    "cat": "Azure Key Vault",
+    "sub": "Access Control",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "key vault",
+      "access policy",
+      "secrets"
+    ],
+    "sev": "high",
+    "desc": "Monitors changes to Key Vault access policies which could grant unauthorized access to secrets, keys and certificates.",
+    "kql": "AzureActivity\n| where TimeGenerated > ago(7d)\n| where ResourceProviderValue == \"MICROSOFT.KEYVAULT\"\n| where OperationNameValue has_any (\"VAULTS/WRITE\", \"VAULTS/DELETE\", \"VAULTS/ACCESSPOLICIES/WRITE\")\n| where ActivityStatusValue == \"Success\"\n| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, Resource, ResourceGroup\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 126,
+    "name": "Azure Key Vault - Secret Access Anomalies",
+    "cat": "Azure Key Vault",
+    "sub": "Credential Harvesting",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics"
+    ],
+    "tags": [
+      "key vault",
+      "secret",
+      "anomaly",
+      "credential harvesting"
+    ],
+    "sev": "high",
+    "desc": "Detects unusual volume of secret retrieval operations from Azure Key Vault which may indicate credential harvesting.",
+    "kql": "AzureDiagnostics\n| where TimeGenerated > ago(7d)\n| where ResourceProvider == \"MICROSOFT.KEYVAULT\"\n| where OperationName == \"SecretGet\"\n| summarize AccessCount = count() by CallerIPAddress, identity_claim_upn_s, Resource\n| where AccessCount > 20\n| order by AccessCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 127,
+    "name": "Azure Key Vault - Key and Secret Deletion",
+    "cat": "Azure Key Vault",
+    "sub": "Destructive Actions",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics"
+    ],
+    "tags": [
+      "key vault",
+      "deletion",
+      "destructive"
+    ],
+    "sev": "high",
+    "desc": "Detects deletion of keys or secrets from Azure Key Vault which could be part of a destructive attack or evidence tampering.",
+    "kql": "AzureDiagnostics\n| where TimeGenerated > ago(7d)\n| where ResourceProvider == \"MICROSOFT.KEYVAULT\"\n| where OperationName has_any (\"SecretDelete\", \"KeyDelete\", \"CertificateDelete\")\n| project TimeGenerated, CallerIPAddress, identity_claim_upn_s, OperationName, Resource, ResultType\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 128,
+    "name": "Azure Key Vault - Access from New IP Address",
+    "cat": "Azure Key Vault",
+    "sub": "Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics"
+    ],
+    "tags": [
+      "key vault",
+      "new ip",
+      "anomaly",
+      "baseline"
+    ],
+    "sev": "medium",
+    "desc": "Identifies Key Vault access from IP addresses not seen in the previous 14 days. Useful for detecting compromised credentials accessing secrets.",
+    "kql": "let KnownIPs =\n    AzureDiagnostics\n    | where TimeGenerated between (ago(14d) .. ago(1d))\n    | where ResourceProvider == \"MICROSOFT.KEYVAULT\"\n    | where isnotempty(CallerIPAddress)\n    | distinct CallerIPAddress;\nAzureDiagnostics\n| where TimeGenerated > ago(1d)\n| where ResourceProvider == \"MICROSOFT.KEYVAULT\"\n| where CallerIPAddress !in (KnownIPs)\n| where isnotempty(CallerIPAddress)\n| summarize Operations = make_set(OperationName), Count = count() by CallerIPAddress, identity_claim_upn_s, Resource\n| order by Count desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 129,
+    "name": "DNS - High Volume NXDOMAIN Responses",
+    "cat": "DNS",
+    "sub": "Threat Detection",
+    "plat": "sentinel",
+    "tables": [
+      "DnsEvents"
+    ],
+    "tags": [
+      "dns",
+      "nxdomain",
+      "dga",
+      "tunneling"
+    ],
+    "sev": "medium",
+    "desc": "Detects endpoints generating a high volume of NXDOMAIN responses which may indicate DGA-based malware or DNS tunneling reconnaissance.",
+    "kql": "DnsEvents\n| where TimeGenerated > ago(1d)\n| where ResultCode == 3\n| summarize NXDOMAINCount = count(), UniqueDomains = dcount(Name) by ClientIP\n| where NXDOMAINCount > 500\n| order by NXDOMAINCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 130,
+    "name": "DNS - Queries to Suspicious Top Level Domains",
+    "cat": "DNS",
+    "sub": "Threat Detection",
+    "plat": "sentinel",
+    "tables": [
+      "DnsEvents"
+    ],
+    "tags": [
+      "dns",
+      "tld",
+      "phishing",
+      "c2"
+    ],
+    "sev": "medium",
+    "desc": "Identifies DNS queries to uncommon TLDs often abused by threat actors for phishing and C2 infrastructure.",
+    "kql": "let SuspiciousTLDs = dynamic([\".xyz\", \".top\", \".buzz\", \".club\", \".icu\", \".cam\", \".surf\", \".rest\", \".monster\"]);\nDnsEvents\n| where TimeGenerated > ago(1d)\n| where Name has_any (SuspiciousTLDs)\n| summarize QueryCount = count(), UniqueClients = dcount(ClientIP) by Name\n| order by QueryCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 131,
+    "name": "DNS - Long Subdomain Queries (Potential Tunneling)",
+    "cat": "DNS",
+    "sub": "Data Exfiltration",
+    "plat": "sentinel",
+    "tables": [
+      "DnsEvents"
+    ],
+    "tags": [
+      "dns",
+      "tunneling",
+      "exfiltration",
+      "subdomain"
+    ],
+    "sev": "high",
+    "desc": "Detects DNS queries with unusually long subdomain labels which is a common indicator of DNS tunneling for data exfiltration.",
+    "kql": "DnsEvents\n| where TimeGenerated > ago(1d)\n| extend SubdomainLength = strlen(tostring(split(Name, \".\")[0]))\n| where SubdomainLength > 40\n| summarize QueryCount = count() by ClientIP, Name\n| order by QueryCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 132,
+    "name": "DNS - TXT Record Query Anomalies",
+    "cat": "DNS",
+    "sub": "Threat Detection",
+    "plat": "sentinel",
+    "tables": [
+      "DnsEvents"
+    ],
+    "tags": [
+      "dns",
+      "txt record",
+      "tunneling",
+      "c2"
+    ],
+    "sev": "medium",
+    "desc": "Monitors for unusual volumes of DNS TXT record queries which are commonly used in DNS tunneling and C2 communications.",
+    "kql": "DnsEvents\n| where TimeGenerated > ago(1d)\n| where QueryType == 16\n| summarize TXTCount = count(), UniqueDomains = dcount(Name) by ClientIP\n| where TXTCount > 50\n| order by TXTCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 133,
+    "name": "UEBA - Users with Multiple Risk Indicators",
+    "cat": "UEBA",
+    "sub": "Risk Detection",
+    "plat": "sentinel",
+    "tables": [
+      "BehaviorAnalytics"
+    ],
+    "tags": [
+      "ueba",
+      "risk",
+      "anomaly",
+      "investigation"
+    ],
+    "sev": "high",
+    "desc": "Identifies users flagged by UEBA with multiple concurrent risk indicators such as anomalous activity patterns and risk scores.",
+    "kql": "BehaviorAnalytics\n| where TimeGenerated > ago(7d)\n| where isnotempty(UserPrincipalName)\n| summarize\n    RiskCount = count(),\n    Activities = make_set(ActivityType),\n    MaxScore = max(InvestigationPriority)\n    by UserPrincipalName\n| where RiskCount > 3\n| order by MaxScore desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 134,
+    "name": "UEBA - First Time User Accessed Resource",
+    "cat": "UEBA",
+    "sub": "Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "BehaviorAnalytics"
+    ],
+    "tags": [
+      "ueba",
+      "first time",
+      "resource access",
+      "baseline"
+    ],
+    "sev": "medium",
+    "desc": "Detects users accessing resources they have never accessed before based on UEBA behavioral baselines.",
+    "kql": "BehaviorAnalytics\n| where TimeGenerated > ago(7d)\n| where ActivityInsights has \"FirstTimeUserAccessedResource\"\n| project TimeGenerated, UserPrincipalName, ActivityType, SourceIPAddress, ActivityInsights, InvestigationPriority\n| order by InvestigationPriority desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 135,
+    "name": "UEBA - Anomalous Login Then Privileged Operation",
+    "cat": "UEBA",
+    "sub": "Attack Chain",
+    "plat": "sentinel",
+    "tables": [
+      "BehaviorAnalytics",
+      "AuditLogs"
+    ],
+    "tags": [
+      "ueba",
+      "privilege escalation",
+      "attack chain",
+      "correlation"
+    ],
+    "sev": "high",
+    "desc": "Correlates UEBA anomalous sign-in events with subsequent privileged operations to identify potential compromised accounts performing lateral movement.",
+    "kql": "let AnomalousUsers =\n    BehaviorAnalytics\n    | where TimeGenerated > ago(1d)\n    | where ActivityType == \"LogOn\"\n    | where InvestigationPriority > 5\n    | distinct UserPrincipalName;\nAuditLogs\n| where TimeGenerated > ago(1d)\n| extend UPN = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| where UPN in (AnomalousUsers)\n| where OperationName has_any (\"Add member to role\", \"Add owner\", \"Add app role assignment\")\n| project TimeGenerated, UPN, OperationName, TargetResources\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 136,
+    "name": "UEBA - Unusual Country Sign-In Activity",
+    "cat": "UEBA",
+    "sub": "Geo Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "BehaviorAnalytics"
+    ],
+    "tags": [
+      "ueba",
+      "country",
+      "geo anomaly",
+      "first time"
+    ],
+    "sev": "high",
+    "desc": "Identifies sign-in activity from countries not previously seen in UEBA behavioral baselines for the user.",
+    "kql": "BehaviorAnalytics\n| where TimeGenerated > ago(7d)\n| where ActivityInsights has \"FirstTimeUserConnectedFromCountry\"\n| project TimeGenerated, UserPrincipalName, SourceIPAddress, ActivityInsights, InvestigationPriority\n| order by InvestigationPriority desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 137,
+    "name": "Defender for Cloud Apps - Mass File Download",
+    "cat": "Defender for Cloud Apps",
+    "sub": "Data Exfiltration",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "cloud apps",
+      "file download",
+      "exfiltration",
+      "insider threat"
+    ],
+    "sev": "high",
+    "desc": "Detects users downloading an unusually high number of files from cloud applications which may indicate data exfiltration or insider threat activity.",
+    "kql": "CloudAppEvents\n| where Timestamp > ago(1d)\n| where ActionType == \"FileDownloaded\"\n| summarize DownloadCount = count(), UniqueFiles = dcount(ObjectName) by AccountDisplayName, AccountObjectId\n| where DownloadCount > 50\n| order by DownloadCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 138,
+    "name": "Defender for Cloud Apps - OAuth App Consent via CloudAppEvents",
+    "cat": "Defender for Cloud Apps",
+    "sub": "Consent",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "oauth",
+      "consent",
+      "illicit grant",
+      "cloud apps"
+    ],
+    "sev": "high",
+    "desc": "Identifies OAuth application consent grants via CloudAppEvents table. Complements the AuditLogs-based illicit consent detection with XDR-native visibility.",
+    "kql": "CloudAppEvents\n| where Timestamp > ago(7d)\n| where ActionType == \"Consent to application.\"\n| extend AppName = tostring(RawEventData.Target[3].ID)\n| project Timestamp, AccountDisplayName, AppName, IPAddress, ActionType\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 139,
+    "name": "Defender for Cloud Apps - Sharing to External Domains",
+    "cat": "Defender for Cloud Apps",
+    "sub": "Data Protection",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "sharing",
+      "external",
+      "data leakage",
+      "cloud apps"
+    ],
+    "sev": "medium",
+    "desc": "Monitors file sharing events to external email domains in cloud applications to detect potential data leakage or unauthorized sharing.",
+    "kql": "// NOTE: Replace domain.com with your organization's primary domain\nCloudAppEvents\n| where Timestamp > ago(7d)\n| where ActionType has_any (\"SharingSet\", \"AddedToSharingLink\", \"FileShared\")\n| extend SharedWith = tostring(RawEventData)\n| where SharedWith !has \"domain.com\"\n| project Timestamp, AccountDisplayName, ActionType, ObjectName, Application\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 140,
+    "name": "Defender for Cloud Apps - Login from Anonymous Proxy",
+    "cat": "Defender for Cloud Apps",
+    "sub": "Suspicious Source",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "anonymous",
+      "tor",
+      "proxy",
+      "evasion"
+    ],
+    "sev": "high",
+    "desc": "Detects cloud application sign-ins originating from anonymous proxies or Tor exit nodes indicating potential evasion techniques.",
+    "kql": "CloudAppEvents\n| where Timestamp > ago(7d)\n| where ActionType == \"UserLoggedIn\"\n| where RawEventData has_any (\"anonymous\", \"anonymousProxy\")\n| project Timestamp, AccountDisplayName, IPAddress, Application, ActionType\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 141,
+    "name": "Conditional Access - Policy Disabled or Deleted",
+    "cat": "Conditional Access",
+    "sub": "Policy Changes",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "conditional access",
+      "policy",
+      "disabled",
+      "deleted"
+    ],
+    "sev": "high",
+    "desc": "Detects when a Conditional Access policy is disabled or deleted which could weaken the organization's access control posture.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Update conditional access policy\", \"Delete conditional access policy\")\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend PolicyName = tostring(TargetResources[0].displayName)\n| extend ModifiedProperties = TargetResources[0].modifiedProperties\n| project TimeGenerated, Actor, OperationName, PolicyName, ModifiedProperties\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 142,
+    "name": "Conditional Access - Policy Changed to Report-Only",
+    "cat": "Conditional Access",
+    "sub": "Policy Changes",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "conditional access",
+      "report-only",
+      "enforcement",
+      "evasion"
+    ],
+    "sev": "high",
+    "desc": "Identifies Conditional Access policies switched from enforced to report-only mode which effectively disables enforcement while appearing active.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Update conditional access policy\"\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend PolicyName = tostring(TargetResources[0].displayName)\n| mv-expand ModifiedProperty = TargetResources[0].modifiedProperties\n| where tostring(ModifiedProperty.displayName) == \"State\"\n| where tostring(ModifiedProperty.newValue) has \"enabledForReportingButNotEnforced\"\n| project TimeGenerated, Actor, PolicyName, OldValue = tostring(ModifiedProperty.oldValue), NewValue = tostring(ModifiedProperty.newValue)\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 143,
+    "name": "Conditional Access - Exclusion Modifications",
+    "cat": "Conditional Access",
+    "sub": "Policy Changes",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "conditional access",
+      "exclusion",
+      "bypass",
+      "mfa"
+    ],
+    "sev": "high",
+    "desc": "Detects modifications to Conditional Access policy exclusions. Attackers may modify exclusions to bypass MFA requirements.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add conditional access policy\", \"Update conditional access policy\")\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend PolicyName = tostring(TargetResources[0].displayName)\n| mv-expand ModifiedProperty = TargetResources[0].modifiedProperties\n| where tostring(ModifiedProperty.displayName) has_any (\"ExcludeUsers\", \"ExcludeGroups\")\n| project TimeGenerated, Actor, OperationName, PolicyName, ModifiedProperty\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 144,
+    "name": "Conditional Access - Named Location Changes",
+    "cat": "Conditional Access",
+    "sub": "Policy Changes",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "conditional access",
+      "named location",
+      "trusted",
+      "bypass"
+    ],
+    "sev": "medium",
+    "desc": "Monitors changes to Named Locations in Conditional Access. Modifying trusted locations could allow attackers to bypass location-based access restrictions.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add named location\", \"Update named location\", \"Delete named location\")\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend LocationName = tostring(TargetResources[0].displayName)\n| project TimeGenerated, Actor, OperationName, LocationName, TargetResources\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 145,
+    "name": "Conditional Access - Sign-In Failures Due to Policy Block",
+    "cat": "Conditional Access",
+    "sub": "Compliance",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "conditional access",
+      "blocked",
+      "53003",
+      "compliance"
+    ],
+    "sev": "medium",
+    "desc": "Summarizes sign-in failures caused by Conditional Access policy blocks (ResultType 53003). Helps identify misconfigured policies or persistent attack attempts being stopped.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == 53003\n| summarize BlockCount = count() by UserPrincipalName, AppDisplayName, IPAddress\n| order by BlockCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 146,
+    "name": "PIM - Role Activation Outside Business Hours",
+    "cat": "PIM",
+    "sub": "Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "pim",
+      "off-hours",
+      "privilege escalation",
+      "anomaly"
+    ],
+    "sev": "high",
+    "desc": "Detects PIM role activations occurring outside standard business hours which may indicate compromised accounts or unauthorized privilege escalation.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Add member to role completed (PIM activation)\"\n| extend HourOfDay = datetime_part(\"hour\", TimeGenerated)\n| where HourOfDay < 7 or HourOfDay > 20\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend RoleName = tostring(TargetResources[0].displayName)\n| project TimeGenerated, Actor, RoleName, HourOfDay\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 147,
+    "name": "PIM - Frequent Role Activations by Single User",
+    "cat": "PIM",
+    "sub": "Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "pim",
+      "frequency",
+      "abuse",
+      "privilege"
+    ],
+    "sev": "medium",
+    "desc": "Identifies users activating PIM roles at an unusually high frequency which could indicate abuse of just-in-time access or automation of privilege escalation.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Add member to role completed (PIM activation)\"\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend RoleName = tostring(TargetResources[0].displayName)\n| summarize ActivationCount = count(), Roles = make_set(RoleName) by Actor\n| where ActivationCount > 10\n| order by ActivationCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 148,
+    "name": "PIM - Global Administrator Activation Tracker",
+    "cat": "PIM",
+    "sub": "Privileged",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "pim",
+      "global admin",
+      "critical role",
+      "monitoring"
+    ],
+    "sev": "high",
+    "desc": "Tracks all Global Administrator PIM activations. This is the highest privilege role in Entra ID and every activation should be verified.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(30d)\n| where OperationName == \"Add member to role completed (PIM activation)\"\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend RoleName = tostring(TargetResources[0].displayName)\n| where RoleName == \"Global Administrator\"\n| project TimeGenerated, Actor, RoleName, CorrelationId\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 149,
+    "name": "PIM - Permanent Role Assignment (Bypassing PIM)",
+    "cat": "PIM",
+    "sub": "Compliance",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "pim",
+      "permanent",
+      "bypass",
+      "compliance"
+    ],
+    "sev": "high",
+    "desc": "Detects permanent (active) role assignments bypassing PIM eligibility requirements. Permanent assignments undermine just-in-time access controls.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has \"Add member to role\"\n| where OperationName !has \"PIM\"\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend RoleName = tostring(TargetResources[0].displayName)\n| extend Target = tostring(TargetResources[2].userPrincipalName)\n| project TimeGenerated, Actor, Target, RoleName, OperationName\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 150,
+    "name": "PIM - Activation with Suspicious Justification",
+    "cat": "PIM",
+    "sub": "Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "pim",
+      "justification",
+      "suspicious",
+      "review"
+    ],
+    "sev": "medium",
+    "desc": "Reviews PIM activation justification text to detect generic or suspicious reasons. Short or repetitive justifications may indicate unauthorized use.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Add member to role completed (PIM activation)\"\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend RoleName = tostring(TargetResources[0].displayName)\n| mv-expand AdditionalDetail = AdditionalDetails\n| where tostring(AdditionalDetail.key) == \"Justification\"\n| extend Justification = tostring(AdditionalDetail.value)\n| where strlen(Justification) < 5 or Justification has_any (\"test\", \"asdf\", \"123\")\n| project TimeGenerated, Actor, RoleName, Justification\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 151,
+    "name": "PIM - Guest Account Added to PIM Role",
+    "cat": "PIM",
+    "sub": "Privileged",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "pim",
+      "guest",
+      "b2b",
+      "privilege escalation"
+    ],
+    "sev": "high",
+    "desc": "Detects when a B2B guest account is assigned to a PIM-eligible or PIM-active role. Guest accounts with privileged roles represent a significant security risk.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add eligible member to role in PIM\", \"Add member to role in PIM\")\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend Target = tostring(TargetResources[2].userPrincipalName)\n| extend RoleName = tostring(TargetResources[0].displayName)\n| where Target has \"#EXT#\"\n| project TimeGenerated, Actor, Target, RoleName\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 152,
+    "name": "B2B Guest - Invitation Spike Detection",
+    "cat": "B2B Guest",
+    "sub": "Account Lifecycle",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "b2b",
+      "guest",
+      "invitation",
+      "spike"
+    ],
+    "sev": "medium",
+    "desc": "Detects a spike in B2B guest user invitations which may indicate a compromised account mass-inviting external collaborators.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(1d)\n| where OperationName == \"Invite external user\"\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| summarize InviteCount = count() by Actor\n| where InviteCount > 10\n| order by InviteCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 153,
+    "name": "B2B Guest - Sign-Ins to Sensitive Applications",
+    "cat": "B2B Guest",
+    "sub": "Suspicious Source",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "b2b",
+      "guest",
+      "sensitive apps",
+      "azure portal"
+    ],
+    "sev": "high",
+    "desc": "Monitors guest user sign-ins to sensitive applications such as Azure Portal, Exchange Online Admin and Graph Explorer.",
+    "kql": "let SensitiveApps = dynamic([\"Azure Portal\", \"Microsoft Azure PowerShell\", \"Graph Explorer\", \"Exchange Online PowerShell\", \"Azure Active Directory PowerShell\"]);\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where UserType == \"Guest\"\n| where ResultType == 0\n| where AppDisplayName in (SensitiveApps)\n| project TimeGenerated, UserPrincipalName, AppDisplayName, IPAddress, Location\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 154,
+    "name": "B2B Guest - Added to Privileged Group",
+    "cat": "B2B Guest",
+    "sub": "Privileged",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "b2b",
+      "guest",
+      "privileged group",
+      "escalation"
+    ],
+    "sev": "high",
+    "desc": "Detects B2B guest accounts being added to privileged or security-sensitive groups in Entra ID.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Add member to group\"\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend TargetUPN = tostring(TargetResources[0].userPrincipalName)\n| extend GroupName = tostring(TargetResources[2].displayName)\n| where TargetUPN has \"#EXT#\"\n| project TimeGenerated, Actor, TargetUPN, GroupName\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 155,
+    "name": "B2B Guest - Account Converted to Member",
+    "cat": "B2B Guest",
+    "sub": "Privilege Escalation",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "b2b",
+      "guest",
+      "member",
+      "conversion",
+      "escalation"
+    ],
+    "sev": "high",
+    "desc": "Detects when a B2B guest account is converted to a member account. This privilege escalation bypasses guest access restrictions.",
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Update user\"\n| mv-expand ModifiedProperty = TargetResources[0].modifiedProperties\n| where tostring(ModifiedProperty.displayName) == \"UserType\"\n| where tostring(ModifiedProperty.oldValue) has \"Guest\"\n| where tostring(ModifiedProperty.newValue) has \"Member\"\n| extend Actor = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)\n| extend TargetUPN = tostring(TargetResources[0].userPrincipalName)\n| project TimeGenerated, Actor, TargetUPN\n| order by TimeGenerated desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 156,
+    "name": "B2B Guest - Stale Guest Accounts with Recent Activity",
+    "cat": "B2B Guest",
+    "sub": "Hygiene",
+    "plat": "sentinel",
+    "tables": [
+      "IdentityInfo",
+      "SigninLogs"
+    ],
+    "tags": [
+      "b2b",
+      "guest",
+      "stale",
+      "hygiene",
+      "review"
+    ],
+    "sev": "medium",
+    "desc": "Identifies guest accounts created more than 90 days ago that have recently signed in. Long-dormant guest accounts with renewed activity warrant review.",
+    "kql": "let StaleGuests =\n    IdentityInfo\n    | where TimeGenerated > ago(7d)\n    | where UserType == \"Guest\"\n    | where CreatedDateTime < ago(90d)\n    | distinct AccountUPN;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where UserPrincipalName in (StaleGuests)\n| where ResultType == 0\n| summarize SignInCount = count(), Apps = make_set(AppDisplayName) by UserPrincipalName, IPAddress\n| order by SignInCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 157,
+    "name": "Defender for Endpoint - Suspicious PowerShell Execution",
+    "cat": "Defender for Endpoint",
+    "sub": "Execution",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "powershell",
+      "encoded",
+      "download cradle",
+      "execution"
+    ],
+    "sev": "high",
+    "desc": "Detects PowerShell processes with encoded commands, download cradles or suspicious execution patterns commonly used in initial access and post-exploitation.",
+    "kql": "DeviceProcessEvents\n| where Timestamp > ago(7d)\n| where FileName in~ (\"powershell.exe\", \"pwsh.exe\")\n| where ProcessCommandLine has_any (\"-enc\", \"-EncodedCommand\", \"IEX\", \"Invoke-Expression\", \"DownloadString\", \"DownloadFile\", \"Net.WebClient\", \"Start-BitsTransfer\", \"FromBase64String\")\n| project Timestamp, DeviceName, AccountName, ProcessCommandLine, InitiatingProcessFileName\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 158,
+    "name": "Defender for Endpoint - LSASS Access Attempts",
+    "cat": "Defender for Endpoint",
+    "sub": "Credential Access",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "lsass",
+      "credential dumping",
+      "mimikatz",
+      "T1003"
+    ],
+    "sev": "high",
+    "desc": "Detects processes attempting to access LSASS memory which is a common technique for credential dumping (MITRE T1003.001).",
+    "kql": "DeviceProcessEvents\n| where Timestamp > ago(7d)\n| where FileName != \"lsass.exe\"\n| where ProcessCommandLine has_any (\"lsass\", \"sekurlsa\", \"mimikatz\", \"procdump\")\n    or (FileName in~ (\"procdump.exe\", \"procdump64.exe\") and ProcessCommandLine has \"lsass\")\n| project Timestamp, DeviceName, AccountName, FileName, ProcessCommandLine, InitiatingProcessFileName\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 159,
+    "name": "Defender for Endpoint - Suspicious Scheduled Task Creation",
+    "cat": "Defender for Endpoint",
+    "sub": "Persistence",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "scheduled task",
+      "persistence",
+      "schtasks",
+      "T1053"
+    ],
+    "sev": "medium",
+    "desc": "Detects creation of scheduled tasks via schtasks.exe with suspicious patterns such as encoded commands or downloads from external URLs.",
+    "kql": "DeviceProcessEvents\n| where Timestamp > ago(7d)\n| where FileName =~ \"schtasks.exe\"\n| where ProcessCommandLine has \"/create\"\n| where ProcessCommandLine has_any (\"powershell\", \"cmd.exe\", \"http\", \"mshta\", \"wscript\", \"cscript\", \"certutil\")\n| project Timestamp, DeviceName, AccountName, ProcessCommandLine, InitiatingProcessFileName\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 160,
+    "name": "Defender for Endpoint - RDP Files in Outlook Temp Folders",
+    "cat": "Defender for Endpoint",
+    "sub": "Initial Access",
+    "plat": "xdr",
+    "tables": [
+      "DeviceFileEvents"
+    ],
+    "tags": [
+      "rdp",
+      "outlook",
+      "spear-phishing",
+      "midnight blizzard"
+    ],
+    "sev": "high",
+    "desc": "Detects .rdp file creation in Outlook temporary folders indicating potential spear-phishing with malicious RDP attachments. Covers both Windows 10 and 11 paths.",
+    "kql": "DeviceFileEvents\n| where Timestamp > ago(7d)\n| where FileName endswith \".rdp\"\n| where FolderPath has_any (\"Content.Outlook\", \"Outlook\\\\Temp\")\n| project Timestamp, DeviceName, AccountName, FileName, FolderPath, InitiatingProcessFileName\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 161,
+    "name": "Defender for Endpoint - RMM Tool Execution Detection",
+    "cat": "Defender for Endpoint",
+    "sub": "Command and Control",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "rmm",
+      "anydesk",
+      "teamviewer",
+      "c2",
+      "lateral movement"
+    ],
+    "sev": "medium",
+    "desc": "Detects execution of Remote Monitoring and Management tools commonly abused for lateral movement and C2 by threat actors.",
+    "kql": "// NOTE: Update RMMTools list based on your environment's approved software\nlet RMMTools = dynamic([\"anydesk.exe\", \"teamviewer.exe\", \"screenconnect.exe\", \"connectwise.exe\", \"netsupportmanager.exe\", \"rustdesk.exe\", \"splashtop.exe\", \"atera_agent.exe\", \"meshagent.exe\"]);\nDeviceProcessEvents\n| where Timestamp > ago(7d)\n| where FileName in~ (RMMTools)\n| summarize ExecutionCount = count(), Devices = make_set(DeviceName) by FileName, AccountName\n| order by ExecutionCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 162,
+    "name": "Defender for Endpoint - LOLBin Execution Chain",
+    "cat": "Defender for Endpoint",
+    "sub": "Defense Evasion",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "lolbin",
+      "living off the land",
+      "evasion",
+      "execution chain"
+    ],
+    "sev": "high",
+    "desc": "Detects Living-off-the-Land binary execution chains where one LOLBin spawns another. This is a common evasion technique to avoid detection.",
+    "kql": "let LOLBins = dynamic([\"mshta.exe\", \"certutil.exe\", \"regsvr32.exe\", \"rundll32.exe\", \"msiexec.exe\", \"wmic.exe\", \"cscript.exe\", \"wscript.exe\", \"bitsadmin.exe\", \"msbuild.exe\"]);\nDeviceProcessEvents\n| where Timestamp > ago(7d)\n| where FileName in~ (LOLBins)\n| where InitiatingProcessFileName in~ (LOLBins)\n| project Timestamp, DeviceName, AccountName, InitiatingProcessFileName, FileName, ProcessCommandLine\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 163,
+    "name": "Defender for Endpoint - USB Storage Device Connection",
+    "cat": "Defender for Endpoint",
+    "sub": "Data Exfiltration",
+    "plat": "xdr",
+    "tables": [
+      "DeviceEvents"
+    ],
+    "tags": [
+      "usb",
+      "removable storage",
+      "exfiltration",
+      "compliance"
+    ],
+    "sev": "medium",
+    "desc": "Detects USB removable storage device connections to endpoints. Useful for monitoring data exfiltration vectors and policy compliance.",
+    "kql": "DeviceEvents\n| where Timestamp > ago(7d)\n| where ActionType == \"PnpDeviceConnected\"\n| extend PnPData = parse_json(AdditionalFields)\n| where tostring(PnPData.ClassName) == \"USB\"\n| project Timestamp, DeviceName, AccountName, PnPData\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 164,
+    "name": "Defender for Endpoint - Outbound Connection to Rare Port",
+    "cat": "Defender for Endpoint",
+    "sub": "Command and Control",
+    "plat": "xdr",
+    "tables": [
+      "DeviceNetworkEvents"
+    ],
+    "tags": [
+      "rare port",
+      "c2",
+      "exfiltration",
+      "network"
+    ],
+    "sev": "medium",
+    "desc": "Identifies outbound network connections to uncommon ports which could indicate C2 communication or data exfiltration over non-standard channels.",
+    "kql": "let CommonPorts = dynamic([80, 443, 53, 25, 587, 993, 995, 22, 3389, 445, 8080, 8443]);\nDeviceNetworkEvents\n| where Timestamp > ago(1d)\n| where ActionType == \"ConnectionSuccess\"\n| where RemotePort !in (CommonPorts)\n| where RemoteIPType == \"Public\"\n| summarize ConnectionCount = count(), Ports = make_set(RemotePort) by DeviceName, RemoteIP\n| where ConnectionCount > 10\n| order by ConnectionCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 165,
+    "name": "Defender for Endpoint - ASR Rule Trigger Summary",
+    "cat": "Defender for Endpoint",
+    "sub": "Endpoint",
+    "plat": "xdr",
+    "tables": [
+      "DeviceEvents"
+    ],
+    "tags": [
+      "asr",
+      "attack surface reduction",
+      "policy",
+      "endpoint"
+    ],
+    "sev": "medium",
+    "desc": "Summarizes Attack Surface Reduction rule triggers to identify endpoints and users generating the most ASR alerts for policy tuning or threat investigation.",
+    "kql": "DeviceEvents\n| where Timestamp > ago(7d)\n| where ActionType startswith \"Asr\"\n| summarize TriggerCount = count(), Rules = make_set(ActionType) by DeviceName, AccountName\n| order by TriggerCount desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 166,
+    "name": "Defender for Endpoint - Browser Extension Side-Loading",
+    "cat": "Defender for Endpoint",
+    "sub": "Persistence",
+    "plat": "xdr",
+    "tables": [
+      "DeviceFileEvents"
+    ],
+    "tags": [
+      "browser extension",
+      "side-loading",
+      "persistence",
+      "credential theft"
+    ],
+    "sev": "medium",
+    "desc": "Detects browser extension installations from non-standard sources. Malicious extensions can intercept credentials and session tokens.",
+    "kql": "DeviceFileEvents\n| where Timestamp > ago(7d)\n| where FolderPath has_any (\"Extensions\", \"chrome-extension\", \"edge-extension\")\n| where FileName endswith \".crx\" or FileName endswith \".xpi\"\n| project Timestamp, DeviceName, AccountName, FileName, FolderPath, InitiatingProcessFileName\n| order by Timestamp desc",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 167,
+    "name": "Defender for Endpoint - Endpoints with Multiple Device IDs",
+    "cat": "Defender for Endpoint",
+    "sub": "Hygiene",
+    "plat": "xdr",
+    "tables": [
+      "DeviceInfo"
+    ],
+    "tags": [
+      "device id",
+      "duplicate",
+      "offboarding",
+      "hygiene"
+    ],
+    "sev": "medium",
+    "desc": "Identifies endpoints associated with multiple Device IDs which may indicate improper offboarding, re-imaging issues or device duplication in the tenant.",
+    "kql": "DeviceInfo\n| where Timestamp > ago(90d)\n| where isnotempty(DeviceId)\n| summarize DeviceCount = dcount(DeviceId) by DeviceName\n| where DeviceCount > 1\n| project DeviceName, DeviceCount",
+    "added": "2026-04-07"
+  },
+  {
+    "id": 168,
+    "name": "Entra ID - User Restored Then Deleted Again",
+    "cat": "Identity",
+    "sub": "Account Lifecycle",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "restore",
+      "delete",
+      "persistence",
+      "anti-forensics",
+      "account lifecycle"
+    ],
+    "sev": "high",
+    "desc": "Detects when a deleted user is restored and then deleted again within 365 days. This pattern may indicate an attacker restoring an account for persistence and then covering tracks by re-deleting it.",
+    "kql": "// NOTE: Update whitelisted_username and whitelisted_servicePrincipalId with known automation accounts\nlet placeholder_defaults = dynamic({'whitelisted_username':['-'], 'whitelisted_servicePrincipalId':['-']});\nlet restore = AuditLogs\n| where TimeGenerated > ago(365d)\n| where OperationName =~ \"Restore user\"\n| extend restoreTS = TimeGenerated\n| extend targetUserId = tostring(TargetResources[0].id);\nAuditLogs\n| where TimeGenerated > ago(365d)\n| where OperationName =~ \"Delete user\"\n| extend targetUserId = tostring(TargetResources[0].id)\n| join kind=inner restore on $left.targetUserId == $right.targetUserId\n| where restoreTS < TimeGenerated\n| extend sourceUserPrincipalName = tostring(InitiatedBy.user.userPrincipalName)\n| extend sourceServicePrincipal = tostring(InitiatedBy.app.displayName)\n| extend sourceServicePrincipalId = tostring(InitiatedBy.app.servicePrincipalId)\n| extend sourceIpAddress = tostring(InitiatedBy.user.ipAddress)\n| extend targetUserPrincipalName = tostring(TargetResources[0].userPrincipalName)\n| extend whitelisted = sourceUserPrincipalName in (placeholder_defaults.whitelisted_username)\n| extend whitelisted = whitelisted or sourceServicePrincipalId in (placeholder_defaults.whitelisted_servicePrincipalId)\n| where not(whitelisted)\n| where sourceUserPrincipalName !startswith_cs \"Sync_\"\n| project TimeGenerated, sourceUserPrincipalName, sourceServicePrincipal, sourceIpAddress, targetUserPrincipalName, targetUserId",
+    "added": "2026-04-07"
   }
 ]
