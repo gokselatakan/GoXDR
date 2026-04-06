@@ -3272,5 +3272,27 @@
     "desc": "Detects when a deleted user is restored and then deleted again within 365 days. This pattern may indicate an attacker restoring an account for persistence and then covering tracks by re-deleting it.",
     "kql": "// NOTE: Update whitelisted_username and whitelisted_servicePrincipalId with known automation accounts\nlet placeholder_defaults = dynamic({'whitelisted_username':['-'], 'whitelisted_servicePrincipalId':['-']});\nlet restore = AuditLogs\n| where TimeGenerated > ago(365d)\n| where OperationName =~ \"Restore user\"\n| extend restoreTS = TimeGenerated\n| extend targetUserId = tostring(TargetResources[0].id);\nAuditLogs\n| where TimeGenerated > ago(365d)\n| where OperationName =~ \"Delete user\"\n| extend targetUserId = tostring(TargetResources[0].id)\n| join kind=inner restore on $left.targetUserId == $right.targetUserId\n| where restoreTS < TimeGenerated\n| extend sourceUserPrincipalName = tostring(InitiatedBy.user.userPrincipalName)\n| extend sourceServicePrincipal = tostring(InitiatedBy.app.displayName)\n| extend sourceServicePrincipalId = tostring(InitiatedBy.app.servicePrincipalId)\n| extend sourceIpAddress = tostring(InitiatedBy.user.ipAddress)\n| extend targetUserPrincipalName = tostring(TargetResources[0].userPrincipalName)\n| extend whitelisted = sourceUserPrincipalName in (placeholder_defaults.whitelisted_username)\n| extend whitelisted = whitelisted or sourceServicePrincipalId in (placeholder_defaults.whitelisted_servicePrincipalId)\n| where not(whitelisted)\n| where sourceUserPrincipalName !startswith_cs \"Sync_\"\n| project TimeGenerated, sourceUserPrincipalName, sourceServicePrincipal, sourceIpAddress, targetUserPrincipalName, targetUserId",
     "added": "2026-04-07"
+  },
+  {
+    "id": 169,
+    "name": "Privileged Group Membership Change (Watchlist-Based)",
+    "cat": "Identity",
+    "sub": "Privileged",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs",
+      "_GetWatchlist"
+    ],
+    "tags": [
+      "privileged group",
+      "watchlist",
+      "membership",
+      "escalation",
+      "monitoring"
+    ],
+    "sev": "high",
+    "desc": "Detects user additions to privileged Entra ID groups defined in a Sentinel Watchlist. Summarizes added users per group for rapid review of unauthorized privilege grants.",
+    "kql": "// NOTE: Replace 'PrivilegedGroups' with your Sentinel Watchlist name\n// NOTE: Ensure the Watchlist has a column matching SearchKey that contains group display names\nlet PrivGroups =\n    _GetWatchlist('PrivilegedGroups')\n    | project GroupName = tostring(SearchKey);\nAuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Add member to group\"\n| where TargetResources[0].type == \"User\"\n| extend GroupName = tostring(\n        parse_json(\n            tostring(\n                parse_json(tostring(TargetResources[0].modifiedProperties))[1].newValue\n            )\n        )\n    )\n| where GroupName in (PrivGroups)\n| extend User = tostring(TargetResources[0].userPrincipalName)\n| summarize\n    ['Count of Users Added'] = dcount(User),\n    ['List of Users Added'] = make_set(User)\n    by GroupName\n| sort by GroupName asc",
+    "added": "2026-04-07"
   }
 ]
