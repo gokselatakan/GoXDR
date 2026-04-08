@@ -3294,5 +3294,27 @@
     "desc": "Detects user additions to privileged Entra ID groups defined in a Sentinel Watchlist. Summarizes added users per group for rapid review of unauthorized privilege grants.",
     "kql": "// NOTE: Replace 'PrivilegedGroups' with your Sentinel Watchlist name\n// NOTE: Ensure the Watchlist has a column matching SearchKey that contains group display names\nlet PrivGroups =\n    _GetWatchlist('PrivilegedGroups')\n    | project GroupName = tostring(SearchKey);\nAuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName == \"Add member to group\"\n| where TargetResources[0].type == \"User\"\n| extend GroupName = tostring(\n        parse_json(\n            tostring(\n                parse_json(tostring(TargetResources[0].modifiedProperties))[1].newValue\n            )\n        )\n    )\n| where GroupName in (PrivGroups)\n| extend User = tostring(TargetResources[0].userPrincipalName)\n| summarize\n    ['Count of Users Added'] = dcount(User),\n    ['List of Users Added'] = make_set(User)\n    by GroupName\n| sort by GroupName asc",
     "added": "2026-04-07"
+  },
+  {
+    "id": 170,
+    "name": "URL Click to Risky Sign-In Time Correlation",
+    "cat": "Email",
+    "sub": "AiTM",
+    "plat": "xdr",
+    "tables": [
+      "UrlClickEvents",
+      "EntraIdSignInEvents"
+    ],
+    "tags": [
+      "url click",
+      "risky sign-in",
+      "time correlation",
+      "phishing",
+      "aitm"
+    ],
+    "sev": "critical",
+    "desc": "Correlates URL click events with risky Entra ID sign-ins within a tight time window (-2min to +7min). Catches phishing clicks that lead to immediate credential compromise.",
+    "kql": "let lookbackPeriod = ago(30d);\nlet suspiciousUserClicks = materialize(UrlClickEvents\n    | where Timestamp > lookbackPeriod\n    | extend AccountUpn = tolower(AccountUpn)\n    | project ClickTime = Timestamp, ActionType, UrlChain, NetworkMessageId, Url, AccountUpn);\nlet interestedUsersUpn = suspiciousUserClicks\n    | where isnotempty(AccountUpn)\n    | distinct AccountUpn;\nEntraIdSignInEvents\n| where Timestamp > lookbackPeriod\n| where ErrorCode == 0\n| where AccountUpn in~ (interestedUsersUpn)\n| where RiskLevelDuringSignIn in (10, 50, 100)\n| extend AccountUpn = tolower(AccountUpn)\n| join kind=inner suspiciousUserClicks on AccountUpn\n| where (Timestamp - ClickTime) between (-2min .. 7min)\n| project Timestamp, ReportId, ClickTime, AccountUpn, RiskLevelDuringSignIn, SessionId, IPAddress, Url",
+    "added": "2026-04-08"
   }
 ]
