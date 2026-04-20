@@ -3316,5 +3316,26 @@
     "desc": "Correlates URL click events with risky Entra ID sign-ins within a tight time window (-2min to +7min). Catches phishing clicks that lead to immediate credential compromise.",
     "kql": "let lookbackPeriod = ago(30d);\nlet suspiciousUserClicks = materialize(UrlClickEvents\n    | where Timestamp > lookbackPeriod\n    | extend AccountUpn = tolower(AccountUpn)\n    | project ClickTime = Timestamp, ActionType, UrlChain, NetworkMessageId, Url, AccountUpn);\nlet interestedUsersUpn = suspiciousUserClicks\n    | where isnotempty(AccountUpn)\n    | distinct AccountUpn;\nEntraIdSignInEvents\n| where Timestamp > lookbackPeriod\n| where ErrorCode == 0\n| where AccountUpn in~ (interestedUsersUpn)\n| where RiskLevelDuringSignIn in (10, 50, 100)\n| extend AccountUpn = tolower(AccountUpn)\n| join kind=inner suspiciousUserClicks on AccountUpn\n| where (Timestamp - ClickTime) between (-2min .. 7min)\n| project Timestamp, ReportId, ClickTime, AccountUpn, RiskLevelDuringSignIn, SessionId, IPAddress, Url",
     "added": "2026-04-08"
+  },
+  {
+    "id": 171,
+    "name": "Defender for Endpoint - PowerShell History Deletion",
+    "cat": "Defender for Endpoint",
+    "sub": "Defense Evasion",
+    "plat": "xdr",
+    "tables": [
+      "DeviceFileEvents"
+    ],
+    "tags": [
+      "powershell",
+      "history",
+      "anti-forensics",
+      "defense evasion",
+      "T1070"
+    ],
+    "sev": "high",
+    "desc": "Detects deletion of the PowerShell ConsoleHost_history.txt file. Attackers delete command history to hide post-exploitation activity and evade forensic analysis.",
+    "kql": "DeviceFileEvents\n| where Timestamp > ago(30d)\n| where FileName =~ \"ConsoleHost_history.txt\" and ActionType == \"FileDeleted\"\n| project Timestamp, DeviceName, InitiatingProcessFileName, InitiatingProcessCommandLine, FolderPath\n| order by Timestamp desc",
+    "added": "2026-04-08"
   }
 ]
