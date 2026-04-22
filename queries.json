@@ -3337,5 +3337,175 @@
     "desc": "Detects deletion of the PowerShell ConsoleHost_history.txt file. Attackers delete command history to hide post-exploitation activity and evade forensic analysis.",
     "kql": "DeviceFileEvents\n| where Timestamp > ago(30d)\n| where FileName =~ \"ConsoleHost_history.txt\" and ActionType == \"FileDeleted\"\n| project Timestamp, DeviceName, InitiatingProcessFileName, InitiatingProcessCommandLine, FolderPath\n| order by Timestamp desc",
     "added": "2026-04-08"
+  },
+  {
+    "id": 172,
+    "name": "MDI Remediation Actions with Identity Enrichment",
+    "cat": "Defender for Identity",
+    "sub": "Remediation",
+    "plat": "both",
+    "tables": [
+      "IdentityInfo",
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "mdi",
+      "remediation",
+      "identity",
+      "defender for identity",
+      "response"
+    ],
+    "sev": "medium",
+    "desc": "Tracks Microsoft Defender for Identity remediation actions and enriches target accounts with identity details. Useful for monitoring automated and manual response actions triggered by MDI.",
+    "kql": "// === Sentinel Version ===\nlet Identities = IdentityInfo\n| where TimeGenerated > ago(30d)\n| summarize arg_max(TimeGenerated, *) by AccountSID\n| project AccountSID, AccountDisplayName, AccountName, AccountUPN;\nCloudAppEvents\n| extend WorkLoad = tostring(parse_json(RawEventData).Workload)\n| where WorkLoad == \"MicrosoftDefenderForIdentity\" and ActionType == \"RemediationActionAdded\"\n| extend ResultDescription = tostring(RawEventData.ResultDescription)\n| extend ResultStatus = tostring(RawEventData.ResultStatus)\n| extend info = split(ResultDescription, \"AddRemediationActionsAsync\")[1]\n| parse-kv info as (InitiatedByAccountAadUserId:string) with (pair_delimiter=' ', kv_delimiter='=', quote='\"')\n| parse-kv info as (RemediationActionType:string) with (pair_delimiter=' ', kv_delimiter='=', quote='\"')\n| parse-kv info as (AccountSid:string) with (pair_delimiter=' ', kv_delimiter='=', quote='\"')\n| extend ActorName = tostring(ActivityObjects[0].Name)\n| project TimeGenerated, InitiatedByAccountAadUserId, ActorName, RemediationActionType, ResultStatus, AccountSid\n| join kind=leftouter Identities on $left.AccountSid == $right.AccountSID\n| project TimeGenerated, ActorName, InitiatedByAccountAadUserId, RemediationActionType, ResultStatus, AccountSid, AccountDisplayName, AccountName, AccountUPN\n\n// === Advanced Hunting (XDR) Version ===\n// let Identities = IdentityInfo\n// | where Timestamp > ago(30d)\n// | summarize arg_max(Timestamp, *) by OnPremSid\n// | project OnPremSid, AccountDisplayName, AccountName, AccountUpn;\n// CloudAppEvents\n// | extend WorkLoad = tostring(parse_json(RawEventData).Workload)\n// | where WorkLoad == \"MicrosoftDefenderForIdentity\" and ActionType == \"RemediationActionAdded\"\n// | extend ResultDescription = tostring(RawEventData.ResultDescription)\n// | extend ResultStatus = tostring(RawEventData.ResultStatus)\n// | extend info = split(ResultDescription, \"AddRemediationActionsAsync\")[1]\n// | parse-kv info as (InitiatedByAccountAadUserId:string) with (pair_delimiter=' ', kv_delimiter='=', quote='\"')\n// | parse-kv info as (RemediationActionType:string) with (pair_delimiter=' ', kv_delimiter='=', quote='\"')\n// | parse-kv info as (AccountSid:string) with (pair_delimiter=' ', kv_delimiter='=', quote='\"')\n// | extend ActorName = tostring(ActivityObjects[0].Name)\n// | project Timestamp, InitiatedByAccountAadUserId, ActorName, RemediationActionType, ResultStatus, AccountSid\n// | join kind=leftouter Identities on $left.AccountSid == $right.OnPremSid\n// | project Timestamp, ActorName, InitiatedByAccountAadUserId, RemediationActionType, ResultStatus, AccountSid, AccountDisplayName, AccountName, AccountUpn",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 173,
+    "name": "Local Account Creation Detection",
+    "cat": "Defender for Endpoint",
+    "sub": "Account Lifecycle",
+    "plat": "both",
+    "tables": [
+      "DeviceEvents",
+      "DeviceNetworkEvents"
+    ],
+    "tags": [
+      "local account",
+      "account creation",
+      "persistence",
+      "T1136",
+      "laps"
+    ],
+    "sev": "medium",
+    "desc": "Detects new local user account creation events on endpoints, excluding domain controllers and LAPS accounts. Local account creation on workstations is often a persistence technique.",
+    "kql": "// === Sentinel Version ===\nlet AllDomainControllers =\n    DeviceNetworkEvents\n    | where TimeGenerated > ago(7d)\n    | where LocalPort == 88\n    | where LocalIPType == \"FourToSixMapping\"\n    | extend DCDevicename = DeviceName\n    | distinct DCDevicename;\n// NOTE: Update LapsAccounts with your LAPS admin account names\nlet LapsAccounts = dynamic(['-']);\nDeviceEvents\n| where TimeGenerated > ago(30d)\n| where ActionType == \"UserAccountCreated\"\n| where AccountName !in (LapsAccounts)\n| where DeviceName !in (AllDomainControllers)\n| where AccountName != \"defaultuser1\"\n| project TimeGenerated, DeviceName, AccountName, AccountSid, InitiatingProcessAccountName\n| order by TimeGenerated desc\n\n// === XDR Version ===\n// let AllDomainControllers =\n//     DeviceNetworkEvents\n//     | where Timestamp > ago(7d)\n//     | where LocalPort == 88\n//     | where LocalIPType == \"FourToSixMapping\"\n//     | extend DCDevicename = DeviceName\n//     | distinct DCDevicename;\n// let LapsAccounts = dynamic(['-']);\n// DeviceEvents\n// | where Timestamp > ago(30d)\n// | where ActionType == \"UserAccountCreated\"\n// | where AccountName !in (LapsAccounts)\n// | where DeviceName !in (AllDomainControllers)\n// | where AccountName != \"defaultuser1\"\n// | project Timestamp, DeviceName, AccountName, AccountSid, InitiatingProcessAccountName\n// | order by Timestamp desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 174,
+    "name": "Windows Built-In Group Membership Addition",
+    "cat": "Defender for Endpoint",
+    "sub": "Privileged",
+    "plat": "both",
+    "tables": [
+      "DeviceEvents"
+    ],
+    "tags": [
+      "local group",
+      "administrators",
+      "membership",
+      "T1098",
+      "privilege escalation"
+    ],
+    "sev": "high",
+    "desc": "Detects user additions to sensitive Windows built-in local groups (Administrators, Remote Desktop Users, etc.). Excludes changes made by the Local System account (GPO-driven).",
+    "kql": "// === Sentinel Version ===\nlet SensitiveBuiltInGroups = datatable(GroupSID: string, GroupLabel: string)\n[\n    \"S-1-5-32-544\", \"Administrators\",\n    \"S-1-5-32-546\", \"Guests\",\n    \"S-1-5-32-547\", \"Power Users\",\n    \"S-1-5-32-555\", \"Remote Desktop Users\",\n    \"S-1-5-32-580\", \"Remote Management Users\"\n];\nDeviceEvents\n| where TimeGenerated > ago(30d)\n| where ActionType == \"UserAccountAddedToLocalGroup\"\n| where InitiatingProcessAccountSid != \"S-1-5-18\"\n| extend ChangedGroupSid = tostring(parse_json(AdditionalFields).GroupSid)\n| extend ChangedGroupName = tostring(parse_json(AdditionalFields).GroupName)\n| join kind=inner SensitiveBuiltInGroups on $left.ChangedGroupSid == $right.GroupSID\n| project TimeGenerated, DeviceName, AccountName, AccountSid, ChangedGroupName, GroupLabel, InitiatingProcessAccountName\n| order by TimeGenerated desc\n\n// === XDR Version ===\n// let SensitiveBuiltInGroups = datatable(GroupSID: string, GroupLabel: string)\n// [\n//     \"S-1-5-32-544\", \"Administrators\",\n//     \"S-1-5-32-546\", \"Guests\",\n//     \"S-1-5-32-547\", \"Power Users\",\n//     \"S-1-5-32-555\", \"Remote Desktop Users\",\n//     \"S-1-5-32-580\", \"Remote Management Users\"\n// ];\n// DeviceEvents\n// | where Timestamp > ago(30d)\n// | where ActionType == \"UserAccountAddedToLocalGroup\"\n// | where InitiatingProcessAccountSid != \"S-1-5-18\"\n// | extend ChangedGroupSid = tostring(parse_json(AdditionalFields).GroupSid)\n// | extend ChangedGroupName = tostring(parse_json(AdditionalFields).GroupName)\n// | join kind=inner SensitiveBuiltInGroups on $left.ChangedGroupSid == $right.GroupSID\n// | project Timestamp, DeviceName, AccountName, AccountSid, ChangedGroupName, GroupLabel, InitiatingProcessAccountName\n// | order by Timestamp desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 175,
+    "name": "Portable Application Execution from User Folders",
+    "cat": "Defender for Endpoint",
+    "sub": "Defense Evasion",
+    "plat": "both",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "portable app",
+      "evasion",
+      "shadow IT",
+      "user folder"
+    ],
+    "sev": "medium",
+    "desc": "Detects execution of portable applications from user folders (Downloads, Desktop, temp). Portable apps bypass installation controls and can be used by attackers to evade detection.",
+    "kql": "// === Sentinel Version ===\nDeviceProcessEvents\n| where TimeGenerated > ago(7d)\n| where AccountName != \"system\"\n| where FolderPath matches regex @\"^C:\\\\Users\\\\[^\\\\]+\\\\(Downloads|Desktop)\\\\.*$\"\n    or FolderPath has \"\\\\Temp\\\\\"\n| where not(FolderPath matches regex @\"^C:\\\\Windows\\\\.*$\")\n| where not(FolderPath matches regex @\"^C:\\\\Program Files( \\(x86\\))?\\\\.*$\")\n| where ProcessVersionInfoProductName has \"portable\"\n| project TimeGenerated, DeviceName, AccountName, FileName, FolderPath, ProcessVersionInfoProductName\n| order by TimeGenerated desc\n\n// === XDR Version ===\n// DeviceProcessEvents\n// | where Timestamp > ago(7d)\n// | where AccountName != \"system\"\n// | where FolderPath matches regex @\"^C:\\\\Users\\\\[^\\\\]+\\\\(Downloads|Desktop)\\\\.*$\"\n//     or FolderPath has \"\\\\Temp\\\\\"\n// | where not(FolderPath matches regex @\"^C:\\\\Windows\\\\.*$\")\n// | where not(FolderPath matches regex @\"^C:\\\\Program Files( \\(x86\\))?\\\\.*$\")\n// | where ProcessVersionInfoProductName has \"portable\"\n// | project Timestamp, DeviceName, AccountName, FileName, FolderPath, ProcessVersionInfoProductName\n// | order by Timestamp desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 176,
+    "name": "Removable Storage File Activity (Device Control)",
+    "cat": "Defender for Endpoint",
+    "sub": "Data Exfiltration",
+    "plat": "both",
+    "tables": [
+      "DeviceEvents"
+    ],
+    "tags": [
+      "device control",
+      "usb",
+      "removable storage",
+      "file copy",
+      "exfiltration"
+    ],
+    "sev": "high",
+    "desc": "Tracks file operations on removable storage devices detected by Defender for Endpoint Device Control. Shows file names, paths and media details for forensic review.",
+    "kql": "// === Sentinel Version ===\nDeviceEvents\n| where TimeGenerated > ago(7d)\n| where ActionType contains \"RemovableStorageFileEvent\"\n| extend parsed = parse_json(AdditionalFields)\n| extend Policy = tostring(parsed.Policy)\n| extend MediaName = tostring(parsed.MediaName)\n| extend MediaSerialNumber = tostring(parsed.SerialNumber)\n| extend FileEvidenceLocation = tostring(parsed.TargetFileLocation)\n| project TimeGenerated, DeviceName, InitiatingProcessAccountName, ActionType, Policy, MediaName, MediaSerialNumber, FileName, FolderPath, FileSize, FileEvidenceLocation\n| order by TimeGenerated desc\n\n// === XDR Version ===\n// DeviceEvents\n// | where Timestamp > ago(7d)\n// | where ActionType contains \"RemovableStorageFileEvent\"\n// | extend parsed = parse_json(AdditionalFields)\n// | extend Policy = tostring(parsed.Policy)\n// | extend MediaName = tostring(parsed.MediaName)\n// | extend MediaSerialNumber = tostring(parsed.SerialNumber)\n// | extend FileEvidenceLocation = tostring(parsed.TargetFileLocation)\n// | project Timestamp, DeviceName, InitiatingProcessAccountName, ActionType, Policy, MediaName, MediaSerialNumber, FileName, FolderPath, FileSize, FileEvidenceLocation\n// | order by Timestamp desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 177,
+    "name": "SMB File Copy to Domain Controller",
+    "cat": "Defender for Identity",
+    "sub": "Data Exfiltration",
+    "plat": "xdr",
+    "tables": [
+      "IdentityDirectoryEvents"
+    ],
+    "tags": [
+      "smb",
+      "file copy",
+      "domain controller",
+      "ntds",
+      "exfiltration",
+      "mdi"
+    ],
+    "sev": "high",
+    "desc": "Detects file write operations via SMB to domain controllers captured by MDI sensors. Copying files to DCs (especially NTDS.dit) is a critical indicator of Active Directory compromise.",
+    "kql": "IdentityDirectoryEvents\n| where Timestamp > ago(30d)\n| where ActionType == @\"SMB file copy\"\n| extend ParsedFields = parse_json(AdditionalFields)\n| extend FileName = tostring(ParsedFields.FileName)\n| extend FilePath = tostring(ParsedFields.FilePath)\n| extend Method = tostring(ParsedFields.Method)\n| where Method == @\"Write\"\n| project Timestamp, DeviceName, IPAddress, AccountDisplayName, DestinationDeviceName, DestinationPort, FileName, FilePath\n| order by Timestamp desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 178,
+    "name": "MDI Attack Disruption - Account Disabled by Domain Controller",
+    "cat": "Defender for Identity",
+    "sub": "Remediation",
+    "plat": "both",
+    "tables": [
+      "IdentityDirectoryEvents",
+      "DeviceNetworkEvents"
+    ],
+    "tags": [
+      "mdi",
+      "attack disruption",
+      "disabled account",
+      "aitm",
+      "automated response"
+    ],
+    "sev": "high",
+    "desc": "Identifies Active Directory accounts disabled by domain controllers via MDI automatic attack disruption. This is triggered during AiTM, BEC and human-operated ransomware detection scenarios.",
+    "kql": "// === Sentinel Version ===\nlet AllDomainControllers =\n    DeviceNetworkEvents\n    | where TimeGenerated > ago(7d)\n    | where LocalPort == 88\n    | where LocalIPType == \"FourToSixMapping\"\n    | extend DCDevicename = tostring(split(DeviceName, \".\")[0])\n    | distinct DCDevicename;\nIdentityDirectoryEvents\n| where TimeGenerated > ago(90d)\n| where ActionType == \"Account disabled\"\n| extend ACTOR_DEVICE = tolower(tostring(AdditionalFields.[\"ACTOR.DEVICE\"]))\n| where isnotempty(ACTOR_DEVICE)\n| where ACTOR_DEVICE in (AllDomainControllers)\n| project TimeGenerated, TargetAccountDisplayName, ACTOR_DEVICE\n| order by TimeGenerated desc\n\n// === XDR Version ===\n// let AllDomainControllers =\n//     DeviceNetworkEvents\n//     | where Timestamp > ago(7d)\n//     | where LocalPort == 88\n//     | where LocalIPType == \"FourToSixMapping\"\n//     | extend DCDevicename = tostring(split(DeviceName, \".\")[0])\n//     | distinct DCDevicename;\n// IdentityDirectoryEvents\n// | where Timestamp > ago(90d)\n// | where ActionType == \"Account disabled\"\n// | extend ACTOR_DEVICE = tolower(tostring(AdditionalFields.[\"ACTOR.DEVICE\"]))\n// | where isnotempty(ACTOR_DEVICE)\n// | where ACTOR_DEVICE in (AllDomainControllers)\n// | project Timestamp, TargetAccountDisplayName, ACTOR_DEVICE\n// | order by Timestamp desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 179,
+    "name": "Internet-Facing Devices Overview",
+    "cat": "Defender for Endpoint",
+    "sub": "Vulnerability Mgmt",
+    "plat": "xdr",
+    "tables": [
+      "DeviceInfo"
+    ],
+    "tags": [
+      "internet facing",
+      "exposure",
+      "attack surface",
+      "asset management"
+    ],
+    "sev": "medium",
+    "desc": "Lists devices flagged as internet-facing by Defender for Endpoint. These devices have elevated exposure risk and should be prioritized for patching and hardening.",
+    "kql": "DeviceInfo\n| where Timestamp > ago(7d)\n| where IsInternetFacing == true\n| summarize arg_max(Timestamp, *) by DeviceName\n| project Timestamp, DeviceName, OSPlatform, OSVersionInfo, PublicIP, ExposureLevel, DeviceCategory\n| order by ExposureLevel desc",
+    "added": "2026-04-08"
   }
 ]
