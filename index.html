@@ -112,8 +112,17 @@
   .footer { text-align: center; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); }
   .loading { text-align: center; padding: 60px; color: var(--text3); }
   .sev-badge { font-size: 12px; padding: 3px 10px; border-radius: 6px; font-weight: 700; text-transform: uppercase; }
-  .new-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #166534; background: transparent; color: var(--text3); }
-  .new-btn.active { background: #052e16; color: #86efac; border-color: #166534; }
+  @keyframes rgbGlow {
+    0% { border-color: #ef4444; box-shadow: 0 0 8px #ef444460; color: #fca5a5; }
+    16% { border-color: #f97316; box-shadow: 0 0 8px #f9731660; color: #fdba74; }
+    33% { border-color: #eab308; box-shadow: 0 0 8px #eab30860; color: #fde047; }
+    50% { border-color: #22c55e; box-shadow: 0 0 8px #22c55e60; color: #86efac; }
+    66% { border-color: #3b82f6; box-shadow: 0 0 8px #3b82f660; color: #93c5fd; }
+    83% { border-color: #a855f7; box-shadow: 0 0 8px #a855f760; color: #c4b5fd; }
+    100% { border-color: #ef4444; box-shadow: 0 0 8px #ef444460; color: #fca5a5; }
+  }
+  .new-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #166534; background: transparent; color: var(--text3); animation: rgbGlow 4s linear infinite; font-weight: 600; }
+  .new-btn.active { background: #052e16; color: #86efac; border-color: #166534; animation: none; }
   .new-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: #052e16; color: #4ade80; font-weight: 700; border: 1px solid #166534; margin-left: 4px; vertical-align: middle; }
   .date-badge { font-size: 11px; color: var(--text3); padding: 3px 8px; }
   .hero-btn { font-size: 13px; text-decoration: none; padding: 8px 18px; border-radius: 10px; font-weight: 600; display: inline-block; }
@@ -238,7 +247,7 @@ function App() {
     e("div", { className: "filters2" },
       Object.keys(SEV).map(s => e("button", { key: s, className: "sev-btn", style: { border: "1px solid " + SEV[s].br, background: sev === s ? SEV[s].bg : "transparent", color: sev === s ? SEV[s].tx : "var(--text3)" }, onClick: () => { setSev(sev === s ? "all" : s); setSelQ(null); } }, (SEV[s].label || s).toUpperCase())),
       e("span", { className: "sep" }, "\u2502"),
-      [{ v: "all", l: "All" }, { v: "sentinel", l: "Sentinel" }, { v: "xdr", l: "XDR" }].map(p => e("button", { key: p.v, className: "plat-btn" + (plat === p.v ? " active" : ""), onClick: () => { setPlat(plat === p.v ? "all" : p.v); setSelQ(null); } }, p.l)),
+      [{ v: "all", l: "All", c: null, bc: null }, { v: "sentinel", l: "Sentinel", c: "#a78bfa", bc: "#7c3aed" }, { v: "xdr", l: "XDR", c: "#4ade80", bc: "#16a34a" }].map(p => e("button", { key: p.v, className: "plat-btn" + (plat === p.v ? " active" : ""), style: p.c ? { color: plat === p.v ? p.c : p.c, borderColor: plat === p.v ? p.bc : p.bc + "80", fontWeight: plat === p.v ? 700 : 500 } : {}, onClick: () => { setPlat(plat === p.v ? "all" : p.v); setSelQ(null); } }, p.l)),
       e("span", { className: "sep" }, "\u2502"),
       e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => setShowNew(!showNew) }, "\ud83e\udd29 Recently Added (" + newCount + ")")
     ),
