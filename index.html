@@ -133,8 +133,10 @@
 const e = React.createElement;
 const { useState, useMemo, useCallback, useEffect } = React;
 
-const SEV = { critical: { bg: "#450a0a", tx: "#fca5a5", br: "#991b1b", dot: "#ef4444" }, high: { bg: "#431407", tx: "#fdba74", br: "#9a3412", dot: "#f97316" }, medium: { bg: "#422006", tx: "#fcd34d", br: "#92400e", dot: "#eab308" }, low: { bg: "#052e16", tx: "#86efac", br: "#166534", dot: "#22c55e" } };
-const PL = { both: { l: "Sentinel + XDR", bg: "#1e3a5f", tx: "#93c5fd" }, sentinel: { l: "Sentinel", bg: "#1a2e44", tx: "#7dd3fc" }, xdr: { l: "XDR", bg: "#2d1b4e", tx: "#c4b5fd" } };
+const SEV_DARK = { critical: { bg: "#450a0a", tx: "#fca5a5", br: "#991b1b", dot: "#ef4444", label: "critical!" }, high: { bg: "#450a0a", tx: "#fca5a5", br: "#dc2626", dot: "#ef4444" }, medium: { bg: "#422006", tx: "#fcd34d", br: "#92400e", dot: "#eab308" }, low: { bg: "#422006", tx: "#fde047", br: "#a16207", dot: "#eab308" } };
+const SEV_LIGHT = { critical: { bg: "#fee2e2", tx: "#991b1b", br: "#991b1b", dot: "#ef4444", label: "critical!" }, high: { bg: "#fee2e2", tx: "#dc2626", br: "#dc2626", dot: "#ef4444" }, medium: { bg: "#fef3c7", tx: "#92400e", br: "#92400e", dot: "#eab308" }, low: { bg: "#fef9c3", tx: "#a16207", br: "#a16207", dot: "#eab308" } };
+const PL_DARK = { both: { l: "Sentinel + XDR", bg: "#1e3a5f", tx: "#93c5fd" }, sentinel: { l: "Sentinel", bg: "#2d1b4e", tx: "#c4b5fd" }, xdr: { l: "XDR", bg: "#052e16", tx: "#86efac" } };
+const PL_LIGHT = { both: { l: "Sentinel + XDR", bg: "#dbeafe", tx: "#1e40af" }, sentinel: { l: "Sentinel", bg: "#ede9fe", tx: "#6d28d9" }, xdr: { l: "XDR", bg: "#dcfce7", tx: "#166534" } };
 
 function App() {
   const [queries, setQueries] = useState([]);
@@ -148,6 +150,8 @@ function App() {
   const [copied, setCopied] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [dark, setDark] = useState(true);
+  const SEV = dark ? SEV_DARK : SEV_LIGHT;
+  const PL = dark ? PL_DARK : PL_LIGHT;
 
   useEffect(() => { document.body.className = dark ? "" : "light"; }, [dark]);
 
@@ -214,7 +218,7 @@ function App() {
         )
       ),
       e("div", { style: { maxWidth: 900, margin: "16px auto 0", position: "relative" } },
-        e("input", { type: "text", className: "search", placeholder: "Click here to search queries... identity, aitm, password spray, bec, oauth, ntlm, token theft, bloodhound, kerberoasting", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
+        e("input", { type: "text", className: "search", placeholder: "Click here to search queries... identity, aitm, password spray, bec, oauth, ntlm, token theft, pim, conditional access", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
         e("span", { className: "search-icon" }, "\ud83d\udd0d"),
         search && e("button", { className: "search-clear", onClick: () => { setSearch(""); setSelQ(null); } }, "\u2715")
       ),
@@ -232,11 +236,11 @@ function App() {
       ["All", ...CATS].map(c => e("button", { key: c, className: "cat-btn" + (cat === c ? " active" : ""), onClick: () => { setCat(c); setSelQ(null); } }, c))
     ),
     e("div", { className: "filters2" },
-      Object.keys(SEV).map(s => e("button", { key: s, className: "sev-btn", style: { border: "1px solid " + SEV[s].br, background: sev === s ? SEV[s].bg : "transparent", color: sev === s ? SEV[s].tx : "var(--text3)" }, onClick: () => { setSev(sev === s ? "all" : s); setSelQ(null); } }, s)),
+      Object.keys(SEV).map(s => e("button", { key: s, className: "sev-btn", style: { border: "1px solid " + SEV[s].br, background: sev === s ? SEV[s].bg : "transparent", color: sev === s ? SEV[s].tx : "var(--text3)" }, onClick: () => { setSev(sev === s ? "all" : s); setSelQ(null); } }, (SEV[s].label || s).toUpperCase())),
       e("span", { className: "sep" }, "\u2502"),
       [{ v: "all", l: "All" }, { v: "sentinel", l: "Sentinel" }, { v: "xdr", l: "XDR" }].map(p => e("button", { key: p.v, className: "plat-btn" + (plat === p.v ? " active" : ""), onClick: () => { setPlat(plat === p.v ? "all" : p.v); setSelQ(null); } }, p.l)),
       e("span", { className: "sep" }, "\u2502"),
-      e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => setShowNew(!showNew) }, "\u2728 Recently Added (" + newCount + ")")
+      e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => setShowNew(!showNew) }, "\ud83e\udd29 Recently Added (" + newCount + ")")
     ),
 
     // Groups
@@ -277,7 +281,7 @@ function App() {
               sel && e("div", { className: "detail" },
                 e("p", { className: "detail-desc" }, q.desc),
                 e("div", { className: "detail-badges" },
-                  e("span", { className: "sev-badge", style: { background: sv.bg, color: sv.tx, border: "1px solid " + sv.br } }, q.sev),
+                  e("span", { className: "sev-badge", style: { background: sv.bg, color: sv.tx, border: "1px solid " + sv.br } }, (sv.label || q.sev).toUpperCase()),
                   e("span", { className: "sev-badge", style: { background: pl.bg, color: pl.tx } }, pl.l),
                   q.added && e("span", { className: "date-badge" }, "\ud83d\udcc5 " + q.added),
                   q.tables.map(t => e("span", { key: t, className: "detail-tbl" }, t))
