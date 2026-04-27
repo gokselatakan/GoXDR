@@ -3507,5 +3507,27 @@
     "desc": "Lists devices flagged as internet-facing by Defender for Endpoint. These devices have elevated exposure risk and should be prioritized for patching and hardening.",
     "kql": "DeviceInfo\n| where TimeGenerated > ago(7d)\n| where IsInternetFacing == true\n| summarize arg_max(TimeGenerated, *) by DeviceName\n| project TimeGenerated, DeviceName, OSPlatform, OSVersionInfo, PublicIP, ExposureLevel, DeviceCategory\n| order by ExposureLevel desc",
     "added": "2026-04-08"
+  },
+  {
+    "id": 180,
+    "name": "Sentinel Analytics Rules Creation Audit with Creator Identity",
+    "cat": "Sentinel",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "SentinelAudit",
+      "AADServicePrincipalSignInLogs"
+    ],
+    "tags": [
+      "sentinel",
+      "analytics rule",
+      "audit",
+      "soc",
+      "governance"
+    ],
+    "sev": "low",
+    "desc": "Lists all Sentinel analytics rule creation events enriched with the creator identity. Resolves service principal IDs to display names for rules created by automation.",
+    "kql": "let SPNames = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(90d)\n| summarize arg_max(TimeGenerated, ServicePrincipalName) by ServicePrincipalId;\nSentinelAudit\n| where TimeGenerated > ago(365d)\n| where SentinelResourceType == \"Analytic Rule\"\n| where OperationName has \"Write\"\n| extend Props = parse_json(ExtendedProperties)\n| extend CallerName = tostring(Props.CallerName)\n| summarize CreatedTime = min(TimeGenerated) by SentinelResourceName, CallerName\n| lookup kind=leftouter SPNames on $left.CallerName == $right.ServicePrincipalId\n| extend CreatedBy = case(\n    CallerName has \"@\", CallerName,\n    isnotempty(ServicePrincipalName), ServicePrincipalName,\n    strcat(\"SPN: \", CallerName)\n    )\n| project CreatedTime, RuleName = SentinelResourceName, CreatedBy\n| sort by CreatedTime desc",
+    "added": "2026-04-08"
   }
 ]
