@@ -3529,5 +3529,91 @@
     "desc": "Lists all Sentinel analytics rule creation events enriched with the creator identity. Resolves service principal IDs to display names for rules created by automation.",
     "kql": "let SPNames = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(90d)\n| summarize arg_max(TimeGenerated, ServicePrincipalName) by ServicePrincipalId;\nSentinelAudit\n| where TimeGenerated > ago(365d)\n| where SentinelResourceType == \"Analytic Rule\"\n| where OperationName has \"Write\"\n| extend Props = parse_json(ExtendedProperties)\n| extend CallerName = tostring(Props.CallerName)\n| summarize CreatedTime = min(TimeGenerated) by SentinelResourceName, CallerName\n| lookup kind=leftouter SPNames on $left.CallerName == $right.ServicePrincipalId\n| extend CreatedBy = case(\n    CallerName has \"@\", CallerName,\n    isnotempty(ServicePrincipalName), ServicePrincipalName,\n    strcat(\"SPN: \", CallerName)\n    )\n| project CreatedTime, RuleName = SentinelResourceName, CreatedBy\n| sort by CreatedTime desc",
     "added": "2026-04-08"
+  },
+  {
+    "id": 181,
+    "name": "Sentinel Workspace Audit - Silent Zombie Rules",
+    "cat": "Sentinel Workspace Audit",
+    "sub": "Rule Health",
+    "plat": "sentinel",
+    "tables": [
+      "_SentinelHealth"
+    ],
+    "tags": [
+      "sentinel",
+      "detection-engineering",
+      "rule-health",
+      "soc-operations"
+    ],
+    "sev": "medium",
+    "desc": "Finds analytics rules that run successfully but return zero results. Uses QueryResultAmount from _SentinelHealth() to identify rules with 100+ successful runs and zero events. These rules appear healthy but detect nothing due to empty tables, decommissioned assets or over-tuned thresholds.",
+    "kql": "_SentinelHealth()\n| where TimeGenerated > ago(30d)\n| where SentinelResourceType == \"Analytics Rule\"\n| where OperationName == \"Scheduled analytics rule run\"\n| where Status == \"Success\"\n| extend EP = todynamic(ExtendedProperties)\n| extend EventsCount = toint(EP.QueryResultAmount)\n| summarize\n    TotalRuns = count(),\n    TotalEventsSeen = sum(EventsCount),\n    LastRun = max(TimeGenerated),\n    FirstRunSeen = min(TimeGenerated)\n    by RuleName = SentinelResourceName, RuleId = SentinelResourceId\n| where TotalEventsSeen == 0\n| where TotalRuns >= 100\n| order by TotalRuns desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 182,
+    "name": "Sentinel Workspace Audit - Shadow Detectors (Alerts Without Incidents)",
+    "cat": "Sentinel Workspace Audit",
+    "sub": "Incident Management",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityAlert",
+      "SecurityIncident"
+    ],
+    "tags": [
+      "sentinel",
+      "detection-engineering",
+      "rule-health",
+      "soc-operations",
+      "incident-management"
+    ],
+    "sev": "medium",
+    "desc": "Identifies rules that generate alerts but never produce incidents. Detects misconfigured incident creation settings, automation rules silently closing alerts or broken handoffs where alerts disappear before analysts see them. Rules with 80%+ orphaned alerts and at least 10 alerts in the window are flagged.",
+    "kql": "let window = 30d;\nlet Alerts =\n    SecurityAlert\n    | where TimeGenerated > ago(window)\n    | extend\n        SystemAlertId = tostring(SystemAlertId),\n        RuleId = tostring(parse_json(ExtendedProperties)[\"Analytic Rule Ids\"]);\nlet AlertsByRule =\n    Alerts\n    | summarize AlertCount = count(), RuleName = any(AlertName) by RuleId;\nlet AlertsInIncidents =\n    SecurityIncident\n    | where TimeGenerated > ago(window)\n    | mv-expand AlertIds\n    | extend SystemAlertId = tostring(AlertIds)\n    | project SystemAlertId, IncidentNumber;\nlet IncidentMapping =\n    Alerts\n    | join kind=inner AlertsInIncidents on SystemAlertId\n    | summarize IncidentsFromRule = dcount(IncidentNumber) by RuleId;\nAlertsByRule\n| join kind=leftouter IncidentMapping on RuleId\n| extend IncidentsFromRule = coalesce(IncidentsFromRule, 0)\n| extend AlertToIncidentRatio = round(todouble(IncidentsFromRule) / todouble(AlertCount), 3)\n| extend PctAlertsOrphaned = round(100.0 * (AlertCount - IncidentsFromRule) / AlertCount, 1)\n| where AlertCount >= 10\n| where PctAlertsOrphaned >= 80\n| project RuleName, RuleId, AlertCount, IncidentsFromRule, AlertToIncidentRatio, PctAlertsOrphaned\n| order by AlertCount desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 183,
+    "name": "Sentinel Workspace Audit - High False Positive Rules (Analyst Classification)",
+    "cat": "Sentinel Workspace Audit",
+    "sub": "Tuning",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityIncident",
+      "SecurityAlert"
+    ],
+    "tags": [
+      "sentinel",
+      "detection-engineering",
+      "rule-health",
+      "soc-operations",
+      "tuning",
+      "false-positive"
+    ],
+    "sev": "medium",
+    "desc": "Uses analyst classification data as ground truth to identify rules where 90%+ of incidents are closed as false positive or benign. Filters out auto-closed and playbook-closed incidents to focus on human decisions. Generates a recommendation based on whether the dominant classification is FP, BP or undetermined. Requires at least 20 closed incidents per rule.",
+    "kql": "let window = 90d;\nlet MinIncidents = 20;\nlet MinNonActionableRate = 0.9;\nlet ClosedIncidents =\n    SecurityIncident\n    | where TimeGenerated > ago(window)\n    | where Status == \"Closed\"\n    | where isnotempty(Classification)\n    | summarize arg_max(TimeGenerated, *) by IncidentNumber\n    | extend TimeToClose = datetime_diff('second', ClosedTime, CreatedTime)\n    | where ClassificationComment !contains \"Auto Closed\"\n    | where ClassificationComment !contains \"Playbook\"\n    | where TimeToClose > 60\n    | project IncidentNumber, Classification, ClassificationReason, AlertIds, TimeToClose;\nlet IncidentRuleMap =\n    ClosedIncidents\n    | mv-expand AlertIds to typeof(string)\n    | extend AlertId = tostring(AlertIds)\n    | where isnotempty(AlertId)\n    | join kind=leftouter (\n        SecurityAlert\n        | where TimeGenerated > ago(window)\n        | extend SystemAlertId = tostring(SystemAlertId)\n        | where isnotempty(SystemAlertId)\n        | summarize AlertName = any(AlertName) by SystemAlertId\n    ) on $left.AlertId == $right.SystemAlertId\n    | extend RuleName = coalesce(AlertName, \"UnknownRule\")\n    | project IncidentNumber, RuleName, Classification, ClassificationReason;\nlet TopReasonPerRule =\n    IncidentRuleMap\n    | where isnotempty(ClassificationReason)\n    | summarize ReasonCount = count() by RuleName, ClassificationReason\n    | summarize arg_max(ReasonCount, ClassificationReason) by RuleName\n    | project RuleName, TopReason = ClassificationReason;\nIncidentRuleMap\n| summarize\n    TotalIncidents = dcount(IncidentNumber),\n    TP = dcountif(IncidentNumber, Classification == \"TruePositive\"),\n    FP = dcountif(IncidentNumber, Classification == \"FalsePositive\"),\n    BP = dcountif(IncidentNumber, Classification == \"BenignPositive\"),\n    Undetermined = dcountif(IncidentNumber, Classification == \"Undetermined\")\n  by RuleName\n| extend\n    NonActionable = FP + BP,\n    NonActionableRate = round(todouble(FP + BP) / todouble(TotalIncidents), 3),\n    FalsePositiveRate = round(todouble(FP) / todouble(TotalIncidents), 3),\n    BenignPositiveRate = round(todouble(BP) / todouble(TotalIncidents), 3),\n    UndeterminedRate = round(todouble(Undetermined) / todouble(TotalIncidents), 3)\n| join kind=leftouter TopReasonPerRule on RuleName\n| extend TopReason = coalesce(TopReason, \"NotSpecified\")\n| extend Recommendation = case(\n    FalsePositiveRate >= BenignPositiveRate and FalsePositiveRate >= UndeterminedRate and FalsePositiveRate >= 0.5,\n        \"Retune detection logic (False Positive dominant)\",\n    BenignPositiveRate >= FalsePositiveRate and BenignPositiveRate >= UndeterminedRate and BenignPositiveRate >= 0.5,\n        \"Add scoping or exclusions (Benign Positive dominant)\",\n    UndeterminedRate >= 0.5,\n        \"Improve alert clarity (Undetermined dominant)\",\n    \"Mixed: review incidents\"\n)\n| where TotalIncidents >= MinIncidents\n| where NonActionableRate >= MinNonActionableRate\n| project RuleName, TotalIncidents, TP, FP, BP, Undetermined, NonActionableRate, FalsePositiveRate, BenignPositiveRate, UndeterminedRate, TopReason, Recommendation\n| order by TotalIncidents desc, NonActionableRate desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 184,
+    "name": "Sentinel Workspace Audit - MITRE Coverage Drift Detection",
+    "cat": "Sentinel Workspace Audit",
+    "sub": "Coverage Analysis",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityAlert"
+    ],
+    "tags": [
+      "sentinel",
+      "detection-engineering",
+      "rule-health",
+      "mitre",
+      "coverage-analysis"
+    ],
+    "sev": "medium",
+    "desc": "Compares MITRE technique alert volumes between two 30 day windows to find techniques that dropped 60%+ or went completely silent. A technique that was firing regularly and then stops is often a sign of a broken data source, over-tuned rule or content pack update that shifted behaviour.",
+    "kql": "let recent =\n    SecurityAlert\n    | where TimeGenerated > ago(30d)\n    | extend TechArray = iff(Techniques startswith \"[\", parse_json(Techniques), split(replace_regex(Techniques, @\"\\s*,\\s*\", \",\"), \",\"))\n    | mv-expand Technique = TechArray\n    | extend Technique = tostring(Technique)\n    | where isnotempty(Technique)\n    | summarize RecentCount = count() by Technique;\nlet prior =\n    SecurityAlert\n    | where TimeGenerated between (ago(60d) .. ago(30d))\n    | extend TechArray = iff(Techniques startswith \"[\", parse_json(Techniques), split(replace_regex(Techniques, @\"\\s*,\\s*\", \",\"), \",\"))\n    | mv-expand Technique = TechArray\n    | extend Technique = tostring(Technique)\n    | where isnotempty(Technique)\n    | summarize PriorCount = count() by Technique;\nprior\n| join kind=leftouter recent on Technique\n| extend RecentCount = coalesce(RecentCount, 0)\n| extend DropPercent = round(100.0 * (PriorCount - RecentCount) / PriorCount, 1)\n| extend IsSilent = RecentCount == 0\n| where PriorCount >= 20 and DropPercent >= 60\n| project Technique, PriorCount, RecentCount, DropPercent, IsSilent\n| order by IsSilent desc, PriorCount desc",
+    "added": "2026-04-08"
   }
 ]
