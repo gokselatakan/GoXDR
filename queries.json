@@ -3615,5 +3615,52 @@
     "desc": "Compares MITRE technique alert volumes between two 30 day windows to find techniques that dropped 60%+ or went completely silent. A technique that was firing regularly and then stops is often a sign of a broken data source, over-tuned rule or content pack update that shifted behaviour.",
     "kql": "let recent =\n    SecurityAlert\n    | where TimeGenerated > ago(30d)\n    | extend TechArray = iff(Techniques startswith \"[\", parse_json(Techniques), split(replace_regex(Techniques, @\"\\s*,\\s*\", \",\"), \",\"))\n    | mv-expand Technique = TechArray\n    | extend Technique = tostring(Technique)\n    | where isnotempty(Technique)\n    | summarize RecentCount = count() by Technique;\nlet prior =\n    SecurityAlert\n    | where TimeGenerated between (ago(60d) .. ago(30d))\n    | extend TechArray = iff(Techniques startswith \"[\", parse_json(Techniques), split(replace_regex(Techniques, @\"\\s*,\\s*\", \",\"), \",\"))\n    | mv-expand Technique = TechArray\n    | extend Technique = tostring(Technique)\n    | where isnotempty(Technique)\n    | summarize PriorCount = count() by Technique;\nprior\n| join kind=leftouter recent on Technique\n| extend RecentCount = coalesce(RecentCount, 0)\n| extend DropPercent = round(100.0 * (PriorCount - RecentCount) / PriorCount, 1)\n| extend IsSilent = RecentCount == 0\n| where PriorCount >= 20 and DropPercent >= 60\n| project Technique, PriorCount, RecentCount, DropPercent, IsSilent\n| order by IsSilent desc, PriorCount desc",
     "added": "2026-04-08"
+  },
+  {
+    "id": 185,
+    "name": "PowerShell Attack Phase Classification (MITRE Mapped)",
+    "cat": "Defender for Endpoint",
+    "sub": "Attack Chain",
+    "plat": "both",
+    "tables": [
+      "DeviceEvents"
+    ],
+    "tags": [
+      "powershell",
+      "mitre",
+      "attack chain",
+      "reconnaissance",
+      "credential harvesting",
+      "lateral movement",
+      "persistence",
+      "evasion",
+      "exfiltration"
+    ],
+    "sev": "high",
+    "desc": "Classifies PowerShell cmdlet execution into MITRE attack phases: AD Reconnaissance, Network Recon, Credential Harvesting, Lateral Movement, Persistence, Defence Evasion and Exfiltration. Covers native AD module, PowerView, PowerSploit and common offensive tool cmdlets.",
+    "kql": "let LookbackPeriod = 7d;\nlet Phase_ADRecon = dynamic([\n    \"Get-ADUser\",\"Get-ADComputer\",\"Get-ADGroup\",\"Get-ADGroupMember\",\n    \"Get-ADDomain\",\"Get-ADDomainController\",\"Get-ADOrganizationalUnit\",\n    \"Get-ADForest\",\"Get-ADTrust\",\"Get-ADUserResultantPasswordPolicy\",\n    \"Get-ADFineGrainedPasswordPolicy\",\"Get-ADDefaultDomainPasswordPolicy\",\n    \"Get-DomainUser\",\"Get-DomainComputer\",\"Get-DomainGroup\",\"Get-DomainController\",\n    \"Get-DomainTrust\",\"Get-DomainPolicy\",\"Get-DomainGroupMember\",\"Get-DomainGPO\",\n    \"Get-DomainOU\",\"Get-DomainSID\",\"Get-DomainObjectAcl\",\"Get-ObjectAcl\",\n    \"Get-DomainDFSShare\",\"Get-DomainGPOLocalGroup\",\"Invoke-ACLScanner\",\n    \"Get-NetUser\",\"Get-NetComputer\",\"Get-NetGroup\",\"Get-NetDomain\",\n    \"Get-NetForestTrust\",\"Get-NetForest\",\"Get-NetLocalGroup\",\n    \"Get-ForestTrust\",\"Get-LocalUser\",\"Get-LocalGroup\",\"Get-LocalGroupMember\"\n]);\nlet Phase_NetworkRecon = dynamic([\n    \"Invoke-Portscan\",\"Invoke-ReverseDnsLookup\",\n    \"Get-NetIPAddress\",\"Get-NetRoute\",\"Get-NetTCPConnection\",\n    \"Get-NetAdapter\",\"Get-NetFirewallRule\",\"Get-NetShare\",\n    \"Resolve-DnsName\"\n]);\nlet Phase_CredHarvest = dynamic([\n    \"Invoke-Mimikatz\",\"Invoke-NinjaCopy\",\"Invoke-CredentialInjection\",\n    \"Invoke-LSADump\",\"Invoke-SAMDump\",\"Out-Minidump\",\n    \"Get-CachedGPPPassword\",\"Get-GPPPassword\",\"Get-DecryptedCpassword\",\n    \"Get-Keystrokes\",\"Get-TimedScreenshot\",\"Get-ClipboardContents\",\n    \"ConvertFrom-SecureString\",\"Get-VaultCredential\",\"Get-Credential\"\n]);\nlet Phase_LateralMovement = dynamic([\n    \"New-PSSession\",\"Enter-PSSession\",\"Invoke-Command\",\n    \"Invoke-WmiMethod\",\"Get-WmiObject\",\"Invoke-CimMethod\",\"New-CimSession\",\n    \"Invoke-DCOM\",\"Invoke-TokenManipulation\",\"Invoke-RunAs\",\n    \"Invoke-PsExec\",\"Invoke-SMBClient\"\n]);\nlet Phase_Persistence = dynamic([\n    \"Register-ScheduledTask\",\"New-ScheduledTask\",\"Set-ScheduledTask\",\n    \"New-ItemProperty\",\"Set-ItemProperty\",\n    \"Set-WmiInstance\",\"New-CimInstance\",\n    \"Register-CimIndicationEvent\"\n]);\nlet Phase_DefenceEvasion = dynamic([\n    \"Add-MpPreference\",\"Set-MpPreference\",\n    \"Disable-WindowsOptionalFeature\",\"Uninstall-WindowsFeature\",\n    \"Set-ExecutionPolicy\",\"Bypass-UAC\",\"Invoke-BypassUAC\",\n    \"Invoke-EventVwrBypass\",\"Invoke-EnvBypass\"\n]);\nlet Phase_Exfil = dynamic([\n    \"Invoke-Exfil\",\"Out-Minidump\",\n    \"Compress-Archive\",\"Send-MailMessage\",\n    \"Invoke-DNSQuery\",\"Invoke-PowerShellTCP\",\"Start-Socket\"\n]);\nlet AllSuspiciousCmdlets = array_concat(\n    Phase_ADRecon, Phase_NetworkRecon, Phase_CredHarvest,\n    Phase_LateralMovement, Phase_Persistence, Phase_DefenceEvasion, Phase_Exfil\n);\nDeviceEvents\n| where TimeGenerated > ago(LookbackPeriod)\n| where ActionType == \"PowerShellCommand\"\n| extend Commandlet = tostring(parse_json(AdditionalFields).Command)\n| where Commandlet has_any (AllSuspiciousCmdlets)\n| extend AttackPhase = case(\n    Commandlet has_any (Phase_ADRecon),         \"AD Reconnaissance\",\n    Commandlet has_any (Phase_NetworkRecon),    \"Network Reconnaissance\",\n    Commandlet has_any (Phase_CredHarvest),     \"Credential Harvesting\",\n    Commandlet has_any (Phase_LateralMovement), \"Lateral Movement\",\n    Commandlet has_any (Phase_Persistence),     \"Persistence\",\n    Commandlet has_any (Phase_DefenceEvasion),  \"Defence Evasion\",\n    Commandlet has_any (Phase_Exfil),           \"Exfiltration / C2\",\n    \"Unknown\"\n)\n| extend Severity = case(\n    AttackPhase in (\"Credential Harvesting\", \"Lateral Movement\", \"Exfiltration / C2\"), \"High\",\n    AttackPhase in (\"Persistence\", \"Defence Evasion\"),                                 \"High\",\n    AttackPhase == \"AD Reconnaissance\",                                                \"Medium\",\n    \"Low\"\n)\n| extend\n    Username    = tostring(split(InitiatingProcessAccountUpn, '@')[0]),\n    UPNSuffix   = tostring(split(InitiatingProcessAccountUpn, '@')[1]),\n    DvcHostname = tostring(split(DeviceName, '.')[0]),\n    DvcDomain   = tostring(strcat_array(array_slice(split(DeviceName, '.'), 1, -1), '.'))\n| project\n    TimeGenerated,\n    DeviceName,\n    DvcHostname,\n    DvcDomain,\n    Username,\n    UPNSuffix,\n    AttackPhase,\n    Severity,\n    Commandlet,\n    InitiatingProcessFileName,\n    InitiatingProcessFolderPath,\n    InitiatingProcessCommandLine,\n    LocalIP,\n    InitiatingProcessId\n| order by Severity asc, TimeGenerated desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 186,
+    "name": "Internet-Facing Devices Running AI Agents",
+    "cat": "Exposure Management",
+    "sub": "AI Security",
+    "plat": "xdr",
+    "tables": [
+      "ExposureGraphEdges",
+      "DeviceInfo"
+    ],
+    "tags": [
+      "ai agent",
+      "internet facing",
+      "exposure",
+      "attack surface",
+      "ai security"
+    ],
+    "sev": "critical",
+    "desc": "Identifies internet-facing devices that are running endpoint AI agents. AI agents on exposed devices represent a high-risk combination where compromised agents could be weaponized for lateral movement or data access at scale.",
+    "kql": "ExposureGraphEdges\n| where EdgeLabel == \"runs on\" and SourceNodeLabel == \"endpointAiAgent\"\n| join DeviceInfo on $left.TargetNodeName == $right.DeviceName\n| where IsInternetFacing == true and isnotempty(PublicIP)\n| project TargetNodeName, SourceNodeName, PublicIP, OSPlatform, ExposureLevel, DeviceCategory",
+    "added": "2026-04-08"
   }
 ]
