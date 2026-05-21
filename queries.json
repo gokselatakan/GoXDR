@@ -3662,5 +3662,164 @@
     "desc": "Identifies internet-facing devices that are running endpoint AI agents. AI agents on exposed devices represent a high-risk combination where compromised agents could be weaponized for lateral movement or data access at scale.",
     "kql": "ExposureGraphEdges\n| where EdgeLabel == \"runs on\" and SourceNodeLabel == \"endpointAiAgent\"\n| join DeviceInfo on $left.TargetNodeName == $right.DeviceName\n| where IsInternetFacing == true and isnotempty(PublicIP)\n| project TargetNodeName, SourceNodeName, PublicIP, OSPlatform, ExposureLevel, DeviceCategory",
     "added": "2026-04-08"
+  },
+  {
+    "id": 187,
+    "name": "Azure Key Vault - First Time Vault Access (Baseline Deviation)",
+    "cat": "Azure Key Vault",
+    "sub": "Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics",
+      "IdentityInfo"
+    ],
+    "tags": [
+      "key vault",
+      "first time access",
+      "baseline",
+      "anomaly",
+      "credential harvesting"
+    ],
+    "sev": "high",
+    "desc": "Builds a 30 day baseline of which identities accessed which vaults. Fires on any identity that accessed a vault in the detection window with no history in the baseline period. Enriches results with IdentityInfo for department and risk context.",
+    "kql": "// NOTE: Replace AllowedAppIds with your environment's legitimate service principals (backup agents, cert renewal, app registrations)\nlet lookback     = 30d;\nlet detectWindow = 30d;\nlet AllowedAppIds = dynamic([\"-\"]);\nlet OperationList = dynamic([\"SecretGet\",\"KeyGet\",\"VaultGet\",\"SecretList\",\"KeyList\",\"CertificateGet\",\"CertificateList\"]);\nlet Baseline =\n    AzureDiagnostics\n    | where TimeGenerated between (ago(lookback) .. ago(detectWindow))\n    | where ResourceType =~ \"VAULTS\" and ResultType =~ \"Success\"\n    | where OperationName in (OperationList)\n    | where not(identity_claim_appid_g in (AllowedAppIds))\n    | extend\n        CallerUPN   = coalesce(column_ifexists(\"identity_claim_upn_s\",\"\"), column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")),\n        CallerAppId = column_ifexists(\"identity_claim_appid_g\",\"\")\n    | extend CallerKey = iff(isnotempty(CallerUPN), CallerUPN, CallerAppId)\n    | summarize BaselineVaults = make_set(Resource) by CallerKey;\nlet Recent =\n    AzureDiagnostics\n    | where TimeGenerated > ago(detectWindow)\n    | where ResourceType =~ \"VAULTS\" and ResultType =~ \"Success\"\n    | where OperationName in (OperationList)\n    | where not(identity_claim_appid_g in (AllowedAppIds))\n    | extend\n        CallerUPN       = coalesce(column_ifexists(\"identity_claim_upn_s\",\"\"), column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")),\n        CallerObjectId  = coalesce(column_ifexists(\"identity_claim_oid_g\",\"\"), column_ifexists(\"identity_claim_http_schemas_microsoft_com_identity_claims_objectidentifier_g\",\"\")),\n        CallerAppId     = column_ifexists(\"identity_claim_appid_g\",\"\"),\n        requestUri_s    = column_ifexists(\"requestUri_s\",\"\"),\n        clientInfo_s    = column_ifexists(\"clientInfo_s\",\"\"),\n        CallerIPAddress = column_ifexists(\"CallerIPAddress\",\"\")\n    | extend CallerKey = iff(isnotempty(CallerUPN), CallerUPN, CallerAppId)\n    | summarize\n        EventCount  = count(),\n        Operations  = make_set(OperationName, 20),\n        Vaults      = make_set(Resource, 20),\n        IPAddresses = make_set(CallerIPAddress, 10),\n        UserAgents  = make_set(clientInfo_s, 5),\n        SecretURIs  = make_set(requestUri_s, 50),\n        FirstSeen   = min(TimeGenerated),\n        LastSeen    = max(TimeGenerated)\n        by CallerKey, CallerObjectId;\nRecent\n| join kind=leftanti Baseline on CallerKey\n| join kind=leftouter (\n    IdentityInfo\n    | where TimeGenerated > ago(14d)\n    | summarize arg_max(TimeGenerated,*) by AccountObjectId\n    | project AccountObjectId, AccountDisplayName, Department, JobTitle, RiskLevel\n) on $left.CallerObjectId == $right.AccountObjectId\n| project-reorder FirstSeen, LastSeen, CallerKey, AccountDisplayName, Department, JobTitle, RiskLevel, EventCount, Vaults, Operations, IPAddresses, SecretURIs",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 188,
+    "name": "Azure Key Vault - Config Change Followed by Secret Reads",
+    "cat": "Azure Key Vault",
+    "sub": "Attack Chain",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics"
+    ],
+    "tags": [
+      "key vault",
+      "privilege escalation",
+      "config change",
+      "secret read",
+      "time correlation"
+    ],
+    "sev": "critical",
+    "desc": "Detects VaultPatch or VaultPut operations followed by data plane secret reads within 30 minutes from the same identity. This is a classic privilege escalation pattern where someone modifies vault configuration then immediately reads secrets.",
+    "kql": "let PolicyChangeWindow = 30m;\nlet LookbackDays       = 30d;\nlet ManagementOps = dynamic([\"VaultPatch\",\"VaultPut\",\"VaultDelete\"]);\nlet ReadOps       = dynamic([\"SecretGet\",\"SecretList\",\"KeyGet\",\"KeyList\",\"KeyDecrypt\",\"CertificateGet\",\"CertificateList\"]);\nlet VaultChanges =\n    AzureDiagnostics\n    | where TimeGenerated > ago(LookbackDays)\n    | where ResourceType =~ \"VAULTS\"\n    | where OperationName in (ManagementOps)\n    | where ResultType =~ \"Success\"\n    | extend Actor = tolower(coalesce(\n        column_ifexists(\"identity_claim_upn_s\",\"\"),\n        column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")))\n    | extend ActorObjectId = coalesce(\n        column_ifexists(\"identity_claim_oid_g\",\"\"),\n        column_ifexists(\"identity_claim_http_schemas_microsoft_com_identity_claims_objectidentifier_g\",\"\"))\n    | project ChangeTime = TimeGenerated, VaultName = toupper(Resource),\n        ChangeType = OperationName, Actor, ActorObjectId, ActorIP = CallerIPAddress;\nlet DataPlaneReads =\n    AzureDiagnostics\n    | where TimeGenerated > ago(LookbackDays)\n    | where ResourceType =~ \"VAULTS\"\n    | where OperationName in (ReadOps)\n    | where ResultType =~ \"Success\"\n    | extend ReaderUPN = tolower(coalesce(\n        column_ifexists(\"identity_claim_upn_s\",\"\"),\n        column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")))\n    | extend ReaderObjectId = coalesce(\n        column_ifexists(\"identity_claim_oid_g\",\"\"),\n        column_ifexists(\"identity_claim_http_schemas_microsoft_com_identity_claims_objectidentifier_g\",\"\"))\n    | extend requestUri_s = column_ifexists(\"requestUri_s\",\"\")\n    | project ReadTime = TimeGenerated, VaultName = toupper(Resource),\n        OperationName, ReaderUPN, ReaderObjectId, ReaderIP = CallerIPAddress, requestUri_s;\nVaultChanges\n| join kind=inner DataPlaneReads on VaultName\n| where ReadTime between (ChangeTime .. (ChangeTime + PolicyChangeWindow))\n| where ActorObjectId == ReaderObjectId or isempty(ActorObjectId)\n| extend TimeDeltaMinutes = datetime_diff('minute', ReadTime, ChangeTime)\n| summarize\n    TotalReads      = count(),\n    UniqueSecrets   = dcount(requestUri_s),\n    Operations      = make_set(OperationName),\n    ReaderIPs       = make_set(ReaderIP, 10),\n    Secrets         = make_set(requestUri_s, 30),\n    MinTimeDeltaMin = min(TimeDeltaMinutes),\n    ChangeTypes     = make_set(ChangeType)\n    by ChangeTime, VaultName, Actor, ActorIP, ActorObjectId\n| extend HighRisk = iff(MinTimeDeltaMin < 10 and UniqueSecrets > 3, true, false)\n| project-reorder ChangeTime, VaultName, Actor, ActorIP, HighRisk, MinTimeDeltaMin,\n    TotalReads, UniqueSecrets, ChangeTypes, Secrets, ReaderIPs, Operations\n| sort by MinTimeDeltaMin asc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 189,
+    "name": "Azure Key Vault - Cross-Vault Secret Enumeration",
+    "cat": "Azure Key Vault",
+    "sub": "Credential Harvesting",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics",
+      "IdentityInfo"
+    ],
+    "tags": [
+      "key vault",
+      "enumeration",
+      "cross-vault",
+      "credential harvesting",
+      "lateral movement"
+    ],
+    "sev": "critical",
+    "desc": "Identifies identities accessing three or more distinct vaults and five or more distinct secrets within the lookback window. Calculates SecretsPerMinute rate to quantify how aggressive the enumeration activity was.",
+    "kql": "// NOTE: Replace AllowedAppIds with your environment's legitimate service principals (backup agents, cert renewal, app registrations)\nlet lookback          = 30d;\nlet MinVaultThreshold = 3;\nlet MinSecretThreshold = 5;\nlet AllowedAppIds = dynamic([\"-\"]);\nAzureDiagnostics\n| where TimeGenerated > ago(lookback)\n| where ResourceType =~ \"VAULTS\" and ResultType =~ \"Success\"\n| where OperationName in (\"SecretGet\",\"KeyGet\",\"KeyDecrypt\",\"SecretList\",\"KeyList\",\"CertificateGet\",\"CertificateList\")\n| where not(identity_claim_appid_g in (AllowedAppIds))\n| extend\n    CallerUPN       = coalesce(column_ifexists(\"identity_claim_upn_s\",\"\"), column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")),\n    CallerObjectId  = coalesce(column_ifexists(\"identity_claim_oid_g\",\"\"), column_ifexists(\"identity_claim_http_schemas_microsoft_com_identity_claims_objectidentifier_g\",\"\")),\n    CallerAppId     = column_ifexists(\"identity_claim_appid_g\",\"\"),\n    requestUri_s    = column_ifexists(\"requestUri_s\",\"\"),\n    clientInfo_s    = column_ifexists(\"clientInfo_s\",\"\"),\n    CallerIPAddress = column_ifexists(\"CallerIPAddress\",\"\")\n| extend CallerKey = iff(isnotempty(CallerUPN), CallerUPN, CallerAppId)\n| summarize\n    EventCount      = count(),\n    DistinctVaults  = dcount(Resource),\n    DistinctSecrets = dcount(requestUri_s),\n    VaultList       = make_set(Resource, 30),\n    OperationList   = make_set(OperationName, 20),\n    SecretList      = make_set(requestUri_s, 50),\n    CallerIPList    = make_set(CallerIPAddress, 10),\n    UserAgents      = make_set(clientInfo_s, 5),\n    FirstAccess     = min(TimeGenerated),\n    LastAccess      = max(TimeGenerated)\n    by CallerKey, CallerObjectId\n| where DistinctVaults >= MinVaultThreshold and DistinctSecrets >= MinSecretThreshold\n| extend\n    AccessDurationMinutes = datetime_diff('minute', LastAccess, FirstAccess),\n    SecretsPerMinute = round(\n        toreal(DistinctSecrets) / iff(datetime_diff('minute', LastAccess, FirstAccess) < 1, 1.0,\n        toreal(datetime_diff('minute', LastAccess, FirstAccess))), 2)\n| join kind=leftouter (\n    IdentityInfo\n    | where TimeGenerated > ago(14d)\n    | summarize arg_max(TimeGenerated,*) by AccountObjectId\n    | project AccountObjectId, AccountDisplayName, Department, JobTitle, RiskLevel\n) on $left.CallerObjectId == $right.AccountObjectId\n| project-reorder FirstAccess, LastAccess, AccessDurationMinutes, SecretsPerMinute, CallerKey,\n    AccountDisplayName, Department, JobTitle, RiskLevel,\n    DistinctVaults, DistinctSecrets, VaultList, OperationList, SecretList, CallerIPList, UserAgents\n| sort by DistinctVaults desc, SecretsPerMinute desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 190,
+    "name": "Azure Key Vault - Off-Hours, Weekend or New IP Access",
+    "cat": "Azure Key Vault",
+    "sub": "Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics",
+      "BehaviorAnalytics"
+    ],
+    "tags": [
+      "key vault",
+      "off-hours",
+      "weekend",
+      "new ip",
+      "anomaly",
+      "ueba",
+      "risk score"
+    ],
+    "sev": "high",
+    "desc": "Baselines each identity's historical IP addresses over 30 days then flags access outside business hours (08:00-18:00), on weekends or from a never-before-seen IP. Enriches with UEBA BlastRadius and InvestigationPriority. RiskScore of 50+ triggers the alert.",
+    "kql": "// NOTE: Replace AllowedAppIds with your environment's legitimate service principals (backup agents, cert renewal, app registrations)\nlet lookback      = 30d;\nlet detectWindow  = 1d;\nlet WorkHourStart = 8;\nlet WorkHourEnd   = 18;\nlet AllowedAppIds = dynamic([\"-\"]);\nlet OperationList = dynamic([\"SecretGet\",\"KeyGet\",\"KeyDecrypt\",\"CertificateGet\",\"SecretList\",\"KeyList\"]);\nlet HistoricalPattern =\n    AzureDiagnostics\n    | where TimeGenerated between (ago(lookback) .. ago(detectWindow))\n    | where ResourceType =~ \"VAULTS\" and ResultType =~ \"Success\"\n    | where OperationName in (OperationList)\n    | where not(identity_claim_appid_g in (AllowedAppIds))\n    | extend CallerUPN = coalesce(\n        column_ifexists(\"identity_claim_upn_s\",\"\"),\n        column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\"))\n    | where isnotempty(CallerUPN)\n    | summarize HistoricalIPs = make_set(CallerIPAddress, 100) by CallerUPN;\nlet RecentActivity =\n    AzureDiagnostics\n    | where TimeGenerated > ago(detectWindow)\n    | where ResourceType =~ \"VAULTS\" and ResultType =~ \"Success\"\n    | where OperationName in (OperationList)\n    | where not(identity_claim_appid_g in (AllowedAppIds))\n    | extend\n        CallerUPN       = coalesce(\n            column_ifexists(\"identity_claim_upn_s\",\"\"),\n            column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")),\n        CallerObjectId  = coalesce(\n            column_ifexists(\"identity_claim_oid_g\",\"\"),\n            column_ifexists(\"identity_claim_http_schemas_microsoft_com_identity_claims_objectidentifier_g\",\"\")),\n        requestUri_s    = column_ifexists(\"requestUri_s\",\"\"),\n        clientInfo_s    = column_ifexists(\"clientInfo_s\",\"\"),\n        CallerIPAddress = column_ifexists(\"CallerIPAddress\",\"\"),\n        HourOfDay       = hourofday(TimeGenerated),\n        DayOfWeekInt    = toint(dayofweek(TimeGenerated) / 1d)\n    | where isnotempty(CallerUPN)\n    | extend IsWeekend  = (DayOfWeekInt == 0 or DayOfWeekInt == 6)\n    | extend IsOffHours = (HourOfDay < WorkHourStart or HourOfDay >= WorkHourEnd);\nRecentActivity\n| join kind=leftouter HistoricalPattern on CallerUPN\n| extend IsNewIP = iff(isnull(HistoricalIPs), true, not(set_has_element(HistoricalIPs, CallerIPAddress)))\n| where IsOffHours == true or IsWeekend == true or IsNewIP == true\n| summarize\n    EventCount      = count(),\n    Operations      = make_set(OperationName, 10),\n    Vaults          = make_set(Resource, 20),\n    SecretsAccessed = make_set(requestUri_s, 30),\n    IPAddresses     = make_set(CallerIPAddress, 10),\n    UserAgents      = make_set(clientInfo_s, 5),\n    OffHoursEvents  = countif(IsOffHours == true),\n    WeekendEvents   = countif(IsWeekend == true),\n    NewIPEvents     = countif(IsNewIP == true),\n    FirstSeen       = min(TimeGenerated),\n    LastSeen        = max(TimeGenerated)\n    by CallerUPN, CallerObjectId\n| extend RiskScore =\n    (iff(OffHoursEvents > 0, 25, 0)) +\n    (iff(WeekendEvents  > 0, 25, 0)) +\n    (iff(NewIPEvents    > 0, 50, 0))\n| where RiskScore >= 50\n| join kind=leftouter (\n    BehaviorAnalytics\n    | where TimeGenerated > ago(7d)\n    | summarize\n        BlastRadius            = any(tostring(UsersInsights.BlastRadius)),\n        InvestigationPriority  = max(InvestigationPriority),\n        AnomalousActivityCount = countif(\n            tobool(ActivityInsights.FirstTimeUserPerformedAction) == true or\n            tobool(ActivityInsights.FirstTimeConnectionFromCountryObservedInTenant) == true)\n        by UserName\n) on $left.CallerUPN == $right.UserName\n| project-reorder FirstSeen, LastSeen, CallerUPN, RiskScore, BlastRadius, InvestigationPriority,\n    OffHoursEvents, WeekendEvents, NewIPEvents, AnomalousActivityCount,\n    EventCount, Vaults, Operations, SecretsAccessed, IPAddresses, UserAgents\n| sort by RiskScore desc, InvestigationPriority desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 191,
+    "name": "Azure Key Vault - Managed Identity Access from External IP",
+    "cat": "Azure Key Vault",
+    "sub": "Suspicious Source",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics"
+    ],
+    "tags": [
+      "key vault",
+      "managed identity",
+      "external ip",
+      "token theft",
+      "suspicious source"
+    ],
+    "sev": "critical",
+    "desc": "Detects managed identity tokens (no human UPN) used to access Key Vault from IPs that are neither Azure datacenter ranges nor RFC1918 private ranges. Managed identities accessing vaults from external IPs may indicate stolen tokens.",
+    "kql": "// NOTE: Replace AllowedAppIds with your environment's legitimate service principals (backup agents, cert renewal, app registrations)\nlet lookback      = 30d;\nlet AllowedAppIds = dynamic([\"-\"]);\nlet OperationList = dynamic([\"SecretGet\",\"KeyGet\",\"KeyDecrypt\",\"SecretList\",\"CertificateGet\",\"KeyList\"]);\nlet AzureIPPrefixes = dynamic([\"40.\",\"52.\",\"13.\",\"20.\",\"104.\",\"168.63.\",\"51.\",\"23.\",\"65.\",\"70.\",\"137.\",\"157.\"]);\nAzureDiagnostics\n| where TimeGenerated > ago(lookback)\n| where ResourceType =~ \"VAULTS\" and ResultType =~ \"Success\"\n| where OperationName in (OperationList)\n| where not(identity_claim_appid_g in (AllowedAppIds))\n| extend\n    CallerUPN       = coalesce(column_ifexists(\"identity_claim_upn_s\",\"\"), column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")),\n    CallerObjectId  = coalesce(column_ifexists(\"identity_claim_oid_g\",\"\"), column_ifexists(\"identity_claim_http_schemas_microsoft_com_identity_claims_objectidentifier_g\",\"\")),\n    CallerAppId     = column_ifexists(\"identity_claim_appid_g\",\"\"),\n    requestUri_s    = column_ifexists(\"requestUri_s\",\"\"),\n    clientInfo_s    = column_ifexists(\"clientInfo_s\",\"\"),\n    CallerIPAddress = column_ifexists(\"CallerIPAddress\",\"\")\n| where isempty(CallerUPN) and isnotempty(CallerAppId)\n| where isnotempty(CallerIPAddress)\n| extend StartsWithAzurePrefix = CallerIPAddress has_any (AzureIPPrefixes)\n| extend IsPrivateIP = (CallerIPAddress startswith \"10.\" or CallerIPAddress startswith \"192.168.\" or CallerIPAddress startswith \"172.\")\n| where StartsWithAzurePrefix == false and IsPrivateIP == false\n| summarize\n    EventCount      = count(),\n    Operations      = make_set(OperationName, 10),\n    Vaults          = make_set(Resource, 20),\n    SecretsAccessed = make_set(requestUri_s, 30),\n    ExternalIPs     = make_set(CallerIPAddress, 10),\n    UserAgents      = make_set(clientInfo_s, 5),\n    FirstSeen       = min(TimeGenerated),\n    LastSeen        = max(TimeGenerated)\n    by CallerObjectId, CallerAppId\n| project-reorder FirstSeen, LastSeen, CallerObjectId, CallerAppId, EventCount, Vaults, Operations, SecretsAccessed, ExternalIPs, UserAgents\n| sort by EventCount desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 192,
+    "name": "Azure Key Vault - UEBA Correlated Sensitive Operations",
+    "cat": "Azure Key Vault",
+    "sub": "Attack Chain",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics",
+      "BehaviorAnalytics",
+      "IdentityInfo"
+    ],
+    "tags": [
+      "key vault",
+      "ueba",
+      "sensitive operations",
+      "delete",
+      "backup",
+      "correlation",
+      "risk score"
+    ],
+    "sev": "high",
+    "desc": "Joins Key Vault sensitive write, delete and backup operations against BehaviorAnalytics signals. Surfaces identities performing destructive or high-value operations who also have UEBA anomalies. Calculates a composite UEBARiskScore.",
+    "kql": "let SensitiveOps = dynamic([\n    \"VaultDelete\",\"VaultPatch\",\n    \"KeyDelete\",\"SecretDelete\",\"SecretPurge\",\"KeyPurge\",\n    \"SecretBackup\",\"KeyBackup\",\"CertificateDelete\",\"CertificatePurge\",\n    \"SecretSet\",\"KeyCreate\",\"KeyImport\",\n    \"CertificateCreate\",\"CertificateImport\",\"CertificateUpdate\"\n]);\nlet UEBASignals =\n    BehaviorAnalytics\n    | where TimeGenerated > ago(30d)\n    | where ActivityType in (\"Administrative\",\"DataAccess\",\"CloudLogon\")\n    | extend UserName = tolower(tostring(UserName))\n    | summarize\n        MaxPriority          = max(InvestigationPriority),\n        BlastRadius          = any(tostring(UsersInsights.BlastRadius)),\n        FirstTimeAction      = countif(tobool(ActivityInsights.FirstTimeUserPerformedAction) == true),\n        FirstTimeFromCountry = countif(tobool(ActivityInsights.FirstTimeConnectionFromCountryObservedInTenant) == true),\n        FirstTimeInTenant    = countif(tobool(ActivityInsights.FirstTimeActionPerformedInTenant) == true),\n        AadUserId            = any(tostring(UsersInsights.AccountObjectID)),\n        SourceCountries      = make_set(SourceIPLocation, 10)\n        by UserName;\nlet KVActivity =\n    AzureDiagnostics\n    | where TimeGenerated > ago(30d)\n    | where ResourceType =~ \"VAULTS\" and ResultType =~ \"Success\"\n    | where OperationName in (SensitiveOps)\n    | extend\n        CallerUPN      = tolower(coalesce(\n            column_ifexists(\"identity_claim_upn_s\",\"\"),\n            column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\"))),\n        CallerObjectId = coalesce(\n            column_ifexists(\"identity_claim_oid_g\",\"\"),\n            column_ifexists(\"identity_claim_http_schemas_microsoft_com_identity_claims_objectidentifier_g\",\"\")),\n        requestUri_s    = column_ifexists(\"requestUri_s\",\"\"),\n        clientInfo_s    = column_ifexists(\"clientInfo_s\",\"\"),\n        CallerIPAddress = column_ifexists(\"CallerIPAddress\",\"\")\n    | where isnotempty(CallerUPN)\n    | summarize\n        KVEventCount = count(),\n        KVOperations = make_set(OperationName, 20),\n        KVVaults     = make_set(Resource, 20),\n        KVIPs        = make_set(CallerIPAddress, 10),\n        KVSecrets    = make_set(requestUri_s, 30),\n        KVUserAgents = make_set(clientInfo_s, 5),\n        FirstKVEvent = min(TimeGenerated),\n        LastKVEvent  = max(TimeGenerated)\n        by CallerUPN, CallerObjectId;\nKVActivity\n| join kind=leftouter UEBASignals on $left.CallerUPN == $right.UserName\n| join kind=leftouter (\n    IdentityInfo\n    | where TimeGenerated > ago(14d)\n    | summarize arg_max(TimeGenerated,*) by AccountObjectId\n    | project AccountObjectId, Department, JobTitle, Manager, AccountDisplayName\n) on $left.CallerObjectId == $right.AccountObjectId\n| extend UEBARiskScore =\n    (iff(BlastRadius =~ \"High\", 40, iff(isempty(BlastRadius), 10, 20))) +\n    (iff(FirstTimeAction > 0, 20, 0))        +\n    (iff(FirstTimeFromCountry > 0, 20, 0))   +\n    (iff(FirstTimeInTenant > 0, 15, 0))      +\n    (iff(KVEventCount > 20, 15, 5))          +\n    coalesce(MaxPriority, 0)\n| project-reorder FirstKVEvent, LastKVEvent, CallerUPN, AccountDisplayName, Department, JobTitle,\n    Manager, BlastRadius, UEBARiskScore, MaxPriority, FirstTimeAction, FirstTimeFromCountry,\n    FirstTimeInTenant, KVEventCount, KVOperations, KVVaults, KVSecrets, KVIPs, KVUserAgents, SourceCountries\n| sort by UEBARiskScore desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 193,
+    "name": "Azure Key Vault - Failure Enumeration Then Successful Read Chain",
+    "cat": "Azure Key Vault",
+    "sub": "Attack Chain",
+    "plat": "sentinel",
+    "tables": [
+      "AzureDiagnostics",
+      "IdentityInfo"
+    ],
+    "tags": [
+      "key vault",
+      "enumeration",
+      "403",
+      "404",
+      "brute force",
+      "secret read",
+      "attack chain"
+    ],
+    "sev": "critical",
+    "desc": "Identifies identities that generated multiple 403/404 responses on Key Vault data plane operations then successfully read secrets within a 1 hour window. The failure-then-success pattern indicates credential testing or permission escalation followed by data exfiltration.",
+    "kql": "let lookback      = 30d;\nlet FailureWindow = 1h;\nlet MinFailures   = 3;\nlet Failures =\n    AzureDiagnostics\n    | where TimeGenerated > ago(lookback)\n    | where ResourceType =~ \"VAULTS\"\n    | where httpStatusCode_d in (403, 404, 409, 429)\n    | extend\n        CallerUPN       = coalesce(\n            column_ifexists(\"identity_claim_upn_s\",\"\"),\n            column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")),\n        CallerAppId     = column_ifexists(\"identity_claim_appid_g\",\"\"),\n        CallerIPAddress = column_ifexists(\"CallerIPAddress\",\"\")\n    | extend CallerKey = iff(isnotempty(CallerUPN), tolower(CallerUPN), CallerAppId)\n    | extend VaultKey  = toupper(Resource)\n    | summarize\n        FailureCount = count(),\n        FailureCodes = make_set(tostring(toint(httpStatusCode_d)), 10),\n        FailureOps   = make_set(OperationName, 10),\n        FailureIPs   = make_set(CallerIPAddress, 10),\n        FirstFailure = min(TimeGenerated),\n        LastFailure  = max(TimeGenerated)\n        by CallerKey, VaultKey\n    | where FailureCount >= MinFailures;\nlet Successes =\n    AzureDiagnostics\n    | where TimeGenerated > ago(lookback)\n    | where ResourceType =~ \"VAULTS\"\n    | where httpStatusCode_d >= 200 and httpStatusCode_d < 300\n    | where OperationName in (\"SecretGet\",\"SecretList\",\"KeyGet\",\"KeyList\",\"KeyDecrypt\",\"CertificateGet\",\"CertificateList\")\n    | extend\n        CallerUPN       = coalesce(\n            column_ifexists(\"identity_claim_upn_s\",\"\"),\n            column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")),\n        CallerAppId     = column_ifexists(\"identity_claim_appid_g\",\"\"),\n        requestUri_s    = column_ifexists(\"requestUri_s\",\"\"),\n        CallerIPAddress = column_ifexists(\"CallerIPAddress\",\"\")\n    | extend CallerKey = iff(isnotempty(CallerUPN), tolower(CallerUPN), CallerAppId)\n    | extend VaultKey  = toupper(Resource)\n    | summarize\n        SuccessCount    = count(),\n        SuccessOps      = make_set(OperationName, 10),\n        SecretsAccessed = make_set(requestUri_s, 30),\n        SuccessIPs      = make_set(CallerIPAddress, 10),\n        FirstSuccess    = min(TimeGenerated),\n        LastSuccess     = max(TimeGenerated)\n        by CallerKey, VaultKey;\nFailures\n| join kind=inner Successes on CallerKey, VaultKey\n| where FirstSuccess > LastFailure\n| where (FirstSuccess - LastFailure) < FailureWindow\n| extend TimeDeltaMinutes = datetime_diff('minute', FirstSuccess, LastFailure)\n| join kind=leftouter (\n    IdentityInfo\n    | where TimeGenerated > ago(14d)\n    | summarize arg_max(TimeGenerated,*) by AccountDisplayName\n    | project AccountDisplayName, Department, JobTitle, RiskLevel\n) on $left.CallerKey == $right.AccountDisplayName\n| project-reorder FirstFailure, LastFailure, FirstSuccess, TimeDeltaMinutes,\n    VaultKey, CallerKey, AccountDisplayName, Department, RiskLevel,\n    FailureCount, SuccessCount, FailureCodes, FailureOps, FailureIPs, SuccessIPs, SecretsAccessed\n| sort by FailureCount desc",
+    "added": "2026-04-08"
   }
 ]
