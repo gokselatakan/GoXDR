@@ -132,10 +132,32 @@
   .feedback-btn:hover { background: #f97316; color: #fff; }
   .footer-submit { font-size: 12px; color: var(--blue); text-decoration: none; padding: 6px 14px; border: 1px solid var(--blue); border-radius: 8px; display: inline-block; }
   .footer-feedback { font-size: 12px; color: #f97316; text-decoration: none; padding: 6px 14px; border: 1px solid #f97316; border-radius: 8px; display: inline-block; }
+  .like-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text3); font-size: 12px; font-weight: 600; transition: all 0.2s; }
+  .like-btn:hover { border-color: #ef4444; color: #fca5a5; }
+  .like-btn.liked { border-color: #ef4444; color: #ef4444; background: #450a0a; }
+  .like-heart { font-size: 14px; transition: transform 0.2s; }
+  .like-btn.liked .like-heart { transform: scale(1.2); }
+  .like-count { font-size: 11px; font-weight: 700; }
+  .top-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #ef4444; background: transparent; color: var(--text3); font-weight: 600; }
+  .top-btn.active { background: #450a0a; color: #fca5a5; border-color: #ef4444; }
 </style>
 </head>
 <body>
 <div id="root"></div>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script>
+  firebase.initializeApp({
+    apiKey: "AIzaSyA5OQ3-5PU0V8fhbEx-NSZPhinR36ldcqI",
+    authDomain: "goxdr-likes.firebaseapp.com",
+    databaseURL: "https://goxdr-likes-default-rtdb.firebaseio.com",
+    projectId: "goxdr-likes",
+    storageBucket: "goxdr-likes.firebasestorage.app",
+    messagingSenderId: "874723798656",
+    appId: "1:874723798656:web:811f70c5dda772b4f50065"
+  });
+  const db = firebase.database();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script>
@@ -159,8 +181,33 @@ function App() {
   const [copied, setCopied] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [dark, setDark] = useState(true);
+  const [likes, setLikes] = useState({});
+  const [myLikes, setMyLikes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("goxdr_likes") || "{}"); } catch(e) { return {}; }
+  });
+  const [showTop, setShowTop] = useState(false);
   const SEV = dark ? SEV_DARK : SEV_LIGHT;
   const PL = dark ? PL_DARK : PL_LIGHT;
+
+  // Firebase: load all likes on mount
+  useEffect(() => {
+    const ref = db.ref("likes");
+    ref.on("value", snap => {
+      const data = snap.val() || {};
+      setLikes(data);
+    });
+    return () => ref.off();
+  }, []);
+
+  const doLike = useCallback((qid) => {
+    const key = String(qid);
+    if (myLikes[key]) return;
+    const ref = db.ref("likes/" + key);
+    ref.transaction(current => (current || 0) + 1);
+    const updated = {...myLikes, [key]: true};
+    setMyLikes(updated);
+    localStorage.setItem("goxdr_likes", JSON.stringify(updated));
+  }, [myLikes]);
 
   useEffect(() => { document.body.className = dark ? "" : "light"; }, [dark]);
 
@@ -189,8 +236,9 @@ function App() {
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();
-    return queries.filter(q => {
+    let result = queries.filter(q => {
       if (showNew && !isNew(q)) return false;
+      if (showTop && !(likes[String(q.id)] > 0)) return false;
       if (cat !== "All" && q.cat !== cat) return false;
       if (sev !== "all" && q.sev !== sev) return false;
       if (plat === "sentinel" && q.plat === "xdr") return false;
@@ -198,7 +246,11 @@ function App() {
       if (!s) return true;
       return q.name.toLowerCase().includes(s) || q.tags.some(t => t.includes(s)) || q.tables.some(t => t.toLowerCase().includes(s)) || q.sub.toLowerCase().includes(s);
     });
-  }, [search, cat, sev, plat, queries, showNew, isNew]);
+    if (showTop) {
+      result.sort((a, b) => (likes[String(b.id)] || 0) - (likes[String(a.id)] || 0));
+    }
+    return result;
+  }, [search, cat, sev, plat, queries, showNew, showTop, isNew, likes]);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -249,7 +301,8 @@ function App() {
       e("span", { className: "sep" }, "\u2502"),
       [{ v: "all", l: "All", c: null, bc: null }, { v: "sentinel", l: "Sentinel", c: "#a78bfa", bc: "#7c3aed" }, { v: "xdr", l: "XDR", c: "#4ade80", bc: "#16a34a" }].map(p => e("button", { key: p.v, className: "plat-btn" + (plat === p.v ? " active" : ""), style: p.c ? { color: p.c, borderColor: plat === p.v ? p.bc : p.bc + "80", fontWeight: plat === p.v ? 700 : 500 } : {}, onClick: () => { setPlat(plat === p.v ? "all" : p.v); setSelQ(null); } }, p.l)),
       e("span", { className: "sep" }, "\u2502"),
-      e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => setShowNew(!showNew) }, "\ud83e\udd29 Recently Added (" + newCount + ")")
+      e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => { setShowNew(!showNew); setShowTop(false); } }, "\ud83e\udd29 Recently Added (" + newCount + ")"),
+      e("button", { className: "top-btn" + (showTop ? " active" : ""), onClick: () => { setShowTop(!showTop); setShowNew(false); } }, "\u2764\ufe0f Top Liked")
     ),
 
     // Groups
@@ -277,6 +330,7 @@ function App() {
                 e("div", { style: { flex: 1, minWidth: 0 } },
                   e("div", { style: { display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" } },
                     e("span", { className: "q-name" + (sel ? " sel" : "") }, q.name),
+                    likes[String(q.id)] > 0 && e("span", { style: { fontSize: 10, color: "#ef4444", fontWeight: 700 } }, "\u2764 " + likes[String(q.id)]),
                     isNew(q) && e("span", { className: "new-badge" }, "NEW"),
                     e("span", { className: "plat-badge", style: { background: pl.bg, color: pl.tx } }, pl.l)
                   ),
@@ -290,6 +344,10 @@ function App() {
               sel && e("div", { className: "detail" },
                 e("p", { className: "detail-desc" }, q.desc),
                 e("div", { className: "detail-badges" },
+                  e("button", { className: "like-btn" + (myLikes[String(q.id)] ? " liked" : ""), onClick: (ev) => { ev.stopPropagation(); doLike(q.id); } },
+                    e("span", { className: "like-heart" }, myLikes[String(q.id)] ? "\u2764\ufe0f" : "\ud83e\udd0d"),
+                    e("span", { className: "like-count" }, likes[String(q.id)] || 0)
+                  ),
                   e("span", { className: "sev-badge", style: { background: sv.bg, color: sv.tx, border: "1px solid " + sv.br } }, (sv.label || q.sev).toUpperCase()),
                   e("span", { className: "sev-badge", style: { background: pl.bg, color: pl.tx } }, pl.l),
                   q.added && e("span", { className: "date-badge" }, "\ud83d\udcc5 " + q.added),
@@ -312,7 +370,7 @@ function App() {
     filtered.length === 0 && e("div", { className: "empty" },
       e("div", { style: { fontSize: 28 } }, "\ud83d\udd0d"),
       e("div", { style: { fontSize: 13, margin: "8px 0" } }, 'No queries match "' + search + '"'),
-      e("button", { className: "reset-btn", onClick: () => { setSearch(""); setCat("All"); setSev("all"); setPlat("all"); setSelQ(null); setShowNew(false); } }, "Reset")
+      e("button", { className: "reset-btn", onClick: () => { setSearch(""); setCat("All"); setSev("all"); setPlat("all"); setSelQ(null); setShowNew(false); setShowTop(false); } }, "Reset")
     ),
 
     e("div", { className: "footer" },
