@@ -3844,5 +3844,189 @@
     "desc": "Tracks the full certificate operation lifecycle against Key Vault: creates, lists, gets, backups, restores, deletes, purges and recovery. Flags sensitive operations (backup, restore, purge, recover, get-deleted) with a risk signal and enriches with identity context.",
     "kql": "// NOTE: Replace AllowedAppIds with your environment's legitimate service principals\nlet lookback   = 30d;\nlet CertOps    = dynamic([\n    \"CertificateGet\",\"CertificateList\",\"CertificateGetDeleted\",\"CertificateListDeleted\",\n    \"CertificateRecover\",\"CertificateDelete\",\"CertificatePurge\",\n    \"CertificateCreate\",\"CertificateImport\",\"CertificateUpdate\",\n    \"CertificateBackup\",\"CertificateRestore\"\n]);\nlet AllowedAppIds = dynamic([\"-\"]);\nAzureDiagnostics\n| where TimeGenerated > ago(lookback)\n| where ResourceType =~ \"VAULTS\" and ResultType =~ \"Success\"\n| where OperationName in (CertOps)\n| where not(identity_claim_appid_g in (AllowedAppIds))\n| extend\n    CallerUPN       = coalesce(column_ifexists(\"identity_claim_upn_s\",\"\"), column_ifexists(\"identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s\",\"\")),\n    CallerObjectId  = coalesce(column_ifexists(\"identity_claim_oid_g\",\"\"), column_ifexists(\"identity_claim_http_schemas_microsoft_com_identity_claims_objectidentifier_g\",\"\")),\n    CallerAppId     = column_ifexists(\"identity_claim_appid_g\",\"\"),\n    requestUri_s    = column_ifexists(\"requestUri_s\",\"\"),\n    clientInfo_s    = column_ifexists(\"clientInfo_s\",\"\"),\n    CallerIPAddress = column_ifexists(\"CallerIPAddress\",\"\")\n| extend CallerKey = iff(isnotempty(CallerUPN), CallerUPN, CallerAppId)\n| extend IsSensitiveOp = OperationName in (\"CertificateBackup\",\"CertificateRestore\",\"CertificateGetDeleted\",\"CertificateRecover\",\"CertificatePurge\")\n| summarize\n    EventCount       = count(),\n    SensitiveOpCount = countif(IsSensitiveOp == true),\n    Operations       = make_set(OperationName, 20),\n    Vaults           = make_set(Resource, 20),\n    Certificates     = make_set(requestUri_s, 50),\n    IPAddresses      = make_set(CallerIPAddress, 10),\n    UserAgents       = make_set(clientInfo_s, 5),\n    FirstSeen        = min(TimeGenerated),\n    LastSeen         = max(TimeGenerated)\n    by CallerKey, CallerObjectId\n| join kind=leftouter (\n    IdentityInfo\n    | where TimeGenerated > ago(14d)\n    | summarize arg_max(TimeGenerated,*) by AccountObjectId\n    | project AccountObjectId, AccountDisplayName, Department, JobTitle, RiskLevel\n) on $left.CallerObjectId == $right.AccountObjectId\n| extend CertRiskSignal = iff(SensitiveOpCount > 0, \"Sensitive Cert Op Detected\", \"Read/List Only\")\n| project-reorder FirstSeen, LastSeen, CallerKey, AccountDisplayName, Department,\n    CertRiskSignal, SensitiveOpCount, EventCount, Operations, Vaults, Certificates, IPAddresses, UserAgents\n| sort by SensitiveOpCount desc, EventCount desc",
     "added": "2026-04-08"
+  },
+  {
+    "id": 195,
+    "name": "OOF Users with Risky Sign-Ins (Compromise Indicator)",
+    "cat": "Identity",
+    "sub": "Correlation",
+    "plat": "sentinel",
+    "tables": [
+      "OfficeActivity",
+      "SigninLogs"
+    ],
+    "tags": [
+      "oof",
+      "out-of-office",
+      "risky sign-in",
+      "compromise",
+      "vacation",
+      "correlation"
+    ],
+    "sev": "critical",
+    "desc": "Detects risky sign-ins from users who have active Out-of-Office set. A user on vacation with medium/high risk sign-in is a strong compromise signal since the legitimate user is unlikely to be signing in.",
+    "kql": "let OOFUsers = OfficeActivity\n| where TimeGenerated > ago(14d)\n| where Operation == \"Set-MailboxAutoReplyConfiguration\"\n| extend Params = parse_json(Parameters)\n| mv-apply Params on (\n    where tostring(Params.Name) == \"AutoReplyState\"\n    | extend AutoReplyState = tostring(Params.Value)\n)\n| where AutoReplyState in (\"Scheduled\", \"Enabled\")\n| extend Target = UserId\n| mv-apply p = parse_json(Parameters) on (\n    where tostring(p.Name) == \"StartTime\"\n    | extend OOFStart = tostring(p.Value)\n)\n| mv-apply p2 = parse_json(Parameters) on (\n    where tostring(p2.Name) == \"EndTime\"\n    | extend OOFEnd = tostring(p2.Value)\n)\n| summarize arg_max(TimeGenerated, *) by Target;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == 0 or ResultType == 50074\n| where RiskLevelDuringSignIn in (\"medium\", \"high\") or RiskState == \"atRisk\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| extend City = tostring(LocationDetails.city)\n| join kind=inner (OOFUsers) on $left.UserPrincipalName == $right.Target\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, City, AppDisplayName, RiskLevelDuringSignIn, RiskState, ResultType, OOFStart, OOFEnd, CorrelationId\n| order by TimeGenerated desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 196,
+    "name": "OOF Users with Risky Sign-Ins (Compromise Indicator)",
+    "cat": "Identity",
+    "sub": "Correlation",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents",
+      "AADSignInEventsBeta"
+    ],
+    "tags": [
+      "oof",
+      "out-of-office",
+      "risky sign-in",
+      "compromise",
+      "vacation",
+      "correlation"
+    ],
+    "sev": "critical",
+    "desc": "Detects risky sign-ins from users who have active Out-of-Office set. A user on vacation with medium/high risk sign-in is a strong compromise signal since the legitimate user is unlikely to be signing in.",
+    "kql": "let OOFUsers = CloudAppEvents\n| where Timestamp > ago(14d)\n| where ActionType == \"Set-MailboxAutoReplyConfiguration\"\n| extend Params = parse_json(RawEventData.Parameters)\n| mv-apply Params on (\n    where tostring(Params.Name) == \"AutoReplyState\"\n    | extend AutoReplyState = tostring(Params.Value)\n)\n| where AutoReplyState in (\"Scheduled\", \"Enabled\")\n| extend Target = tostring(RawEventData.UserId)\n| mv-apply p = parse_json(RawEventData.Parameters) on (\n    where tostring(p.Name) == \"StartTime\"\n    | extend OOFStart = tostring(p.Value)\n)\n| mv-apply p2 = parse_json(RawEventData.Parameters) on (\n    where tostring(p2.Name) == \"EndTime\"\n    | extend OOFEnd = tostring(p2.Value)\n)\n| summarize arg_max(Timestamp, *) by Target;\nAADSignInEventsBeta\n| where Timestamp > ago(7d)\n| where ErrorCode == 0 or ErrorCode == 50074\n| where RiskLevelDuringSignIn in (50, 100)\n| join kind=inner (OOFUsers) on $left.AccountUpn == $right.Target\n| project Timestamp, AccountUpn, AccountDisplayName, IPAddress, Country, City, Application, RiskLevelDuringSignIn, ErrorCode, OOFStart, OOFEnd\n| order by Timestamp desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 197,
+    "name": "Active OOF Users Dashboard (SOC Reference List)",
+    "cat": "Identity",
+    "sub": "SOC Metrics",
+    "plat": "sentinel",
+    "tables": [
+      "OfficeActivity",
+      "SigninLogs"
+    ],
+    "tags": [
+      "oof",
+      "out-of-office",
+      "dashboard",
+      "soc",
+      "reference",
+      "triage"
+    ],
+    "sev": "low",
+    "desc": "Lists all users who recently enabled Out-of-Office along with their latest sign-in activity. SOC analysts can reference this when triaging unfamiliar sign-in or impossible travel alerts to quickly determine if the user is on vacation.",
+    "kql": "OfficeActivity\n| where TimeGenerated > ago(14d)\n| where Operation == \"Set-MailboxAutoReplyConfiguration\"\n| extend Params = parse_json(Parameters)\n| mv-apply Params on (\n    where tostring(Params.Name) == \"AutoReplyState\"\n    | extend AutoReplyState = tostring(Params.Value)\n)\n| where AutoReplyState in (\"Scheduled\", \"Enabled\")\n| extend Target = UserId\n| mv-apply p = parse_json(Parameters) on (\n    where tostring(p.Name) == \"StartTime\"\n    | extend OOFStart = tostring(p.Value)\n)\n| mv-apply p2 = parse_json(Parameters) on (\n    where tostring(p2.Name) == \"EndTime\"\n    | extend OOFEnd = tostring(p2.Value)\n)\n| summarize arg_max(TimeGenerated, *) by Target\n| join kind=leftouter (\n    SigninLogs\n    | where TimeGenerated > ago(7d)\n    | where ResultType == 0\n    | extend Country = tostring(LocationDetails.countryOrRegion)\n    | extend City = tostring(LocationDetails.city)\n    | summarize\n        LastSignIn = max(TimeGenerated),\n        SignInCount = count(),\n        Countries = make_set(Country, 5),\n        Cities = make_set(City, 5),\n        IPs = make_set(IPAddress, 5)\n        by UserPrincipalName\n) on $left.Target == $right.UserPrincipalName\n| project Target, OOFStart, OOFEnd, LastSignIn, SignInCount, Countries, Cities, IPs\n| order by OOFStart desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 198,
+    "name": "Active OOF Users Dashboard (SOC Reference List)",
+    "cat": "Identity",
+    "sub": "SOC Metrics",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents",
+      "AADSignInEventsBeta"
+    ],
+    "tags": [
+      "oof",
+      "out-of-office",
+      "dashboard",
+      "soc",
+      "reference",
+      "triage"
+    ],
+    "sev": "low",
+    "desc": "Lists all users who recently enabled Out-of-Office along with their latest sign-in activity. SOC analysts can reference this when triaging unfamiliar sign-in or impossible travel alerts to quickly determine if the user is on vacation.",
+    "kql": "CloudAppEvents\n| where Timestamp > ago(14d)\n| where ActionType == \"Set-MailboxAutoReplyConfiguration\"\n| extend Params = parse_json(RawEventData.Parameters)\n| mv-apply Params on (\n    where tostring(Params.Name) == \"AutoReplyState\"\n    | extend AutoReplyState = tostring(Params.Value)\n)\n| where AutoReplyState in (\"Scheduled\", \"Enabled\")\n| extend Target = tostring(RawEventData.UserId)\n| mv-apply p = parse_json(RawEventData.Parameters) on (\n    where tostring(p.Name) == \"StartTime\"\n    | extend OOFStart = tostring(p.Value)\n)\n| mv-apply p2 = parse_json(RawEventData.Parameters) on (\n    where tostring(p2.Name) == \"EndTime\"\n    | extend OOFEnd = tostring(p2.Value)\n)\n| summarize arg_max(Timestamp, *) by Target\n| join kind=leftouter (\n    AADSignInEventsBeta\n    | where Timestamp > ago(7d)\n    | where ErrorCode == 0\n    | summarize\n        LastSignIn = max(Timestamp),\n        SignInCount = count(),\n        Countries = make_set(Country, 5),\n        Cities = make_set(City, 5),\n        IPs = make_set(IPAddress, 5)\n        by AccountUpn\n) on $left.Target == $right.AccountUpn\n| project Target, OOFStart, OOFEnd, LastSignIn, SignInCount, Countries, Cities, IPs\n| order by OOFStart desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 199,
+    "name": "OOF User + New Country + Managed Device (Likely Legit Vacation)",
+    "cat": "Identity",
+    "sub": "Geo Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "OfficeActivity",
+      "SigninLogs"
+    ],
+    "tags": [
+      "oof",
+      "out-of-office",
+      "new country",
+      "managed device",
+      "false positive",
+      "vacation"
+    ],
+    "sev": "low",
+    "desc": "OOF user signing in from a new country but using a managed or compliant device. Strong indicator of legitimate vacation travel. Helps SOC analysts close false positives on impossible travel alerts.",
+    "kql": "let OOFUsers = OfficeActivity\n| where TimeGenerated > ago(14d)\n| where Operation == \"Set-MailboxAutoReplyConfiguration\"\n| extend Params = parse_json(Parameters)\n| mv-apply Params on (\n    where tostring(Params.Name) == \"AutoReplyState\"\n    | extend AutoReplyState = tostring(Params.Value)\n)\n| where AutoReplyState in (\"Scheduled\", \"Enabled\")\n| extend Target = UserId\n| summarize OOFEnabledTime = max(TimeGenerated) by Target;\nlet BaselineCountries = SigninLogs\n| where TimeGenerated between (ago(30d) .. ago(1d))\n| where ResultType == 0\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| where isnotempty(Country)\n| summarize KnownCountries = make_set(Country, 20) by UserPrincipalName;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == 0\n| where DeviceDetail.isManaged == true or DeviceDetail.isCompliant == true\n| where isnotempty(tostring(DeviceDetail.displayName))\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| extend City = tostring(LocationDetails.city)\n| extend DeviceName = tostring(DeviceDetail.displayName)\n| where isnotempty(Country)\n| join kind=inner (OOFUsers) on $left.UserPrincipalName == $right.Target\n| where TimeGenerated >= OOFEnabledTime\n| join kind=inner (BaselineCountries) on UserPrincipalName\n| where not(KnownCountries has Country)\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, City, AppDisplayName, DeviceName, KnownCountries, OOFEnabledTime,\n    Verdict = \"Likely Legit - OOF active, new country but managed/compliant device\"\n| order by TimeGenerated desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 200,
+    "name": "OOF User + New Country + Managed Device (Likely Legit Vacation)",
+    "cat": "Identity",
+    "sub": "Geo Anomaly",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents",
+      "AADSignInEventsBeta"
+    ],
+    "tags": [
+      "oof",
+      "out-of-office",
+      "new country",
+      "managed device",
+      "false positive",
+      "vacation"
+    ],
+    "sev": "low",
+    "desc": "OOF user signing in from a new country but using a managed or compliant device. Strong indicator of legitimate vacation travel. Helps SOC analysts close false positives on impossible travel alerts.",
+    "kql": "let OOFUsers = CloudAppEvents\n| where Timestamp > ago(14d)\n| where ActionType == \"Set-MailboxAutoReplyConfiguration\"\n| extend Params = parse_json(RawEventData.Parameters)\n| mv-apply Params on (\n    where tostring(Params.Name) == \"AutoReplyState\"\n    | extend AutoReplyState = tostring(Params.Value)\n)\n| where AutoReplyState in (\"Scheduled\", \"Enabled\")\n| extend Target = tostring(RawEventData.UserId)\n| summarize OOFEnabledTime = max(Timestamp) by Target;\nlet BaselineCountries = AADSignInEventsBeta\n| where Timestamp between (ago(30d) .. ago(1d))\n| where ErrorCode == 0\n| where isnotempty(Country)\n| summarize KnownCountries = make_set(Country, 20) by AccountUpn;\nAADSignInEventsBeta\n| where Timestamp > ago(7d)\n| where ErrorCode == 0\n| where IsManaged == 1 or IsCompliant == 1\n| where isnotempty(DeviceName)\n| where isnotempty(Country)\n| join kind=inner (OOFUsers) on $left.AccountUpn == $right.Target\n| where Timestamp >= OOFEnabledTime\n| join kind=inner (BaselineCountries) on AccountUpn\n| where not(KnownCountries has Country)\n| project Timestamp, AccountUpn, AccountDisplayName, IPAddress, Country, City, Application, DeviceName, IsManaged, IsCompliant, KnownCountries, OOFEnabledTime,\n    Verdict = \"Likely Legit - OOF active, new country but managed/compliant device\"\n| order by Timestamp desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 201,
+    "name": "OOF User + New Country + Unmanaged Device (High Risk Compromise)",
+    "cat": "Identity",
+    "sub": "Geo Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "OfficeActivity",
+      "SigninLogs"
+    ],
+    "tags": [
+      "oof",
+      "out-of-office",
+      "new country",
+      "unmanaged device",
+      "compromise",
+      "high risk"
+    ],
+    "sev": "critical",
+    "desc": "OOF user signing in from a new country on an unmanaged, non-compliant device with no device name. The user is supposedly away and someone is accessing their account from an unknown device. Strong compromise indicator.",
+    "kql": "let OOFUsers = OfficeActivity\n| where TimeGenerated > ago(14d)\n| where Operation == \"Set-MailboxAutoReplyConfiguration\"\n| extend Params = parse_json(Parameters)\n| mv-apply Params on (\n    where tostring(Params.Name) == \"AutoReplyState\"\n    | extend AutoReplyState = tostring(Params.Value)\n)\n| where AutoReplyState in (\"Scheduled\", \"Enabled\")\n| extend Target = UserId\n| summarize OOFEnabledTime = max(TimeGenerated) by Target;\nlet BaselineCountries = SigninLogs\n| where TimeGenerated between (ago(30d) .. ago(1d))\n| where ResultType == 0\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| where isnotempty(Country)\n| summarize KnownCountries = make_set(Country, 20) by UserPrincipalName;\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == 0 or ResultType == 50074\n| where DeviceDetail.isManaged != true\n| where DeviceDetail.isCompliant != true\n| where isempty(tostring(DeviceDetail.displayName))\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| extend City = tostring(LocationDetails.city)\n| where isnotempty(Country)\n| join kind=inner (OOFUsers) on $left.UserPrincipalName == $right.Target\n| where TimeGenerated >= OOFEnabledTime\n| join kind=inner (BaselineCountries) on UserPrincipalName\n| where not(KnownCountries has Country)\n| project TimeGenerated, UserPrincipalName, IPAddress, Country, City, AppDisplayName, KnownCountries, OOFEnabledTime, ResultType,\n    Verdict = \"HIGH RISK - OOF active, new country, unmanaged device with no device name\"\n| order by TimeGenerated desc",
+    "added": "2026-04-08"
+  },
+  {
+    "id": 202,
+    "name": "OOF User + New Country + Unmanaged Device (High Risk Compromise)",
+    "cat": "Identity",
+    "sub": "Geo Anomaly",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents",
+      "AADSignInEventsBeta"
+    ],
+    "tags": [
+      "oof",
+      "out-of-office",
+      "new country",
+      "unmanaged device",
+      "compromise",
+      "high risk"
+    ],
+    "sev": "critical",
+    "desc": "OOF user signing in from a new country on an unmanaged, non-compliant device with no device name. The user is supposedly away and someone is accessing their account from an unknown device. Strong compromise indicator.",
+    "kql": "let OOFUsers = CloudAppEvents\n| where Timestamp > ago(14d)\n| where ActionType == \"Set-MailboxAutoReplyConfiguration\"\n| extend Params = parse_json(RawEventData.Parameters)\n| mv-apply Params on (\n    where tostring(Params.Name) == \"AutoReplyState\"\n    | extend AutoReplyState = tostring(Params.Value)\n)\n| where AutoReplyState in (\"Scheduled\", \"Enabled\")\n| extend Target = tostring(RawEventData.UserId)\n| summarize OOFEnabledTime = max(Timestamp) by Target;\nlet BaselineCountries = AADSignInEventsBeta\n| where Timestamp between (ago(30d) .. ago(1d))\n| where ErrorCode == 0\n| where isnotempty(Country)\n| summarize KnownCountries = make_set(Country, 20) by AccountUpn;\nAADSignInEventsBeta\n| where Timestamp > ago(7d)\n| where ErrorCode == 0 or ErrorCode == 50074\n| where IsManaged != 1\n| where IsCompliant != 1\n| where isempty(DeviceName)\n| where isnotempty(Country)\n| join kind=inner (OOFUsers) on $left.AccountUpn == $right.Target\n| where Timestamp >= OOFEnabledTime\n| join kind=inner (BaselineCountries) on AccountUpn\n| where not(KnownCountries has Country)\n| project Timestamp, AccountUpn, AccountDisplayName, IPAddress, Country, City, Application, KnownCountries, OOFEnabledTime, ErrorCode,\n    Verdict = \"HIGH RISK - OOF active, new country, unmanaged device with no device name\"\n| order by Timestamp desc",
+    "added": "2026-04-08"
   }
 ]
