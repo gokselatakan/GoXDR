@@ -209,17 +209,29 @@ function App() {
 
   const doLike = useCallback((qid) => {
     const key = String(qid);
-    if (myLikes[key]) return;
-    // Optimistic UI update
-    setLikes(prev => ({...prev, [key]: (prev[key] || 0) + 1}));
-    const updated = {...myLikes, [key]: true};
-    setMyLikes(updated);
-    try { localStorage.setItem("goxdr_likes", JSON.stringify(updated)); } catch(e) {}
-    // Write to Firebase
-    try {
-      const ref = db.ref("likes/" + key);
-      ref.transaction(current => (current || 0) + 1);
-    } catch(err) { console.log("Firebase write error:", err); }
+    const alreadyLiked = myLikes[key];
+    if (alreadyLiked) {
+      // Unlike: remove like
+      setLikes(prev => ({...prev, [key]: Math.max((prev[key] || 1) - 1, 0)}));
+      const updated = {...myLikes};
+      delete updated[key];
+      setMyLikes(updated);
+      try { localStorage.setItem("goxdr_likes", JSON.stringify(updated)); } catch(e) {}
+      try {
+        const ref = db.ref("likes/" + key);
+        ref.transaction(current => Math.max((current || 1) - 1, 0));
+      } catch(err) {}
+    } else {
+      // Like: add like
+      setLikes(prev => ({...prev, [key]: (prev[key] || 0) + 1}));
+      const updated = {...myLikes, [key]: true};
+      setMyLikes(updated);
+      try { localStorage.setItem("goxdr_likes", JSON.stringify(updated)); } catch(e) {}
+      try {
+        const ref = db.ref("likes/" + key);
+        ref.transaction(current => (current || 0) + 1);
+      } catch(err) {}
+    }
   }, [myLikes]);
 
   useEffect(() => { document.body.className = dark ? "" : "light"; }, [dark]);
