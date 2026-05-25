@@ -189,24 +189,37 @@ function App() {
   const SEV = dark ? SEV_DARK : SEV_LIGHT;
   const PL = dark ? PL_DARK : PL_LIGHT;
 
-  // Firebase: load all likes on mount
+  // Firebase: load all likes on mount and listen for changes
   useEffect(() => {
-    const ref = db.ref("likes");
-    ref.on("value", snap => {
-      const data = snap.val() || {};
-      setLikes(data);
-    });
-    return () => ref.off();
+    try {
+      const ref = db.ref("likes");
+      // Initial load
+      ref.get().then(snap => {
+        const data = snap.val() || {};
+        setLikes(data);
+      }).catch(() => {});
+      // Real-time listener (fallback if tracking prevention blocks it)
+      ref.on("value", snap => {
+        const data = snap.val() || {};
+        setLikes(data);
+      });
+      return () => ref.off();
+    } catch(err) { console.log("Firebase init error:", err); }
   }, []);
 
   const doLike = useCallback((qid) => {
     const key = String(qid);
     if (myLikes[key]) return;
-    const ref = db.ref("likes/" + key);
-    ref.transaction(current => (current || 0) + 1);
+    // Optimistic UI update
+    setLikes(prev => ({...prev, [key]: (prev[key] || 0) + 1}));
     const updated = {...myLikes, [key]: true};
     setMyLikes(updated);
-    localStorage.setItem("goxdr_likes", JSON.stringify(updated));
+    try { localStorage.setItem("goxdr_likes", JSON.stringify(updated)); } catch(e) {}
+    // Write to Firebase
+    try {
+      const ref = db.ref("likes/" + key);
+      ref.transaction(current => (current || 0) + 1);
+    } catch(err) { console.log("Firebase write error:", err); }
   }, [myLikes]);
 
   useEffect(() => { document.body.className = dark ? "" : "light"; }, [dark]);
