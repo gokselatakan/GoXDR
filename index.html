@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="google-site-verification" content="St0et6SFaaeYBQnT_vjLSYqLGQzvvfslb1738HAJ02s" />
-<title>GoXDR | KQL Search & Detection Query Library</title>
-<meta name="description" content="Open-source KQL query collection for Microsoft Sentinel and Defender XDR. Search, copy and run detection queries. Your go-to security resource for threat hunting across Microsoft security platforms.">
+<title>GoXDR - KQL Query Library</title>
+<meta name="description" content="KQL detection and threat hunting queries for Microsoft Sentinel and Defender XDR.">
 <meta name="author" content="GoX">
 <link rel="canonical" href="https://goxdr.fyi" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23080c14'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Arial Black,sans-serif' font-weight='900' font-size='14'%3E%3Ctspan fill='%233b82f6'%3EG%3C/tspan%3E%3Ctspan fill='%23f97316'%3EX%3C/tspan%3E%3C/text%3E%3C/svg%3E">
-<meta property="og:title" content="GoXDR | KQL Search & Detection Query Library">
-<meta property="og:description" content="Open-source KQL query collection for Microsoft Sentinel and Defender XDR. Search, copy and run detection queries. Your go-to security resource for threat hunting across Microsoft security platforms.">
+<meta property="og:title" content="GoXDR - KQL Query Library">
+<meta property="og:description" content="Detection and threat hunting queries for Microsoft Sentinel and Defender XDR. Search, filter and copy KQL queries ready to run.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://goxdr.fyi">
 <meta property="og:image" content="https://goxdr.fyi/og-image.png">
@@ -22,7 +22,7 @@
 {
   "@context": "https://schema.org",
   "@type": "TechArticle",
-  "headline": "GoXDR | KQL Search & Detection Query Library",
+  "headline": "GoXDR KQL Query Library",
   "author": {
     "@type": "Person",
     "name": "GoX"
@@ -112,19 +112,18 @@
   .footer { text-align: center; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); }
   .loading { text-align: center; padding: 60px; color: var(--text3); }
   .sev-badge { font-size: 12px; padding: 3px 10px; border-radius: 6px; font-weight: 700; text-transform: uppercase; }
-  @keyframes rgbGlow {
-    0% { border-color: #ef4444; box-shadow: 0 0 8px #ef444460; color: #fca5a5; }
-    16% { border-color: #f97316; box-shadow: 0 0 8px #f9731660; color: #fdba74; }
-    33% { border-color: #eab308; box-shadow: 0 0 8px #eab30860; color: #fde047; }
-    50% { border-color: #22c55e; box-shadow: 0 0 8px #22c55e60; color: #86efac; }
-    66% { border-color: #3b82f6; box-shadow: 0 0 8px #3b82f660; color: #93c5fd; }
-    83% { border-color: #a855f7; box-shadow: 0 0 8px #a855f760; color: #c4b5fd; }
-    100% { border-color: #ef4444; box-shadow: 0 0 8px #ef444460; color: #fca5a5; }
-  }
-  .new-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #166534; background: transparent; color: var(--text3); animation: rgbGlow 4s linear infinite; font-weight: 600; }
-  .new-btn.active { background: #052e16; color: #86efac; border-color: #166534; animation: none; }
+  .new-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #166534; background: transparent; color: var(--text3); }
+  .new-btn.active { background: #052e16; color: #86efac; border-color: #166534; }
   .new-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: #052e16; color: #4ade80; font-weight: 700; border: 1px solid #166534; margin-left: 4px; vertical-align: middle; }
   .date-badge { font-size: 11px; color: var(--text3); padding: 3px 8px; }
+  .updated-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: #1e3a5f; color: #93c5fd; font-weight: 700; border: 1px solid #2563eb; margin-left: 4px; vertical-align: middle; }
+  .advisory { max-width: 900px; margin: 16px auto 0; text-align: left; }
+  .advisory-toggle { width: 100%; text-align: left; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; color: var(--text2); font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+  .advisory-body { background: var(--bg3); border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 12px 14px; font-size: 12px; color: var(--text3); line-height: 1.6; }
+  .advisory-body a { color: var(--blue); text-decoration: none; }
+  .advisory-item { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .advisory-item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  .advisory-date { font-size: 11px; color: var(--orange); font-weight: 700; }
   .hero-btn { font-size: 13px; text-decoration: none; padding: 8px 18px; border-radius: 10px; font-weight: 600; display: inline-block; }
   .submit-btn { color: var(--blue); border: 1px solid var(--blue); }
   .submit-btn:hover { background: var(--blue); color: #fff; }
@@ -132,42 +131,18 @@
   .feedback-btn:hover { background: #f97316; color: #fff; }
   .footer-submit { font-size: 12px; color: var(--blue); text-decoration: none; padding: 6px 14px; border: 1px solid var(--blue); border-radius: 8px; display: inline-block; }
   .footer-feedback { font-size: 12px; color: #f97316; text-decoration: none; padding: 6px 14px; border: 1px solid #f97316; border-radius: 8px; display: inline-block; }
-  .like-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text3); font-size: 12px; font-weight: 600; transition: all 0.2s; }
-  .like-btn:hover { border-color: #ef4444; color: #fca5a5; }
-  .like-btn.liked { border-color: #ef4444; color: #ef4444; background: #450a0a; }
-  .like-heart { font-size: 14px; transition: transform 0.2s; }
-  .like-btn.liked .like-heart { transform: scale(1.2); }
-  .like-count { font-size: 11px; font-weight: 700; }
-  .top-btn { padding: 6px 14px; font-size: 12px; border-radius: 12px; border: 1px solid #ef4444; background: transparent; color: var(--text3); font-weight: 600; }
-  .top-btn.active { background: #450a0a; color: #fca5a5; border-color: #ef4444; }
 </style>
 </head>
 <body>
 <div id="root"></div>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-<script>
-  firebase.initializeApp({
-    apiKey: "AIzaSyA5OQ3-5PU0V8fhbEx-NSZPhinR36ldcqI",
-    authDomain: "goxdr-likes.firebaseapp.com",
-    databaseURL: "https://goxdr-likes-default-rtdb.firebaseio.com",
-    projectId: "goxdr-likes",
-    storageBucket: "goxdr-likes.firebasestorage.app",
-    messagingSenderId: "874723798656",
-    appId: "1:874723798656:web:811f70c5dda772b4f50065"
-  });
-  const db = firebase.database();
-</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script>
 const e = React.createElement;
 const { useState, useMemo, useCallback, useEffect } = React;
 
-const SEV_DARK = { critical: { bg: "#450a0a", tx: "#fca5a5", br: "#991b1b", dot: "#ef4444", label: "critical!" }, high: { bg: "#450a0a", tx: "#fca5a5", br: "#dc2626", dot: "#ef4444" }, medium: { bg: "#422006", tx: "#fcd34d", br: "#92400e", dot: "#eab308" }, low: { bg: "#422006", tx: "#fde047", br: "#a16207", dot: "#eab308" } };
-const SEV_LIGHT = { critical: { bg: "#fee2e2", tx: "#991b1b", br: "#991b1b", dot: "#ef4444", label: "critical!" }, high: { bg: "#fee2e2", tx: "#dc2626", br: "#dc2626", dot: "#ef4444" }, medium: { bg: "#fef3c7", tx: "#92400e", br: "#92400e", dot: "#eab308" }, low: { bg: "#fef9c3", tx: "#a16207", br: "#a16207", dot: "#eab308" } };
-const PL_DARK = { both: { l: "Sentinel + XDR", bg: "#1e3a5f", tx: "#93c5fd" }, sentinel: { l: "Sentinel", bg: "#2d1b4e", tx: "#c4b5fd" }, xdr: { l: "XDR", bg: "#052e16", tx: "#86efac" } };
-const PL_LIGHT = { both: { l: "Sentinel + XDR", bg: "#dbeafe", tx: "#1e40af" }, sentinel: { l: "Sentinel", bg: "#ede9fe", tx: "#6d28d9" }, xdr: { l: "XDR", bg: "#dcfce7", tx: "#166534" } };
+const SEV = { critical: { bg: "#450a0a", tx: "#fca5a5", br: "#991b1b", dot: "#ef4444" }, high: { bg: "#431407", tx: "#fdba74", br: "#9a3412", dot: "#f97316" }, medium: { bg: "#422006", tx: "#fcd34d", br: "#92400e", dot: "#eab308" }, low: { bg: "#052e16", tx: "#86efac", br: "#166534", dot: "#22c55e" } };
+const PL = { both: { l: "Sentinel + XDR", bg: "#1e3a5f", tx: "#93c5fd" }, sentinel: { l: "Sentinel", bg: "#1a2e44", tx: "#7dd3fc" }, xdr: { l: "XDR", bg: "#2d1b4e", tx: "#c4b5fd" } };
 
 function App() {
   const [queries, setQueries] = useState([]);
@@ -181,58 +156,7 @@ function App() {
   const [copied, setCopied] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [dark, setDark] = useState(true);
-  const [likes, setLikes] = useState({});
-  const [myLikes, setMyLikes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("goxdr_likes") || "{}"); } catch(e) { return {}; }
-  });
-  const [showTop, setShowTop] = useState(false);
-  const SEV = dark ? SEV_DARK : SEV_LIGHT;
-  const PL = dark ? PL_DARK : PL_LIGHT;
-
-  // Firebase: load all likes on mount and listen for changes
-  useEffect(() => {
-    try {
-      const ref = db.ref("likes");
-      // Initial load
-      ref.get().then(snap => {
-        const data = snap.val() || {};
-        setLikes(data);
-      }).catch(() => {});
-      // Real-time listener (fallback if tracking prevention blocks it)
-      ref.on("value", snap => {
-        const data = snap.val() || {};
-        setLikes(data);
-      });
-      return () => ref.off();
-    } catch(err) { console.log("Firebase init error:", err); }
-  }, []);
-
-  const doLike = useCallback((qid) => {
-    const key = String(qid);
-    const alreadyLiked = myLikes[key];
-    if (alreadyLiked) {
-      // Unlike: remove like
-      setLikes(prev => ({...prev, [key]: Math.max((prev[key] || 1) - 1, 0)}));
-      const updated = {...myLikes};
-      delete updated[key];
-      setMyLikes(updated);
-      try { localStorage.setItem("goxdr_likes", JSON.stringify(updated)); } catch(e) {}
-      try {
-        const ref = db.ref("likes/" + key);
-        ref.transaction(current => Math.max((current || 1) - 1, 0));
-      } catch(err) {}
-    } else {
-      // Like: add like
-      setLikes(prev => ({...prev, [key]: (prev[key] || 0) + 1}));
-      const updated = {...myLikes, [key]: true};
-      setMyLikes(updated);
-      try { localStorage.setItem("goxdr_likes", JSON.stringify(updated)); } catch(e) {}
-      try {
-        const ref = db.ref("likes/" + key);
-        ref.transaction(current => (current || 0) + 1);
-      } catch(err) {}
-    }
-  }, [myLikes]);
+  const [showAdvisory, setShowAdvisory] = useState(false);
 
   useEffect(() => { document.body.className = dark ? "" : "light"; }, [dark]);
 
@@ -244,6 +168,7 @@ function App() {
   }, [queries]);
 
   const isNew = useCallback((q) => q.added === latestDate, [latestDate]);
+  const isUpdated = useCallback((q) => !!q.updated, []);
 
   useEffect(() => {
     fetch("queries.json?v=" + Date.now())
@@ -261,9 +186,8 @@ function App() {
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();
-    let result = queries.filter(q => {
+    return queries.filter(q => {
       if (showNew && !isNew(q)) return false;
-      if (showTop && !(likes[String(q.id)] > 0)) return false;
       if (cat !== "All" && q.cat !== cat) return false;
       if (sev !== "all" && q.sev !== sev) return false;
       if (plat === "sentinel" && q.plat === "xdr") return false;
@@ -271,11 +195,7 @@ function App() {
       if (!s) return true;
       return q.name.toLowerCase().includes(s) || q.tags.some(t => t.includes(s)) || q.tables.some(t => t.toLowerCase().includes(s)) || q.sub.toLowerCase().includes(s);
     });
-    if (showTop) {
-      result.sort((a, b) => (likes[String(b.id)] || 0) - (likes[String(a.id)] || 0));
-    }
-    return result;
-  }, [search, cat, sev, plat, queries, showNew, showTop, isNew, likes]);
+  }, [search, cat, sev, plat, queries, showNew, isNew]);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -304,7 +224,7 @@ function App() {
         )
       ),
       e("div", { style: { maxWidth: 900, margin: "16px auto 0", position: "relative" } },
-        e("input", { type: "text", className: "search", placeholder: "Click here to search queries... identity, aitm, password spray, bec, oauth, ntlm, token theft, pim, conditional access", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
+        e("input", { type: "text", className: "search", placeholder: "Click here to search queries... identity, aitm, password spray, bec, oauth, ntlm, token theft, bloodhound, kerberoasting", value: search, onChange: ev => { setSearch(ev.target.value); setSelQ(null); } }),
         e("span", { className: "search-icon" }, "\ud83d\udd0d"),
         search && e("button", { className: "search-clear", onClick: () => { setSearch(""); setSelQ(null); } }, "\u2715")
       ),
@@ -313,6 +233,20 @@ function App() {
         e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=quick-submit.yml", target: "_blank", rel: "noopener", className: "hero-btn submit-btn" }, "Submit Query"),
         e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=detailed-submit.yml", target: "_blank", rel: "noopener", className: "hero-btn submit-btn" }, "Detailed Submit"),
         e("a", { href: "https://github.com/gokselatakan/GoXDR/issues/new?template=feedback.yml", target: "_blank", rel: "noopener", className: "hero-btn feedback-btn" }, "Feedback")
+      ),
+      // Schema Advisory
+      e("div", { className: "advisory" },
+        e("button", { className: "advisory-toggle", onClick: () => setShowAdvisory(!showAdvisory), style: { borderRadius: showAdvisory ? "8px 8px 0 0" : "8px" } },
+          e("span", null, "\u26a0\ufe0f Schema Updates & Advisories"),
+          e("span", { style: { transform: showAdvisory ? "rotate(180deg)" : "none", transition: "0.2s", display: "inline-block", fontSize: 11 } }, "\u25bc")
+        ),
+        showAdvisory && e("div", { className: "advisory-body" },
+          e("div", { className: "advisory-item" },
+            e("div", { className: "advisory-date" }, "July 14, 2026"),
+            e("div", { style: { marginTop: 4 } }, "AADSignInEventsBeta table has been deprecated and replaced by ", e("strong", null, "EntraIdSignInEvents"), ". Column ", e("strong", null, "AadDeviceId"), " is now ", e("strong", null, "EntraIdDeviceId"), ". All affected GoXDR queries (IDs: 82, 87, 88, 95) have been updated. ",
+              e("a", { href: "https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-schema-changes", target: "_blank", rel: "noopener" }, "Microsoft Docs"))
+          )
+        )
       )
     ),
 
@@ -322,12 +256,11 @@ function App() {
       ["All", ...CATS].map(c => e("button", { key: c, className: "cat-btn" + (cat === c ? " active" : ""), onClick: () => { setCat(c); setSelQ(null); } }, c))
     ),
     e("div", { className: "filters2" },
-      Object.keys(SEV).map(s => e("button", { key: s, className: "sev-btn", style: { border: "1px solid " + SEV[s].br, background: sev === s ? SEV[s].bg : "transparent", color: sev === s ? SEV[s].tx : "var(--text3)" }, onClick: () => { setSev(sev === s ? "all" : s); setSelQ(null); } }, (SEV[s].label || s).toUpperCase())),
+      Object.keys(SEV).map(s => e("button", { key: s, className: "sev-btn", style: { border: "1px solid " + SEV[s].br, background: sev === s ? SEV[s].bg : "transparent", color: sev === s ? SEV[s].tx : "var(--text3)" }, onClick: () => { setSev(sev === s ? "all" : s); setSelQ(null); } }, s)),
       e("span", { className: "sep" }, "\u2502"),
-      [{ v: "all", l: "All", c: null, bc: null }, { v: "sentinel", l: "Sentinel", c: "#a78bfa", bc: "#7c3aed" }, { v: "xdr", l: "XDR", c: "#4ade80", bc: "#16a34a" }].map(p => e("button", { key: p.v, className: "plat-btn" + (plat === p.v ? " active" : ""), style: p.c ? { color: p.c, borderColor: plat === p.v ? p.bc : p.bc + "80", fontWeight: plat === p.v ? 700 : 500 } : {}, onClick: () => { setPlat(plat === p.v ? "all" : p.v); setSelQ(null); } }, p.l)),
+      [{ v: "all", l: "All" }, { v: "sentinel", l: "Sentinel" }, { v: "xdr", l: "XDR" }].map(p => e("button", { key: p.v, className: "plat-btn" + (plat === p.v ? " active" : ""), onClick: () => { setPlat(plat === p.v ? "all" : p.v); setSelQ(null); } }, p.l)),
       e("span", { className: "sep" }, "\u2502"),
-      e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => { setShowNew(!showNew); setShowTop(false); } }, "\ud83e\udd29 Recently Added (" + newCount + ")"),
-      e("button", { className: "top-btn" + (showTop ? " active" : ""), onClick: () => { setShowTop(!showTop); setShowNew(false); } }, "\u2764\ufe0f Top Liked")
+      e("button", { className: "new-btn" + (showNew ? " active" : ""), onClick: () => setShowNew(!showNew) }, "\u2728 Recently Added (" + newCount + ")")
     ),
 
     // Groups
@@ -355,8 +288,8 @@ function App() {
                 e("div", { style: { flex: 1, minWidth: 0 } },
                   e("div", { style: { display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" } },
                     e("span", { className: "q-name" + (sel ? " sel" : "") }, q.name),
-                    likes[String(q.id)] > 0 && e("span", { style: { fontSize: 10, color: "#ef4444", fontWeight: 700 } }, "\u2764 " + likes[String(q.id)]),
                     isNew(q) && e("span", { className: "new-badge" }, "NEW"),
+                    isUpdated(q) && e("span", { className: "updated-badge" }, "UPDATED"),
                     e("span", { className: "plat-badge", style: { background: pl.bg, color: pl.tx } }, pl.l)
                   ),
                   !sel && e("div", { style: { display: "flex", gap: 3, flexWrap: "wrap", marginTop: 3 } },
@@ -369,13 +302,10 @@ function App() {
               sel && e("div", { className: "detail" },
                 e("p", { className: "detail-desc" }, q.desc),
                 e("div", { className: "detail-badges" },
-                  e("button", { className: "like-btn" + (myLikes[String(q.id)] ? " liked" : ""), onClick: (ev) => { ev.stopPropagation(); doLike(q.id); } },
-                    e("span", { className: "like-heart" }, myLikes[String(q.id)] ? "\u2764\ufe0f" : "\ud83e\udd0d"),
-                    e("span", { className: "like-count" }, likes[String(q.id)] || 0)
-                  ),
-                  e("span", { className: "sev-badge", style: { background: sv.bg, color: sv.tx, border: "1px solid " + sv.br } }, (sv.label || q.sev).toUpperCase()),
+                  e("span", { className: "sev-badge", style: { background: sv.bg, color: sv.tx, border: "1px solid " + sv.br } }, q.sev),
                   e("span", { className: "sev-badge", style: { background: pl.bg, color: pl.tx } }, pl.l),
                   q.added && e("span", { className: "date-badge" }, "\ud83d\udcc5 " + q.added),
+                  q.updated && e("span", { className: "date-badge" }, "\ud83d\udd04 Updated: " + q.updated),
                   q.tables.map(t => e("span", { key: t, className: "detail-tbl" }, t))
                 ),
                 e("div", { className: "detail-tags" },
@@ -395,7 +325,7 @@ function App() {
     filtered.length === 0 && e("div", { className: "empty" },
       e("div", { style: { fontSize: 28 } }, "\ud83d\udd0d"),
       e("div", { style: { fontSize: 13, margin: "8px 0" } }, 'No queries match "' + search + '"'),
-      e("button", { className: "reset-btn", onClick: () => { setSearch(""); setCat("All"); setSev("all"); setPlat("all"); setSelQ(null); setShowNew(false); setShowTop(false); } }, "Reset")
+      e("button", { className: "reset-btn", onClick: () => { setSearch(""); setCat("All"); setSev("all"); setPlat("all"); setSelQ(null); setShowNew(false); } }, "Reset")
     ),
 
     e("div", { className: "footer" },
