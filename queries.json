@@ -2278,5 +2278,47 @@
     "added": "2026-07-20",
     "desc": "Audits the authentication posture of highly privileged Entra ID accounts over 30 days using Defender XDR Advanced Hunting. Identifies privileged users across a full tiered admin role list (Tier 0/1/2) and assesses sign-in activity: total sign-ins, MFA vs single-factor sign-in counts, unique IPs and apps, and inactive privileged accounts. Each account gets a risk indicator flagging single-factor sign-ins present, no sign-ins in 30 days, or OK. Note: unlike the Sentinel SigninLogs table, EntraIdSignInEvents does not expose a per-method authentication breakdown (no FIDO2/SMS/Password granularity), so this version relies on the AuthenticationRequirement field (MFA vs single-factor) as the primary signal.",
     "kql": "let Lookback = 30d;\nlet PrivilegedRoles = dynamic([\n// ===== ENTRA TIER 0 (Critical - Tenant-Control) =====\n\t\"Global Administrator\",\n\t\"Privileged Role Administrator\",\n\t\"Privileged Authentication Administrator\",\n\t\"Security Administrator\",\n\t\"Conditional Access Administrator\",\n\t\"Application Administrator\",\n\t\"Cloud Application Administrator\",\n\t\"Hybrid Identity Administrator\",\n\t\"Partner Tier2 Support\",\n// ===== ENTRA TIER 1 (High - Service-Control/ Writepermission) =====\n\t\"Authentication Administrator\",\n\t\"Authentication Policy Administrator\",\n\t\"Authentication Extensibility Administrator\",\n\t\"User Administrator\",\n\t\"Helpdesk Administrator\",\n\t\"Password Administrator\",\n\t\"Directory Writers\",\n\t\"Directory Synchronization Accounts\",\n\t\"Domain Name Administrator\",\n\t\"External Identity Provider Administrator\",\n\t\"Lifecycle Workflows Administrator\",\n\t\"Groups Administrator\",\n\t\"Identity Governance Administrator\",\n\t\"Exchange Administrator\",\n\t\"SharePoint Administrator\",\n\t\"Teams Administrator\",\n\t\"Teams Telephony Administrator\",\n\t\"Skype for Business Administrator\",\n\t\"Intune Administrator\",\n\t\"Compliance Administrator\",\n\t\"Security Operator\",\n\t\"Power Platform Administrator\",\n\t\"Dynamics 365 Administrator\",\n\t\"AI Administrator\",\n\t\"Global Secure Access Administrator\",\n\t\"Attribute Assignment Administrator\",\n\t\"Attribute Provisioning Administrator\",\n\t\"B2C IEF Keyset Administrator\",\n\t\"Cloud App Security Administrator\",\n\t\"External ID User Flow Administrator\",\n\t\"Partner Tier1 Support\",\n\t\"Windows 365 Administrator\",\n\t\"Microsoft 365 Backup Administrator\",\n\t\"Microsoft 365 Migration Administrator\",\n\t\"Yammer Administrator\",\n\t\"Knowledge Administrator\",\n\t\"Billing Administrator\",\n// ===== ENTRA TIER 2 (Medium - Read-only / restricted) =====\n\t\"Global Reader\",\n\t\"Security Reader\",\n\t\"Attribute Provisioning Reader\",\n\t\"Application Developer\",\n\t\"Cloud Device Administrator\",\n\t\"Azure AD Joined Device Local Administrator\"\n]);\nlet PrivilegedUsers =\n\tIdentityInfo\n\t| where Timestamp >= ago(Lookback)\n\t| where AssignedRoles has_any (PrivilegedRoles)\n\t| summarize\n\t\tAssignedRoles  = make_set(AssignedRoles),\n\t\tDepartment\t = take_any(Department),\n\t\tJobTitle\t   = take_any(JobTitle),\n\t\tAccountEnabled = take_any(IsAccountEnabled)\n\t\tby AccountUpn;\nlet AuthEvents =\n\tEntraIdSignInEvents\n\t| where Timestamp >= ago(Lookback)\n\t| where ErrorCode == 0\n\t| summarize\n\t\tTotalSignins\t\t= count(),\n\t\tLastSignin\t\t\t= max(Timestamp),\n\t\tUniqueIPs\t\t\t= dcount(IPAddress),\n\t\tUniqueApps\t\t\t= dcount(Application),\n\t\tMFASignins\t\t\t= countif(AuthenticationRequirement == \"multiFactorAuthentication\"),\n\t\tSingleFactorSignins\t= countif(AuthenticationRequirement == \"singleFactorAuthentication\")\n\t\tby AccountUpn;\nPrivilegedUsers\n| join kind=leftouter AuthEvents\n\ton .AccountUpn == .AccountUpn\n| project\n\tUser\t\t\t\t= AccountUpn,\n\tRoles\t\t\t\t= AssignedRoles,\n\tAccountActive\t\t= AccountEnabled,\n\tSigninCount\t\t\t= coalesce(TotalSignins, 0),\n\tMFASignins\t\t\t= coalesce(MFASignins, 0),\n\tSingleFactorSignins\t= coalesce(SingleFactorSignins, 0),\n\tLastSignin\t\t\t= LastSignin,\n\tUniqueIPs\t\t\t= coalesce(UniqueIPs, 0),\n\tUniqueApps\t\t\t= coalesce(UniqueApps, 0),\n\tRiskIndicator\t\t= case(\n\t\tcoalesce(SingleFactorSignins, 0) > 0, \"Single-factor sign-ins present\",\n\t\tcoalesce(TotalSignins, 0) == 0,\t   \"No sign-ins in 30 days\",\n\t\t\t\t\t\t\t\t\t\t\t  \"OK\"\n\t)\n| where SigninCount > 0\n| sort by SigninCount desc"
+  },
+  {
+    "id": 119,
+    "name": "New AI Agent Created With Excessive Org-Wide Sharing",
+    "cat": "AI Security",
+    "sub": "Agent Governance",
+    "plat": "xdr",
+    "tables": [
+      "AgentsInfo"
+    ],
+    "tags": [
+      "ai agent",
+      "mcp",
+      "org-wide sharing",
+      "excessive permissions",
+      "agent governance"
+    ],
+    "sev": "high",
+    "added": "2026-07-27",
+    "desc": "Detects newly created AI agents (within the last 2 days) that were configured with org-wide sharing (shared with everyone in the tenant) while also having MCP servers or declared tools attached. A brand new agent with both broad capabilities and org-wide visibility is a governance red flag, since it means anyone in the tenant can invoke an agent with tool access before it has been reviewed.",
+    "kql": "let lookback = 14d;\nlet recent = 2d;\nlet FirstSnapshot = AgentsInfo\n| where Timestamp > ago(lookback)\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_min(Timestamp, *) by AgentId;\nFirstSnapshot\n| where CreatedDateTime > ago(recent)\n| extend McpServerCount = array_length(coalesce(McpServers, dynamic([])))\n| extend DeclaredToolCount = array_length(coalesce(DeclaredTools, dynamic([])))\n| extend OwnerCount = array_length(coalesce(Owners, dynamic([])))\n| extend IsOrgWide = set_has_element(coalesce(SharedWith, dynamic([])), \"*\")\n| where (McpServerCount > 0 or DeclaredToolCount > 0) and IsOrgWide\n| project AgentId, Name, Platform, CreatedDateTime, McpServerCount, DeclaredToolCount, OwnerCount, IsOrgWide\n| sort by CreatedDateTime desc"
+  },
+  {
+    "id": 120,
+    "name": "Agent Configuration and Access Policy Tampering Detection",
+    "cat": "AI Security",
+    "sub": "Agent Governance",
+    "plat": "xdr",
+    "tables": [
+      "AgentsInfo"
+    ],
+    "tags": [
+      "ai agent",
+      "mcp",
+      "configuration drift",
+      "privilege escalation",
+      "agent governance"
+    ],
+    "sev": "critical",
+    "added": "2026-07-27",
+    "desc": "Compares each AI agent current state against its 14-day baseline to detect suspicious configuration drift: instructions changed, a new MCP server added, an owner added or sharing expanded to org-wide. Flags agents where 2 or more of these signals occurred together, since a single change might be routine maintenance but multiple simultaneous changes suggest deliberate tampering to escalate an agent privileges or reach.",
+    "kql": "let lookback = 14d;\nlet recent = 2d;\nlet CurrentMcpNames = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize CurrentMcpServers = make_set(McpName) by AgentId;\nlet BaselineMcpNames = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize BaselineMcpServers = make_set(McpName) by AgentId;\nlet CurrentState = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| project AgentId, Name, Platform, Timestamp,\n    CurrentInstructions = Instructions,\n    CurrentOwners = Owners,\n    CurrentSharedWith = SharedWith;\nlet BaselineState = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| project AgentId,\n    PreviousInstructions = Instructions,\n    PreviousOwners = Owners,\n    BaselineSharedWith = SharedWith;\nlet Joined = CurrentState\n| join kind=inner (BaselineState) on AgentId\n| join kind=leftouter (CurrentMcpNames) on AgentId\n| join kind=leftouter (BaselineMcpNames) on AgentId;\nlet InstructionsFlag = Joined\n| where CurrentInstructions != PreviousInstructions\n| project AgentId, Signal = \"InstructionsChanged\";\nlet McpFlag = Joined\n| where array_length(set_difference(coalesce(CurrentMcpServers, dynamic([])), coalesce(BaselineMcpServers, dynamic([])))) > 0\n| project AgentId, Signal = \"NewMcpServer\";\nlet OwnerFlag = Joined\n| where array_length(set_difference(CurrentOwners, PreviousOwners)) > 0\n| project AgentId, Signal = \"OwnerAdded\";\nlet SharingFlag = Joined\n| where set_has_element(coalesce(CurrentSharedWith, dynamic([])), \"*\")\n| where not(set_has_element(coalesce(BaselineSharedWith, dynamic([])), \"*\"))\n| project AgentId, Signal = \"SharingExpandedOrgWide\";\nunion InstructionsFlag, McpFlag, OwnerFlag, SharingFlag\n| summarize SignalCount = dcount(Signal), Signals = make_set(Signal) by AgentId\n| where SignalCount >= 2\n| join kind=inner (CurrentState) on AgentId\n| project AgentId, Name, Platform, SignalCount, Signals, Timestamp\n| sort by SignalCount desc"
   }
 ]
