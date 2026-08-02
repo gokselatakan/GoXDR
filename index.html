@@ -242,6 +242,11 @@ function App() {
         ),
         showAdvisory && e("div", { className: "advisory-body" },
           e("div", { className: "advisory-item" },
+            e("div", { className: "advisory-date" }, "July 28, 2026"),
+            e("div", { style: { marginTop: 4 } }, "Full library audit against official Microsoft schema docs. Fixed 32 XDR-platform queries incorrectly using ", e("strong", null, "TimeGenerated"), " instead of the correct ", e("strong", null, "Timestamp"), " column (Defender XDR native tables use Timestamp, while Sentinel-native tables like SigninLogs and AzureActivity keep TimeGenerated). Also corrected ", e("strong", null, "ActivityStatusValue"), " comparisons in AzureActivity queries from 'Success' to 'Succeeded'. ",
+              e("a", { href: "https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-microsoft-defender", target: "_blank", rel: "noopener" }, "Microsoft Docs"))
+          ),
+          e("div", { className: "advisory-item" },
             e("div", { className: "advisory-date" }, "July 14, 2026"),
             e("div", { style: { marginTop: 4 } }, "AADSignInEventsBeta table has been deprecated and replaced by ", e("strong", null, "EntraIdSignInEvents"), ". Column ", e("strong", null, "AadDeviceId"), " is now ", e("strong", null, "EntraIdDeviceId"), ". All affected GoXDR queries (IDs: 82, 87, 88, 95) have been updated. ",
               e("a", { href: "https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-schema-changes", target: "_blank", rel: "noopener" }, "Microsoft Docs"))
