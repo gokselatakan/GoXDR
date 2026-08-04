@@ -1123,7 +1123,7 @@
     "name": "AiTM: Phishing → Sign-in Correlation",
     "cat": "Email",
     "sub": "AiTM",
-    "plat": "xdr",
+    "plat": "both",
     "tables": [
       "EmailEvents",
       "SigninLogs"
@@ -1144,7 +1144,7 @@
     "name": "URL Click → Sign-in Correlation",
     "cat": "Email",
     "sub": "AiTM",
-    "plat": "xdr",
+    "plat": "both",
     "tables": [
       "UrlClickEvents",
       "SigninLogs"
@@ -1396,7 +1396,7 @@
     "name": "Phishing → Risky Sign-In Correlation",
     "cat": "XDR",
     "sub": "Attack Chain",
-    "plat": "xdr",
+    "plat": "both",
     "tables": [
       "EmailEvents",
       "SigninLogs"
@@ -1493,7 +1493,7 @@
     "name": "Threat IP → Sign-in Detection",
     "cat": "Geolocation",
     "sub": "Correlation",
-    "plat": "xdr",
+    "plat": "both",
     "tables": [
       "EmailEvents",
       "SigninLogs"
