@@ -60,7 +60,7 @@ a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
 kbd{font-family:"IBM Plex Mono",monospace;font-size:10px;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--dim)}
 
-.app{display:flex;flex-direction:column;height:100vh}
+.app{display:flex;flex-direction:column;height:100vh;height:100dvh}
 
 /* top bar */
 .topbar{
@@ -390,16 +390,29 @@ html[data-theme="light"] .landing{background:var(--bg)}
 @media (max-width:960px){.rail{display:none} .listpane{flex:0 0 280px} .counter-bar{grid-template-columns:1fr 1fr}}
 .mobile-back{display:none}
 @media (max-width:680px){
+  .topbar{height:auto;min-height:54px;flex-wrap:wrap;row-gap:8px;padding:8px 12px}
+  .brand{flex:0 1 auto}
+  .spacer{display:none}
+  .tools{flex:0 0 auto;margin-left:auto;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;max-width:60%}
+  .tools::-webkit-scrollbar{display:none}
+  .tool{flex:0 0 auto;padding:5px 9px;font-size:10px}
+  .search{order:3;flex:1 1 100%;max-width:none}
+  .search .hint{display:none}
+  .search input{height:38px}
   .listpane{flex:1;border-right:none}
   .detail{display:none}
   .counter-bar{grid-template-columns:1fr 1fr}
   .brand .sub{display:none}
   /* When a query is selected on a narrow viewport, show the detail panel
      full-screen instead of side-by-side (there is no room for 3 columns
-     in portrait). Toggled via the .detail-open class on .workspace. */
+     in portrait). Toggled via the .detail-open class on .workspace.
+     Positioned absolute *within* .workspace (not the viewport) so it
+     always fills exactly the space below the topbar, regardless of
+     whether the topbar is one row or has wrapped to two. */
+  .workspace{position:relative}
   .workspace.detail-open .listpane{display:none}
   .workspace.detail-open .detail{
-    display:flex;position:fixed;inset:54px 0 0;z-index:15;background:var(--bg);
+    display:flex;position:absolute;inset:0;z-index:15;background:var(--bg);
   }
   .mobile-back{
     display:flex;align-items:center;gap:6px;
