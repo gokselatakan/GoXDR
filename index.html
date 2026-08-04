@@ -365,7 +365,26 @@ html[data-theme="light"] .landing{background:var(--bg)}
 
 @media (max-width:1180px){:root{--list:320px;--rail:200px}}
 @media (max-width:960px){.rail{display:none} .listpane{flex:0 0 280px} .counter-bar{grid-template-columns:1fr 1fr}}
-@media (max-width:680px){.listpane{flex:1;border-right:none} .detail{display:none} .counter-bar{grid-template-columns:1fr 1fr} .brand .sub{display:none}}
+.mobile-back{display:none}
+@media (max-width:680px){
+  .listpane{flex:1;border-right:none}
+  .detail{display:none}
+  .counter-bar{grid-template-columns:1fr 1fr}
+  .brand .sub{display:none}
+  /* When a query is selected on a narrow viewport, show the detail panel
+     full-screen instead of side-by-side (there is no room for 3 columns
+     in portrait). Toggled via the .detail-open class on .workspace. */
+  .workspace.detail-open .listpane{display:none}
+  .workspace.detail-open .detail{
+    display:flex;position:fixed;inset:54px 0 0;z-index:15;background:var(--bg);
+  }
+  .mobile-back{
+    display:flex;align-items:center;gap:6px;
+    padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface);
+    font-family:"IBM Plex Sans Condensed";font-size:12px;font-weight:600;letter-spacing:.04em;
+    color:var(--blue);flex:0 0 auto;touch-action:manipulation;
+  }
+}
 
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
@@ -550,6 +569,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
       <div class="listpane-scroll" id="list"></div>
     </section>
     <section class="detail" id="detail">
+      <button class="mobile-back" id="mobileBack" type="button">&larr; Back to list</button>
       <div class="empty" id="emptyState">
         <div class="g">|</div>
         <p>Pick a query from the list. Use <kbd>↑</kbd> <kbd>↓</kbd> to move, <kbd>/</kbd> to search.</p>
@@ -905,9 +925,11 @@ function qrowHtml(q){
   </button>`;
 }
 function renderDetail(){
+  const ws = $("#workspace");
   if(state.sel===null){
     $("#emptyState").classList.remove("hidden");
     $("#detailScroll").classList.add("hidden");
+    if(ws) ws.classList.remove("detail-open");
     return;
   }
   try{
@@ -916,6 +938,7 @@ function renderDetail(){
     $("#emptyState").classList.add("hidden");
     $("#detailScroll").classList.remove("hidden");
     $("#detailScroll").scrollTop = 0;
+    if(ws) ws.classList.add("detail-open");
     const tacs = tacticsFor(q);
     const platLabel = {xdr:"Defender XDR", sentinel:"Sentinel", both:"Sentinel + XDR"}[q.plat] || q.plat;
     const liked = isLiked(q.id);
@@ -1203,6 +1226,20 @@ function wireup(){
     pushHistory();
   };
   $("#advLink").onclick = e => { e.preventDefault(); goAdv(); pushHistory(); };
+  $("#mobileBack").onclick = ()=>{
+    try{
+      if(state.sel !== null){
+        // Reuses the history entry pushed when the query was opened.
+        history.back();
+        // Fallback in case there is no entry to go back to (e.g. deep link).
+        setTimeout(()=>{
+          if(state.sel !== null){ state.sel = null; renderList(); renderDetail(); }
+        }, 60);
+      }
+    }catch(err){
+      state.sel = null; renderList(); renderDetail();
+    }
+  };
 
   $("#q").oninput = e => {
     state.term = e.target.value;
