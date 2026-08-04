@@ -587,7 +587,23 @@ html[data-theme="light"] .landing{background:var(--bg)}
 /* ---------------- state ---------------- */
 let DATA = [];
 let LIKES = {};
-let LIKED_LOCAL = new Set(JSON.parse(localStorage.getItem('goxdr_liked_ids') || '[]'));
+
+// Safe localStorage wrapper: Safari private browsing (and some iOS
+// tracking-prevention settings) can throw on any localStorage access.
+// A crash here at load time would silently kill the entire script,
+// so every read/write goes through this guarded helper instead.
+const safeStorage = {
+  get(key, fallback){
+    try{ return localStorage.getItem(key) ?? fallback; }
+    catch(e){ return fallback; }
+  },
+  set(key, value){
+    try{ localStorage.setItem(key, value); return true; }
+    catch(e){ return false; }
+  }
+};
+
+let LIKED_LOCAL = new Set(JSON.parse(safeStorage.get('goxdr_liked_ids', '[]')));
 let state = { view:"grid", cat:"all", sub:null, sev:"all", plat:"all", tactic:null, term:"", sel:null, sortByLikes:false, newOnly:false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -603,7 +619,7 @@ async function loadLikes(){
   }catch(e){ console.error(e); }
   if(!window.GoXDRFirebaseConfigured){
     // Local-only fallback so the feature works before Firebase is wired up
-    LIKES = JSON.parse(localStorage.getItem('goxdr_like_counts') || '{}');
+    LIKES = JSON.parse(safeStorage.get('goxdr_like_counts', '{}'));
   }
 }
 
@@ -617,11 +633,11 @@ function toggleLike(id, btnEl){
     LIKED_LOCAL.add(key);
     LIKES[key] = (LIKES[key]||0) + 1;
   }
-  localStorage.setItem('goxdr_liked_ids', JSON.stringify([...LIKED_LOCAL]));
+  safeStorage.set('goxdr_liked_ids', JSON.stringify([...LIKED_LOCAL]));
   if(window.GoXDRFirebaseConfigured){
     window.GoXDRToggleLike(key, !wasLiked);
   } else {
-    localStorage.setItem('goxdr_like_counts', JSON.stringify(LIKES));
+    safeStorage.set('goxdr_like_counts', JSON.stringify(LIKES));
   }
   if(btnEl){
     btnEl.classList.add('pop');
