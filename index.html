@@ -99,26 +99,8 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .masthead h1{font-size:clamp(28px,3.4vw,44px);font-weight:600;letter-spacing:-.03em;line-height:1.06;margin-bottom:12px}
 .masthead h1 .b{color:var(--blue)}
 .masthead h1 .o{color:var(--orange)}
-.hero-search{position:relative;max-width:640px;margin:24px auto 0}
-.hero-search input{
-  width:100%;height:50px;padding:0 20px 0 46px;
-  background:var(--surface);border:1px solid var(--line);border-radius:12px;
-  color:var(--text);font-family:"IBM Plex Mono",monospace;font-size:14px;
-  outline:none;transition:.14s;
-}
-.hero-search input:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(76,194,255,.14)}
-.hero-search input::placeholder{color:var(--dim)}
-.hero-search .glyph{
-  position:absolute;left:18px;top:50%;transform:translateY(-50%);
-  color:var(--blue);font-family:"IBM Plex Mono",monospace;font-size:20px;font-weight:700;pointer-events:none;
-}
-.hero-examples{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px;max-width:640px;margin-left:auto;margin-right:auto}
-.hero-examples button{
-  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);
-  border:1px solid var(--line);border-radius:20px;padding:4px 12px;transition:.12s;
-}
-@media (hover:hover){.hero-examples button:hover{border-color:var(--blue);color:var(--text)}}
-.hero-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:32px}
+.masthead .lede{color:var(--muted);max-width:60ch;font-size:15px;margin:14px auto 0}
+.hero-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:32px;margin-top:24px}
 .hero-btn{
   font-family:"IBM Plex Sans Condensed";font-size:11.5px;font-weight:600;letter-spacing:.05em;
   padding:7px 16px;border-radius:8px;border:1px solid var(--blue);color:var(--blue);
@@ -165,7 +147,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .tile .foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--dim)}
 .tile .foot b{color:var(--text);font-weight:600}
 .tile .foot .arr{color:var(--blue);font-weight:600}
-.modes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:44px}
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:44px}
 .mode-card{text-align:left;padding:22px;border-radius:12px;border:1px solid var(--line);background:var(--surface);position:relative;overflow:hidden;transition:.16s;cursor:pointer;touch-action:manipulation}
 @media (hover:hover){.mode-card:hover{border-color:var(--blue);background:var(--surface-2)}}
 .mode-card .k{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.14em;color:var(--blue);font-weight:600;margin-bottom:12px}
@@ -218,6 +200,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .chip[data-p="xdr"][aria-pressed="true"]{border-color:var(--blue);background:rgba(76,194,255,.14);color:var(--blue)}
 .chip[data-p="sentinel"][aria-pressed="true"]{border-color:var(--orange);background:rgba(255,140,66,.14);color:var(--orange)}
 .chip[data-p="both"][aria-pressed="true"]{border-color:var(--muted);background:var(--surface-2);color:var(--text)}
+#sortLikesChip[aria-pressed="true"]{border-color:var(--crit);background:rgba(248,81,73,.12);color:var(--crit)}
 .chip.active-filter{border-color:var(--orange);background:rgba(255,140,66,.14);color:var(--orange);cursor:pointer}
 .chip.active-filter::after{content:" ×";font-weight:700;margin-left:2px}
 .chip.active-filter:hover{background:rgba(255,140,66,.24)}
@@ -246,6 +229,19 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .qrow[data-sev="low"] .m .sev{color:var(--low)}
 .qrow .m .tbl{font-family:"IBM Plex Mono",monospace;color:var(--muted);font-size:10.5px}
 .badge-upd{font-family:"IBM Plex Sans Condensed";font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange-dim);border-radius:3px;padding:1px 5px;margin-left:auto;background:rgba(255,140,66,.06)}
+.heart-mini{display:inline-flex;align-items:center;gap:4px;margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--dim);padding:2px 6px;border-radius:10px;transition:.12s;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.heart-mini svg{width:11px;height:11px;fill:none;stroke:var(--dim);stroke-width:2;transition:.15s}
+.heart-mini.liked{color:var(--crit)}
+.heart-mini.liked svg{fill:var(--crit);stroke:var(--crit)}
+@media (hover:hover){.heart-mini:hover svg{stroke:var(--crit)}}
+.heart-mini.pop svg{animation:heartpop .32s ease}
+@keyframes heartpop{0%{transform:scale(1)}40%{transform:scale(1.4)}100%{transform:scale(1)}}
+.heart-btn{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border:1px solid var(--line);border-radius:8px;font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--muted);transition:.15s;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.heart-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
+.heart-btn.liked{border-color:var(--crit);color:var(--crit);background:rgba(248,81,73,.08)}
+.heart-btn.liked svg{fill:var(--crit)}
+@media (hover:hover){.heart-btn:hover{border-color:var(--crit);color:var(--crit)}}
+.heart-btn.pop svg{animation:heartpop .32s ease}
 
 .detail{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
 .detail-scroll{overflow-y:auto;flex:1;padding:28px 32px 48px}
@@ -348,6 +344,59 @@ html[data-theme="light"] .landing{background:var(--bg)}
 ::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 ::-webkit-scrollbar-track{background:transparent}
 </style>
+<script type="module">
+  // ── GoXDR Likes (Firebase Firestore) ──────────────────────────────────
+  // Fill in your Firebase project config below. Get it from:
+  // Firebase console → Project settings → General → Your apps → SDK setup and config
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+  const isConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
+  window.GoXDRFirebaseConfigured = isConfigured;
+
+  if(isConfigured){
+    try{
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js");
+      const { getFirestore, collection, getDocs, doc, setDoc, increment } =
+        await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      const likesCol = collection(db, "goxdr_likes");
+
+      window.GoXDRLikesReady = (async () => {
+        const counts = {};
+        try{
+          const snap = await getDocs(likesCol);
+          snap.forEach(d => { counts[d.id] = d.data().count || 0; });
+        }catch(e){ console.error("GoXDR: failed to load likes", e); }
+        return counts;
+      })();
+
+      window.GoXDRToggleLike = async (id, liked) => {
+        try{
+          const ref = doc(db, "goxdr_likes", String(id));
+          await setDoc(ref, { count: increment(liked ? 1 : -1) }, { merge: true });
+        }catch(e){ console.error("GoXDR: failed to sync like", e); }
+      };
+    }catch(e){
+      console.error("GoXDR: Firebase failed to load, falling back to local counts", e);
+      window.GoXDRFirebaseConfigured = false;
+      window.GoXDRLikesReady = Promise.resolve({});
+      window.GoXDRToggleLike = async () => {};
+    }
+  } else {
+    // No Firebase config yet: counts stay in this browser only (localStorage),
+    // so the feature works immediately and upgrades to shared counts once configured.
+    window.GoXDRLikesReady = Promise.resolve({});
+    window.GoXDRToggleLike = async () => {};
+  }
+</script>
 </head>
 <body>
 <div class="app">
@@ -378,11 +427,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
       <div class="masthead">
         <div class="eyebrow"><span class="pulse"></span><span id="schemaLine">Live catalog · Schema audited 2026-07-14</span></div>
         <h1>Detection Queries for<br><span class="b">Sentinel</span> and <span class="o">Defender XDR</span></h1>
-        <div class="hero-search">
-          <span class="glyph">|</span>
-          <input id="qHero" type="search" placeholder="Search identity, aitm, password spray, bec, oauth, ntlm, token theft…" autocomplete="off">
-        </div>
-        <div class="hero-examples" id="heroExamples"></div>
+        <p class="lede">Search the box at the top left, or browse by category below.</p>
       </div>
 
       <div class="counter-bar" id="counters"></div>
@@ -422,6 +467,12 @@ html[data-theme="light"] .landing{background:var(--bg)}
           <h4>Schema changes and deprecations</h4>
           <p>Microsoft schema deprecations tracked over time. See what changed and which queries were updated.</p>
         </button>
+        <button class="mode-card" id="modeLikes">
+          <span class="glyph">♥</span>
+          <div class="k">Most Liked</div>
+          <h4>Community favorites</h4>
+          <p>Queries the community comes back to most. Tap the heart on any query to add your vote.</p>
+        </button>
       </div>
 
       <div class="site-footer">
@@ -456,6 +507,8 @@ html[data-theme="light"] .landing{background:var(--bg)}
         <button class="chip" data-p="all" aria-pressed="true">All plat</button>
         <button class="chip" data-p="xdr" aria-pressed="false">XDR</button>
         <button class="chip" data-p="sentinel" aria-pressed="false">Sentinel</button>
+        <div class="divider"></div>
+        <button class="chip" id="sortLikesChip" aria-pressed="false">♥ Most Liked</button>
         <button class="chip active-filter" id="activeFilterChip" style="display:none"></button>
       </div>
       <div class="listpane-scroll" id="list"></div>
@@ -492,9 +545,50 @@ html[data-theme="light"] .landing{background:var(--bg)}
 <script>
 /* ---------------- state ---------------- */
 let DATA = [];
-let state = { view:"grid", cat:"all", sub:null, sev:"all", plat:"all", tactic:null, term:"", sel:null };
+let LIKES = {};
+let LIKED_LOCAL = new Set(JSON.parse(localStorage.getItem('goxdr_liked_ids') || '[]'));
+let state = { view:"grid", cat:"all", sub:null, sev:"all", plat:"all", tactic:null, term:"", sel:null, sortByLikes:false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+const HEART_SVG = `<svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.8-10-9.3C.3 8.4 2 4.5 6 4c2.2-.3 4 .9 6 3.2C14 4.9 15.8 3.7 18 4c4 .5 5.7 4.4 4 7.7C19.5 16.2 12 21 12 21z"/></svg>`;
+
+function likeCount(id){ return LIKES[String(id)] || 0; }
+function isLiked(id){ return LIKED_LOCAL.has(String(id)); }
+
+async function loadLikes(){
+  try{
+    if(window.GoXDRLikesReady){ LIKES = await window.GoXDRLikesReady; }
+  }catch(e){ console.error(e); }
+  if(!window.GoXDRFirebaseConfigured){
+    // Local-only fallback so the feature works before Firebase is wired up
+    LIKES = JSON.parse(localStorage.getItem('goxdr_like_counts') || '{}');
+  }
+}
+
+function toggleLike(id, btnEl){
+  const key = String(id);
+  const wasLiked = LIKED_LOCAL.has(key);
+  if(wasLiked){
+    LIKED_LOCAL.delete(key);
+    LIKES[key] = Math.max(0, (LIKES[key]||1) - 1);
+  } else {
+    LIKED_LOCAL.add(key);
+    LIKES[key] = (LIKES[key]||0) + 1;
+  }
+  localStorage.setItem('goxdr_liked_ids', JSON.stringify([...LIKED_LOCAL]));
+  if(window.GoXDRFirebaseConfigured){
+    window.GoXDRToggleLike(key, !wasLiked);
+  } else {
+    localStorage.setItem('goxdr_like_counts', JSON.stringify(LIKES));
+  }
+  if(btnEl){
+    btnEl.classList.add('pop');
+    setTimeout(()=>btnEl.classList.remove('pop'), 320);
+  }
+  renderList();
+  if(state.sel===id) renderDetail();
+}
 
 /* ---------------- ATT&CK tactic mapping ---------------- */
 /* Maps tags and description keywords → MITRE Enterprise tactic. A query can hit multiple. */
@@ -633,7 +727,10 @@ function filtered(){
   });
 }
 function renderList(){
-  const rows = filtered();
+  let rows = filtered();
+  if(state.sortByLikes){
+    rows = [...rows].sort((a,b)=> likeCount(b.id)-likeCount(a.id) || a.id-b.id);
+  }
   $("#shownCount").textContent = rows.length;
   // active filter chip
   const activeChip = $("#activeFilterChip");
@@ -649,8 +746,8 @@ function renderList(){
     $("#list").innerHTML = `<div class="empty"><div class="g">|</div><p>No query matches. Try clearing filters or a table name like <b>EntraIdSignInEvents</b>.</p></div>`;
     return;
   }
-  // group by subcategory when a cat is picked
-  const groupBy = state.cat!=="all" ? "sub" : null;
+  // group by subcategory when a cat is picked (skip grouping in "most liked" leaderboard mode)
+  const groupBy = (!state.sortByLikes && state.cat!=="all") ? "sub" : null;
   if(groupBy){
     const groups = {};
     for(const q of rows){ (groups[q.sub] = groups[q.sub] || []).push(q); }
@@ -665,16 +762,22 @@ function renderList(){
   $("#list").querySelectorAll(".qrow").forEach(r=>{
     r.onclick = ()=>{ state.sel = +r.dataset.id; renderList(); renderDetail(); };
   });
+  $("#list").querySelectorAll(".heart-mini").forEach(h=>{
+    h.onclick = (ev)=>{ ev.stopPropagation(); toggleLike(+h.dataset.id, h); };
+  });
 }
 function qrowHtml(q){
   const tbl = (q.tables||[])[0] || "";
   const updated = q.updated ? '<span class="badge-upd">updated</span>' : "";
+  const liked = isLiked(q.id);
+  const cnt = likeCount(q.id);
   return `<button class="qrow" data-sev="${q.sev}" data-id="${q.id}" aria-current="${state.sel===q.id}">
     <div class="t">${esc(q.name)}</div>
     <div class="m">
       <span class="sev">${q.sev}</span>
       <span class="tbl">${esc(tbl)}</span>
       ${updated}
+      <span class="heart-mini${liked?' liked':''}" data-id="${q.id}">${HEART_SVG}<span>${cnt}</span></span>
     </div>
   </button>`;
 }
@@ -691,6 +794,8 @@ function renderDetail(){
   $("#detailScroll").scrollTop = 0;
   const tacs = tacticsFor(q);
   const platLabel = {xdr:"Defender XDR", sentinel:"Sentinel", both:"Sentinel + XDR"}[q.plat] || q.plat;
+  const liked = isLiked(q.id);
+  const cnt = likeCount(q.id);
   $("#detailInner").innerHTML = `
     <div class="d-eyebrow">${esc(q.cat)} · ${esc(q.sub)}</div>
     <h2 class="d-title">${esc(q.name)}</h2>
@@ -699,6 +804,7 @@ function renderDetail(){
       <span class="pill plat">${esc(platLabel)}</span>
       ${(q.tables||[]).map(t=>`<span class="pill">${esc(t)}</span>`).join("")}
       ${q.updated?`<span class="pill upd">Updated ${esc(q.updated)}</span>`:""}
+      <button class="heart-btn${liked?' liked':''}" id="detailHeart">${HEART_SVG}<span id="detailHeartCount">${cnt}</span></button>
     </div>
     <p class="d-desc">${esc(q.desc)}</p>
     <div class="d-sec">
@@ -728,6 +834,7 @@ function renderDetail(){
       </div>
     </div>
   `;
+  $("#detailHeart").onclick = ()=>toggleLike(q.id, $("#detailHeart"));
 }
 function copyKql(id, btn){
   const q = DATA.find(x=>x.id===id);
@@ -871,6 +978,7 @@ async function boot(){
     DATA = await res.json();
     // sort by id for determinism
     DATA.sort((a,b)=>a.id-b.id);
+    await loadLikes();
     $("#landingLoading").classList.add("hidden");
     $("#landingInner").classList.remove("hidden");
     renderCounters();
@@ -890,34 +998,19 @@ function wireup(){
   $("#modeAttack").onclick = goAttack;
   $("#modeWork").onclick = goWorkspace;
   $("#modeAdv").onclick = goAdv;
+  $("#modeLikes").onclick = ()=>{
+    state.sortByLikes = true;
+    state.cat = "all"; state.sub = null; state.sev="all"; state.plat="all"; state.tactic=null;
+    goWorkspace();
+    $("#sortLikesChip").setAttribute("aria-pressed","true");
+  };
   $("#advLink").onclick = e => { e.preventDefault(); goAdv(); };
 
   $("#q").oninput = e => {
     state.term = e.target.value;
-    if($("#qHero")) $("#qHero").value = e.target.value;
     if(state.view!=="workspace" && state.term) goWorkspace();
     state.sel = null; if(state.view==="workspace"){ renderList(); renderDetail(); }
   };
-  if($("#qHero")){
-    $("#qHero").oninput = e => {
-      state.term = e.target.value;
-      $("#q").value = e.target.value;
-      if(state.term) goWorkspace();
-      state.sel = null; if(state.view==="workspace"){ renderList(); renderDetail(); }
-    };
-  }
-  const EXAMPLE_TERMS = ["identity","aitm","password spray","bec","oauth","ntlm","token theft","bloodhound","kerberoasting"];
-  if($("#heroExamples")){
-    $("#heroExamples").innerHTML = EXAMPLE_TERMS.map(t=>`<button type="button">${esc(t)}</button>`).join("");
-    $("#heroExamples").querySelectorAll("button").forEach(b=>{
-      b.onclick = ()=>{
-        state.term = b.textContent;
-        $("#qHero").value = state.term;
-        $("#q").value = state.term;
-        goWorkspace();
-      };
-    });
-  }
   document.querySelectorAll(".chip[data-k]").forEach(c=>{
     c.onclick = ()=>{
       state.sev = c.dataset.k;
@@ -940,6 +1033,11 @@ function wireup(){
   $("#activeFilterChip").onclick = ()=>{
     state.tactic = null; state.sub = null; state.sel = null;
     renderList(); renderDetail();
+  };
+  $("#sortLikesChip").onclick = ()=>{
+    state.sortByLikes = !state.sortByLikes;
+    $("#sortLikesChip").setAttribute("aria-pressed", state.sortByLikes);
+    state.sel = null; renderList(); renderDetail();
   };
   document.addEventListener("keydown", e=>{
     if(e.key==="/" && document.activeElement!==$("#q")){ e.preventDefault(); $("#q").focus(); }
