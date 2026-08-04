@@ -161,16 +161,16 @@ html[data-theme="light"] .landing{background:var(--bg)}
 
 /* featured "Recently Added" banner, standalone above the category grid */
 .featured-new{
-  width:100%;display:flex;align-items:center;gap:16px;text-align:left;
-  border:1px solid var(--line);border-radius:12px;background:var(--surface);
-  padding:16px 20px;margin-bottom:34px;cursor:pointer;transition:.16s;touch-action:manipulation;
+  width:fit-content;display:flex;align-items:center;gap:11px;text-align:left;
+  border:1px solid var(--line);border-radius:24px;background:var(--surface);
+  padding:8px 18px 8px 14px;margin:0 auto 34px;cursor:pointer;transition:.16s;touch-action:manipulation;
 }
 @media (hover:hover){.featured-new:hover{border-color:var(--blue);background:var(--surface-2)}}
-.fn-glyph{font-size:26px;line-height:1;flex:0 0 auto}
-.fn-text{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
-.fn-k{font-family:"IBM Plex Sans Condensed";font-size:10px;letter-spacing:.14em;font-weight:600;text-transform:uppercase;color:var(--blue)}
-.fn-h{font-size:15.5px;font-weight:600;letter-spacing:-.01em;color:var(--text)}
-.fn-arr{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--blue);flex:0 0 auto}
+.fn-glyph{font-size:17px;line-height:1;flex:0 0 auto}
+.fn-text{display:flex;align-items:baseline;gap:8px;flex:0 1 auto;min-width:0}
+.fn-k{font-family:"IBM Plex Sans Condensed";font-size:9.5px;letter-spacing:.13em;font-weight:600;text-transform:uppercase;color:var(--blue);white-space:nowrap}
+.fn-h{font-size:13px;font-weight:600;letter-spacing:-.01em;color:var(--text);white-space:nowrap}
+.fn-arr{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--blue);flex:0 0 auto}
 .site-footer{margin-top:48px;padding:28px 0 8px;border-top:1px solid var(--line-soft);text-align:center}
 .footer-links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
 .footer-links a{
@@ -817,7 +817,7 @@ function renderGrid(){
     </button>`;
   }).join("");
   $("#grid").querySelectorAll(".tile").forEach(t=>{
-    t.onclick = ()=>{ state.cat = t.dataset.cat; goWorkspace(); pushHistory(); };
+    t.onclick = ()=>{ resetWorkspaceFilters(); state.cat = t.dataset.cat; state.tactic=null; goWorkspace(); pushHistory(); };
   });
 }
 
@@ -834,6 +834,7 @@ function renderRail(){
   $("#rail").querySelectorAll(".rail-item").forEach(b=>{
     b.onclick = ()=>{
       try{
+        resetWorkspaceFilters();
         state.cat=b.dataset.cat; state.sub=null; state.sel=null; state.tactic=null;
         $("#rail").querySelectorAll('.rail-item[aria-current="true"]').forEach(x=>x.setAttribute('aria-current','false'));
         b.setAttribute('aria-current','true');
@@ -1055,14 +1056,11 @@ function renderMatrix(){
   $("#matrix").querySelectorAll(".mcol-head[data-tactic-only]").forEach(head=>{
     head.onclick = ()=>{
       try{
+        resetWorkspaceFilters();
         state.tactic = head.dataset.tacticOnly;
         state.sub = null;
-        state.cat = "all"; state.sev="all"; state.plat="all"; state.sel=null; state.term="";
+        state.cat = "all"; state.sel=null; state.term="";
         $("#q").value = "";
-        document.querySelectorAll(".chip").forEach(x=>{
-          if(x.dataset.k) x.setAttribute("aria-pressed", x.dataset.k==="all");
-          if(x.dataset.p) x.setAttribute("aria-pressed", x.dataset.p==="all");
-        });
         goWorkspace();
       }catch(err){
         (window.__goxdrReportError||console.error)('tactic column click failed: ' + (err && err.stack || err));
@@ -1073,14 +1071,11 @@ function renderMatrix(){
   $("#matrix").querySelectorAll(".mcell").forEach(cell=>{
     cell.onclick = ()=>{
       try{
+        resetWorkspaceFilters();
         state.tactic = cell.dataset.tactic;
         state.sub = cell.dataset.sub;
-        state.cat = "all"; state.sev="all"; state.plat="all"; state.sel=null; state.term="";
+        state.cat = "all"; state.sel=null; state.term="";
         $("#q").value = "";
-        document.querySelectorAll(".chip").forEach(x=>{
-          if(x.dataset.k) x.setAttribute("aria-pressed", x.dataset.k==="all");
-          if(x.dataset.p) x.setAttribute("aria-pressed", x.dataset.p==="all");
-        });
         goWorkspace();
       }catch(err){
         (window.__goxdrReportError||console.error)('matrix cell click failed: ' + (err && err.stack || err));
@@ -1170,6 +1165,13 @@ function snapshotState(){
     sortByLikes: state.sortByLikes, newOnly: state.newOnly
   };
 }
+function resetWorkspaceFilters(){
+  state.sev = "all"; state.plat = "all"; state.sortByLikes = false; state.newOnly = false;
+  document.querySelectorAll(".chip[data-k]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.k==="all"));
+  document.querySelectorAll(".chip[data-p]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.p==="all"));
+  $("#sortLikesChip")?.setAttribute("aria-pressed","false");
+  $("#newChip")?.setAttribute("aria-pressed","false");
+}
 function pushHistory(){
   try{ history.pushState(snapshotState(), ""); }
   catch(e){ /* history API unavailable, navigation still works within the page */ }
@@ -1235,18 +1237,20 @@ function wireup(){
   $("#brand").onclick = ()=>{ goGrid(); pushHistory(); };
   $("#brand").onkeydown = e => { if(e.key==="Enter"){ goGrid(); pushHistory(); } };
   $("#modeAttack").onclick = ()=>{ goAttack(); pushHistory(); };
-  $("#modeWork").onclick = ()=>{ goWorkspace(); pushHistory(); };
+  $("#modeWork").onclick = ()=>{ resetWorkspaceFilters(); state.cat="all"; state.sub=null; state.tactic=null; goWorkspace(); pushHistory(); };
   $("#modeAdv").onclick = ()=>{ goAdv(); pushHistory(); };
   $("#modeLikes").onclick = ()=>{
+    resetWorkspaceFilters();
     state.sortByLikes = true;
-    state.cat = "all"; state.sub = null; state.sev="all"; state.plat="all"; state.tactic=null;
+    state.cat = "all"; state.sub = null; state.tactic=null;
     goWorkspace();
     $("#sortLikesChip").setAttribute("aria-pressed","true");
     pushHistory();
   };
   $("#modeNew").onclick = ()=>{
+    resetWorkspaceFilters();
     state.newOnly = true;
-    state.cat = "all"; state.sub = null; state.sev="all"; state.plat="all"; state.tactic=null; state.sortByLikes=false;
+    state.cat = "all"; state.sub = null; state.tactic=null;
     goWorkspace();
     $("#newChip").setAttribute("aria-pressed","true");
     pushHistory();
