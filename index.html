@@ -138,16 +138,39 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .tile .foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--dim)}
 .tile .foot b{color:var(--text);font-weight:600}
 .tile .foot .arr{color:var(--blue);font-weight:600}
-.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:44px}
+.modes{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:44px}
 .mode-card{text-align:left;padding:22px;border-radius:12px;border:1px solid var(--line);background:var(--surface);position:relative;overflow:hidden;transition:.16s;cursor:pointer;touch-action:manipulation}
 @media (hover:hover){.mode-card:hover{border-color:var(--blue);background:var(--surface-2)}}
 .mode-card .k{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.14em;color:var(--blue);font-weight:600;margin-bottom:12px}
-.mode-card:nth-child(2) .k{color:var(--orange)}
-.mode-card:nth-child(3) .k{color:var(--med)}
-.mode-card h4{font-size:16px;font-weight:600;letter-spacing:-.015em;margin-bottom:6px}
-.mode-card p{font-size:13px;color:var(--muted);line-height:1.5}
-.mode-card .glyph{position:absolute;right:18px;top:18px;font-family:"IBM Plex Mono",monospace;font-size:38px;font-weight:400;color:var(--line);opacity:.6;line-height:1;letter-spacing:-.05em}
-@media (max-width:900px){.modes{grid-template-columns:1fr}}
+#modeAttack .k{color:var(--blue)}
+#modeWork .k{color:var(--orange)}
+#modeAdv .k{color:var(--med)}
+#modeLikes .k{color:var(--crit)}
+.mode-card h4{font-size:15.5px;font-weight:600;letter-spacing:-.015em;margin-bottom:6px}
+.mode-card p{font-size:12.5px;color:var(--muted);line-height:1.5}
+.mode-card .glyph{
+  position:absolute;right:16px;top:14px;font-family:"IBM Plex Mono",monospace;font-size:34px;font-weight:400;
+  line-height:1;letter-spacing:-.05em;opacity:.9;
+}
+.glyph-blue{color:var(--blue)}
+.glyph-orange{color:var(--orange)}
+.glyph-med{color:var(--med)}
+.glyph-crit{color:var(--crit)}
+@media (max-width:960px){.modes{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.modes{grid-template-columns:1fr}}
+
+/* featured "Recently Added" banner, standalone above the category grid */
+.featured-new{
+  width:100%;display:flex;align-items:center;gap:16px;text-align:left;
+  border:1px solid var(--line);border-radius:12px;background:var(--surface);
+  padding:16px 20px;margin-bottom:34px;cursor:pointer;transition:.16s;touch-action:manipulation;
+}
+@media (hover:hover){.featured-new:hover{border-color:var(--blue);background:var(--surface-2)}}
+.fn-glyph{font-size:26px;line-height:1;flex:0 0 auto}
+.fn-text{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.fn-k{font-family:"IBM Plex Sans Condensed";font-size:10px;letter-spacing:.14em;font-weight:600;text-transform:uppercase;color:var(--blue)}
+.fn-h{font-size:15.5px;font-weight:600;letter-spacing:-.01em;color:var(--text)}
+.fn-arr{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--blue);flex:0 0 auto}
 .site-footer{margin-top:48px;padding:28px 0 8px;border-top:1px solid var(--line-soft);text-align:center}
 .footer-links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
 .footer-links a{
@@ -213,12 +236,12 @@ html[data-theme="light"] .landing{background:var(--bg)}
   50%{box-shadow:0 0 0 5px rgba(76,194,255,0)}
 }
 @media (prefers-reduced-motion:reduce){.chip.new-chip{animation:none}}
-.mode-card.new-glow{border-color:var(--blue);animation:newglowcard 2.6s ease-in-out infinite}
+.featured-new.new-glow{border-color:var(--blue);animation:newglowcard 2.6s ease-in-out infinite}
 @keyframes newglowcard{
   0%,100%{box-shadow:0 0 0 0 rgba(76,194,255,.25)}
   50%{box-shadow:0 0 14px 2px rgba(76,194,255,.18)}
 }
-@media (prefers-reduced-motion:reduce){.mode-card.new-glow{animation:none}}
+@media (prefers-reduced-motion:reduce){.featured-new.new-glow{animation:none}}
 .chip.active-filter{border-color:var(--orange);background:rgba(255,140,66,.14);color:var(--orange);cursor:pointer}
 .chip.active-filter::after{content:" ×";font-weight:700;margin-left:2px}
 .chip.active-filter:hover{background:rgba(255,140,66,.24)}
@@ -485,37 +508,40 @@ html[data-theme="light"] .landing{background:var(--bg)}
         <a href="#" id="advLink">Read the advisory →</a>
       </div>
 
+      <button class="featured-new new-glow" id="modeNew">
+        <span class="fn-glyph">✨</span>
+        <span class="fn-text">
+          <span class="fn-k">Recently Added</span>
+          <span class="fn-h" id="newCardTitle">New This Cycle</span>
+        </span>
+        <span class="fn-arr">Explore →</span>
+      </button>
+
       <div class="section-label"><span class="num">01</span> Browse by category</div>
       <div class="grid" id="grid"></div>
 
       <div class="section-label" style="margin-top:44px"><span class="num">02</span> Explore differently</div>
       <div class="modes">
-        <button class="mode-card new-glow" id="modeNew">
-          <span class="glyph">✨</span>
-          <div class="k">Recently Added</div>
-          <h4 id="newCardTitle">New This Cycle</h4>
-          <p>The latest additions to the library, freshly written and schema-checked.</p>
-        </button>
         <button class="mode-card" id="modeAttack">
-          <span class="glyph">⊞</span>
+          <span class="glyph glyph-blue">⊞</span>
           <div class="k">ATT&amp;CK Matrix</div>
           <h4>Coverage by tactic and technique</h4>
           <p>See which MITRE tactics the library covers and where gaps sit. Click any cell to filter to that tactic.</p>
         </button>
         <button class="mode-card" id="modeWork">
-          <span class="glyph">≡</span>
+          <span class="glyph glyph-orange">≡</span>
           <div class="k">Workspace</div>
           <h4>Three pane analyst view</h4>
           <p>Category rail, query list, and detail panel. Keyboard driven. Filter by severity and platform.</p>
         </button>
         <button class="mode-card" id="modeAdv">
-          <span class="glyph">△</span>
+          <span class="glyph glyph-med">△</span>
           <div class="k">Advisories</div>
           <h4>Schema changes and deprecations</h4>
           <p>Microsoft schema deprecations tracked over time. See what changed and which queries were updated.</p>
         </button>
         <button class="mode-card" id="modeLikes">
-          <span class="glyph">♥</span>
+          <span class="glyph glyph-crit">♥</span>
           <div class="k">Most Liked</div>
           <h4>Community favorites</h4>
           <p>Queries the community comes back to most. Tap the heart on any query to add your vote.</p>
