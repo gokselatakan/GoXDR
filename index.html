@@ -157,8 +157,8 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .mode-card p{font-size:13px;color:var(--muted);line-height:1.5}
 .mode-card .glyph{position:absolute;right:18px;top:18px;font-family:"IBM Plex Mono",monospace;font-size:38px;font-weight:400;color:var(--line);opacity:.6;line-height:1;letter-spacing:-.05em}
 @media (max-width:900px){.modes{grid-template-columns:1fr}}
-.site-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--line-soft);text-align:center}
-.footer-links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:10px}
+.site-footer{margin-top:48px;padding:28px 0 8px;border-top:1px solid var(--line-soft);text-align:center}
+.footer-links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
 .footer-links a{
   font-family:"IBM Plex Sans Condensed";font-size:11px;font-weight:600;letter-spacing:.05em;
   color:var(--blue);border:1px solid var(--blue-dim);border-radius:7px;padding:5px 12px;transition:.12s;
@@ -166,8 +166,19 @@ html[data-theme="light"] .landing{background:var(--bg)}
 @media (hover:hover){.footer-links a:hover{background:var(--blue);color:#fff}}
 .footer-links a.fb{color:var(--orange);border-color:var(--orange-dim)}
 @media (hover:hover){.footer-links a.fb:hover{background:var(--orange);color:#fff}}
-.footer-credit{font-size:11.5px;color:var(--dim)}
-.footer-credit a{color:var(--blue);font-weight:500}
+.footer-credit{
+  display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim);
+  padding:8px 16px;border:1px solid var(--line-soft);border-radius:20px;background:var(--surface);
+}
+.footer-credit .brandmark{font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:12px}
+.footer-credit .brandmark .go{color:var(--blue)}
+.footer-credit .brandmark .xdr{color:var(--orange)}
+.footer-credit a.li{
+  display:inline-flex;align-items:center;gap:5px;color:var(--text);font-weight:600;
+  text-decoration:none;transition:.12s;
+}
+@media (hover:hover){.footer-credit a.li:hover{color:var(--blue)}}
+.footer-credit a.li svg{width:13px;height:13px;fill:currentColor}
 
 /* workspace */
 .workspace{flex:1;display:flex;min-height:0}
@@ -201,6 +212,22 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .chip[data-p="sentinel"][aria-pressed="true"]{border-color:var(--orange);background:rgba(255,140,66,.14);color:var(--orange)}
 .chip[data-p="both"][aria-pressed="true"]{border-color:var(--muted);background:var(--surface-2);color:var(--text)}
 #sortLikesChip[aria-pressed="true"]{border-color:var(--crit);background:rgba(248,81,73,.12);color:var(--crit)}
+.chip.new-chip{
+  border-color:var(--blue);color:var(--blue);position:relative;
+  animation:newglow 2.4s ease-in-out infinite;
+}
+.chip.new-chip[aria-pressed="true"]{background:rgba(76,194,255,.16);color:var(--text)}
+@keyframes newglow{
+  0%,100%{box-shadow:0 0 0 0 rgba(76,194,255,.35)}
+  50%{box-shadow:0 0 0 5px rgba(76,194,255,0)}
+}
+@media (prefers-reduced-motion:reduce){.chip.new-chip{animation:none}}
+.mode-card.new-glow{border-color:var(--blue);animation:newglowcard 2.6s ease-in-out infinite}
+@keyframes newglowcard{
+  0%,100%{box-shadow:0 0 0 0 rgba(76,194,255,.25)}
+  50%{box-shadow:0 0 14px 2px rgba(76,194,255,.18)}
+}
+@media (prefers-reduced-motion:reduce){.mode-card.new-glow{animation:none}}
 .chip.active-filter{border-color:var(--orange);background:rgba(255,140,66,.14);color:var(--orange);cursor:pointer}
 .chip.active-filter::after{content:" ×";font-weight:700;margin-left:2px}
 .chip.active-filter:hover{background:rgba(255,140,66,.24)}
@@ -449,6 +476,12 @@ html[data-theme="light"] .landing{background:var(--bg)}
 
       <div class="section-label" style="margin-top:44px"><span class="num">02</span> Explore differently</div>
       <div class="modes">
+        <button class="mode-card new-glow" id="modeNew">
+          <span class="glyph">✨</span>
+          <div class="k">Recently Added</div>
+          <h4 id="newCardTitle">New This Cycle</h4>
+          <p>The latest additions to the library, freshly written and schema-checked.</p>
+        </button>
         <button class="mode-card" id="modeAttack">
           <span class="glyph">⊞</span>
           <div class="k">ATT&amp;CK Matrix</div>
@@ -481,7 +514,14 @@ html[data-theme="light"] .landing{background:var(--bg)}
           <a href="https://github.com/gokselatakan/GoXDR/issues/new?template=detailed-submit.yml" target="_blank" rel="noopener">Detailed Submit</a>
           <a href="https://github.com/gokselatakan/GoXDR/issues/new?template=feedback.yml" target="_blank" rel="noopener" class="fb">Feedback</a>
         </div>
-        <div class="footer-credit">Created by <a href="https://www.linkedin.com/in/gokselatakan/" target="_blank" rel="noopener">GoX</a></div>
+        <div class="footer-credit">
+          <span class="brandmark"><span class="go">Go</span><span class="xdr">XDR</span></span>
+          <span>created by</span>
+          <a class="li" href="https://www.linkedin.com/in/gokselatakan/" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45z"/></svg>
+            GoX
+          </a>
+        </div>
       </div>
     </div>
   </main>
@@ -509,6 +549,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
         <button class="chip" data-p="sentinel" aria-pressed="false">Sentinel</button>
         <div class="divider"></div>
         <button class="chip" id="sortLikesChip" aria-pressed="false">♥ Most Liked</button>
+        <button class="chip new-chip" id="newChip" aria-pressed="false">✨ Recently Added</button>
         <button class="chip active-filter" id="activeFilterChip" style="display:none"></button>
       </div>
       <div class="listpane-scroll" id="list"></div>
@@ -547,7 +588,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
 let DATA = [];
 let LIKES = {};
 let LIKED_LOCAL = new Set(JSON.parse(localStorage.getItem('goxdr_liked_ids') || '[]'));
-let state = { view:"grid", cat:"all", sub:null, sev:"all", plat:"all", tactic:null, term:"", sel:null, sortByLikes:false };
+let state = { view:"grid", cat:"all", sub:null, sev:"all", plat:"all", tactic:null, term:"", sel:null, sortByLikes:false, newOnly:false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
@@ -707,6 +748,14 @@ function renderRail(){
     b.onclick = ()=>{ state.cat=b.dataset.cat; state.sub=null; state.sel=null; state.tactic=null; renderRail(); renderList(); renderDetail(); };
   });
 }
+const RECENT_DAYS = 14;
+function isRecentlyAdded(q){
+  const added = new Date(q.added + "T00:00:00Z").getTime();
+  const cutoff = Date.now() - RECENT_DAYS*24*60*60*1000;
+  return added >= cutoff;
+}
+function recentCount(){ return DATA.filter(isRecentlyAdded).length; }
+
 function filtered(){
   const t = state.term.toLowerCase();
   return DATA.filter(q=>{
@@ -721,6 +770,7 @@ function filtered(){
       const tacs = tacticsFor(q);
       if(!tacs.includes(state.tactic)) return false;
     }
+    if(state.newOnly && !isRecentlyAdded(q)) return false;
     if(!t) return true;
     const hay = (q.name+" "+q.desc+" "+(q.tags||[]).join(" ")+" "+(q.tables||[]).join(" ")+" "+q.cat+" "+q.sub).toLowerCase();
     return hay.includes(t);
@@ -984,6 +1034,15 @@ async function boot(){
     renderCounters();
     renderGrid();
     wireup();
+    const rc = recentCount();
+    const newCardTitle = $("#newCardTitle");
+    if(newCardTitle) newCardTitle.textContent = `${rc} New This Cycle`;
+    const newChip = $("#newChip");
+    if(newChip) newChip.textContent = `✨ Recently Added (${rc})`;
+    if(rc === 0){
+      $("#modeNew")?.classList.add("hidden");
+      newChip?.classList.add("hidden");
+    }
   } catch(e){
     $("#landingLoading").textContent = "Failed to load queries.json — check the path.";
   }
@@ -1003,6 +1062,12 @@ function wireup(){
     state.cat = "all"; state.sub = null; state.sev="all"; state.plat="all"; state.tactic=null;
     goWorkspace();
     $("#sortLikesChip").setAttribute("aria-pressed","true");
+  };
+  $("#modeNew").onclick = ()=>{
+    state.newOnly = true;
+    state.cat = "all"; state.sub = null; state.sev="all"; state.plat="all"; state.tactic=null; state.sortByLikes=false;
+    goWorkspace();
+    $("#newChip").setAttribute("aria-pressed","true");
   };
   $("#advLink").onclick = e => { e.preventDefault(); goAdv(); };
 
@@ -1037,6 +1102,11 @@ function wireup(){
   $("#sortLikesChip").onclick = ()=>{
     state.sortByLikes = !state.sortByLikes;
     $("#sortLikesChip").setAttribute("aria-pressed", state.sortByLikes);
+    state.sel = null; renderList(); renderDetail();
+  };
+  $("#newChip").onclick = ()=>{
+    state.newOnly = !state.newOnly;
+    $("#newChip").setAttribute("aria-pressed", state.newOnly);
     state.sel = null; renderList(); renderDetail();
   };
   document.addEventListener("keydown", e=>{
