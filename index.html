@@ -517,7 +517,6 @@ html[data-theme="light"] .landing{background:var(--bg)}
             GoX
           </a>
         </div>
-        <div style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim)">build 2026-08-04 21:54 UTC</div>
       </div>
     </div>
   </main>
@@ -772,7 +771,7 @@ function renderGrid(){
     </button>`;
   }).join("");
   $("#grid").querySelectorAll(".tile").forEach(t=>{
-    t.onclick = ()=>{ state.cat = t.dataset.cat; goWorkspace(); };
+    t.onclick = ()=>{ state.cat = t.dataset.cat; goWorkspace(); pushHistory(); };
   });
 }
 
@@ -787,7 +786,17 @@ function renderRail(){
        <span>${esc(i.name)}</span><span class="n">${i.n}</span>
      </button>`).join("");
   $("#rail").querySelectorAll(".rail-item").forEach(b=>{
-    b.onclick = ()=>{ state.cat=b.dataset.cat; state.sub=null; state.sel=null; state.tactic=null; renderRail(); renderList(); renderDetail(); };
+    b.onclick = ()=>{
+      try{
+        state.cat=b.dataset.cat; state.sub=null; state.sel=null; state.tactic=null;
+        $("#rail").querySelectorAll('.rail-item[aria-current="true"]').forEach(x=>x.setAttribute('aria-current','false'));
+        b.setAttribute('aria-current','true');
+        renderList(); renderDetail();
+        pushHistory();
+      }catch(err){
+        (window.__goxdrReportError||console.error)('rail item click failed: ' + (err && err.stack || err));
+      }
+    };
   });
 }
 const RECENT_DAYS = 14;
@@ -855,8 +864,15 @@ function renderList(){
     r.onclick = ()=>{
       try{
         state.sel = +r.dataset.id;
-        renderList();
+        // Update selection highlighting in place, without tearing down and
+        // rebuilding the row list from inside the click handler of one of
+        // its own rows. Replacing the element that is still dispatching a
+        // click can drop the rest of the handler in some WebKit builds
+        // (notably iOS Safari private browsing).
+        $("#list").querySelectorAll('.qrow[aria-current="true"]').forEach(x=>x.setAttribute('aria-current','false'));
+        r.setAttribute('aria-current','true');
         renderDetail();
+        pushHistory();
       }catch(err){
         (window.__goxdrReportError||console.error)('qrow click failed: ' + (err && err.stack || err));
       }
@@ -1002,6 +1018,7 @@ function renderMatrix(){
       }catch(err){
         (window.__goxdrReportError||console.error)('tactic column click failed: ' + (err && err.stack || err));
       }
+      pushHistory();
     };
   });
   $("#matrix").querySelectorAll(".mcell").forEach(cell=>{
@@ -1019,6 +1036,7 @@ function renderMatrix(){
       }catch(err){
         (window.__goxdrReportError||console.error)('matrix cell click failed: ' + (err && err.stack || err));
       }
+      pushHistory();
     };
   });
 }
@@ -1095,6 +1113,43 @@ function goWorkspace(){ setView("workspace"); renderRail(); renderList(); render
 function goAttack(){ setView("attack"); renderMatrix(); }
 function goAdv(){ setView("advisories"); renderAdvisories(); }
 
+/* ---------------- browser back/forward support ---------------- */
+function snapshotState(){
+  return {
+    view: state.view, cat: state.cat, sub: state.sub, sev: state.sev,
+    plat: state.plat, tactic: state.tactic, sel: state.sel,
+    sortByLikes: state.sortByLikes, newOnly: state.newOnly
+  };
+}
+function pushHistory(){
+  try{ history.pushState(snapshotState(), ""); }
+  catch(e){ /* history API unavailable, navigation still works within the page */ }
+}
+function applyState(s){
+  if(!s){ state.view="grid"; setView("grid"); return; }
+  state.cat = s.cat || "all";
+  state.sub = s.sub || null;
+  state.sev = s.sev || "all";
+  state.plat = s.plat || "all";
+  state.tactic = s.tactic || null;
+  state.sel = (typeof s.sel === "number") ? s.sel : null;
+  state.sortByLikes = !!s.sortByLikes;
+  state.newOnly = !!s.newOnly;
+  document.querySelectorAll(".chip[data-k]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.k===state.sev));
+  document.querySelectorAll(".chip[data-p]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.p===state.plat));
+  const sortChip = $("#sortLikesChip"); if(sortChip) sortChip.setAttribute("aria-pressed", state.sortByLikes);
+  const newChip = $("#newChip"); if(newChip) newChip.setAttribute("aria-pressed", state.newOnly);
+  const v = s.view || "grid";
+  if(v==="workspace"){ setView("workspace"); renderRail(); renderList(); renderDetail(); }
+  else if(v==="attack"){ setView("attack"); renderMatrix(); }
+  else if(v==="advisories"){ setView("advisories"); renderAdvisories(); }
+  else { setView("grid"); }
+}
+window.addEventListener("popstate", (e)=>{
+  try{ applyState(e.state); }
+  catch(err){ (window.__goxdrReportError||console.error)("popstate failed: " + (err && err.stack || err)); }
+});
+
 /* ---------------- bootstrap ---------------- */
 async function boot(){
   try{
@@ -1117,34 +1172,37 @@ async function boot(){
       $("#modeNew")?.classList.add("hidden");
       newChip?.classList.add("hidden");
     }
+    try{ history.replaceState(snapshotState(), ""); }catch(e){}
   } catch(e){
     $("#landingLoading").textContent = "Failed to load queries.json — check the path.";
     (window.__goxdrReportError||console.error)('boot() failed: ' + (e && e.stack || e));
   }
 }
 function wireup(){
-  $("#viewGrid").onclick = goGrid;
-  $("#viewWork").onclick = goWorkspace;
-  $("#viewAttack").onclick = goAttack;
-  $("#viewAdv").onclick = goAdv;
-  $("#brand").onclick = goGrid;
-  $("#brand").onkeydown = e => { if(e.key==="Enter") goGrid(); };
-  $("#modeAttack").onclick = goAttack;
-  $("#modeWork").onclick = goWorkspace;
-  $("#modeAdv").onclick = goAdv;
+  $("#viewGrid").onclick = ()=>{ goGrid(); pushHistory(); };
+  $("#viewWork").onclick = ()=>{ goWorkspace(); pushHistory(); };
+  $("#viewAttack").onclick = ()=>{ goAttack(); pushHistory(); };
+  $("#viewAdv").onclick = ()=>{ goAdv(); pushHistory(); };
+  $("#brand").onclick = ()=>{ goGrid(); pushHistory(); };
+  $("#brand").onkeydown = e => { if(e.key==="Enter"){ goGrid(); pushHistory(); } };
+  $("#modeAttack").onclick = ()=>{ goAttack(); pushHistory(); };
+  $("#modeWork").onclick = ()=>{ goWorkspace(); pushHistory(); };
+  $("#modeAdv").onclick = ()=>{ goAdv(); pushHistory(); };
   $("#modeLikes").onclick = ()=>{
     state.sortByLikes = true;
     state.cat = "all"; state.sub = null; state.sev="all"; state.plat="all"; state.tactic=null;
     goWorkspace();
     $("#sortLikesChip").setAttribute("aria-pressed","true");
+    pushHistory();
   };
   $("#modeNew").onclick = ()=>{
     state.newOnly = true;
     state.cat = "all"; state.sub = null; state.sev="all"; state.plat="all"; state.tactic=null; state.sortByLikes=false;
     goWorkspace();
     $("#newChip").setAttribute("aria-pressed","true");
+    pushHistory();
   };
-  $("#advLink").onclick = e => { e.preventDefault(); goAdv(); };
+  $("#advLink").onclick = e => { e.preventDefault(); goAdv(); pushHistory(); };
 
   $("#q").oninput = e => {
     state.term = e.target.value;
