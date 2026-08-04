@@ -2776,5 +2776,52 @@
     "desc": "Detects successful sign-ins from accounts with no sign-in activity in the preceding 60 days. Dormant account reactivation is a common pattern in account takeover: attackers target stale accounts that owners rarely check, reducing the chance of the compromise being noticed quickly.",
     "kql": "let Lookback = 90d;\nlet DormancyThresholdDays = 60;\nSigninLogs\n| where TimeGenerated > ago(Lookback)\n| where ResultType == '0'\n| order by UserPrincipalName, TimeGenerated asc\n| serialize\n| extend PrevSignIn = prev(TimeGenerated), PrevUser = prev(UserPrincipalName)\n| where UserPrincipalName == PrevUser\n| extend GapDays = datetime_diff('day', TimeGenerated, PrevSignIn)\n| where GapDays >= DormancyThresholdDays\n| project UserPrincipalName, PreviousSignIn = PrevSignIn, ReactivationSignIn = TimeGenerated, GapDays, IPAddress\n| order by GapDays desc",
     "updated": "2026-07-28"
+  },
+  {
+    "id": 142,
+    "name": "Credential-Named Files in SharePoint, OneDrive and Teams",
+    "cat": "Collaboration",
+    "sub": "Data Protection",
+    "plat": "sentinel",
+    "tables": [
+      "OfficeActivity"
+    ],
+    "tags": [
+      "credential file",
+      "sharepoint",
+      "onedrive",
+      "teams",
+      "exposed",
+      "sweep",
+      "hygiene",
+      "T1552.001"
+    ],
+    "sev": "high",
+    "desc": "Cloud half of the credential file sweep. Finds files with credential-like names across SharePoint, OneDrive and Teams file operations. Groups by file rather than event so you get a remediation list, not an event log. DistinctUsers is the column that matters: nine people opening the same Service Accounts.xlsx is a finding.",
+    "kql": "let Lookback = 30d;\nlet CredentialTerms = @\"(?i)(password|passwrd|passwd|pwd|passcode|credential|creds|logins|secret|apikey|api[_\\- ]key|privatekey|id_rsa)\";\nlet BenignTerms = @\"(?i)(compass|passport|passenger|passive|passage|bypass|encompass|surpass|secretar|secret santa|passwordless|password[_\\- ]?polic|password[_\\- ]?manager|password[_\\- ]?expir|(reset|change|forgot)[_\\- ]?password|password[_\\- ]?(reset|change)|credential[_\\- ]?guard)\";\nlet DocExtensions = dynamic([\"txt\",\"csv\",\"xls\",\"xlsx\",\"xlsm\",\"doc\",\"docx\",\"rtf\",\"one\",\"md\",\"json\",\"yaml\",\"yml\",\"xml\",\"ini\",\"cfg\",\"conf\",\"env\",\"ps1\",\"bat\",\"sql\",\"pdf\",\"pem\",\"ppk\",\"key\",\"rdp\",\"bak\"]);\nOfficeActivity\n| where TimeGenerated > ago(Lookback)\n| where RecordType == \"SharePointFileOperation\"\n| where UserId !~ \"app@sharepoint\"\n| where isnotempty(SourceFileName)\n| where SourceFileName matches regex CredentialTerms\n| where not(SourceFileName matches regex BenignTerms)\n| where SourceFileExtension in~ (DocExtensions)\n| extend Estate = iff(Site_Url has \"/personal/\", \"OneDrive\", \"SharePoint\")\n| extend TeamsChatFile = SourceRelativeUrl has \"Microsoft Teams Chat Files\"\n| extend OwnerPath = extract(@\"/personal/([^/]+)\", 1, tolower(Site_Url))\n| summarize\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated),\n    Touches = count(),\n    DistinctUsers = dcount(UserId),\n    TouchedBy = make_set(UserId, 25),\n    Operations = make_set(Operation, 10),\n    ClientIPs = make_set(ClientIP, 10)\n  by SourceFileName, SourceFileExtension, Estate, TeamsChatFile, OwnerPath, Site_Url, SourceRelativeUrl\n| extend FullPath = strcat(Site_Url, SourceRelativeUrl, \"/\", SourceFileName)\n| project FirstSeen, LastSeen, SourceFileName, SourceFileExtension, Estate, TeamsChatFile,\n          OwnerPath, DistinctUsers, TouchedBy, Touches, Operations, ClientIPs, FullPath\n| sort by DistinctUsers desc, LastSeen desc",
+    "added": "2026-08-04"
+  },
+  {
+    "id": 143,
+    "name": "Credential Discovery on Endpoints (T1552.001)",
+    "cat": "XDR",
+    "sub": "Endpoint",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "credential discovery",
+      "T1552.001",
+      "findstr",
+      "select-string",
+      "reg",
+      "threat hunt",
+      "attacker recon"
+    ],
+    "sev": "critical",
+    "desc": "Somebody shopping for the loot. Detects endpoint processes running credential search commands (findstr, Select-String, grep, reg query, recursive gci) targeting password credential and secret terms. Standard post-compromise recon under T1552.001 Unsecured Credentials in Files. Fast quiet and one of the first things an attacker runs after landing.",
+    "kql": "let Lookback = 30d;\nlet SearchTools = dynamic([\"findstr\", \"Select-String\", \"sls\", \"grep\", \"reg\", \"Get-ChildItem\", \"gci\"]);\nlet CredentialTargets = @\"(?i)(password|passwd|pwd|passcode|credential|creds|secret|unattend|sysprep)\";\nlet RecursiveFlags = @\"(?i)(-recurse|/s\\b|/si\\b|\\s-r\\b|\\*\\.|--include)\";\nDeviceProcessEvents\n| where TimeGenerated > ago(Lookback)\n| where isnotempty(ProcessCommandLine)\n| where ProcessCommandLine has_any (SearchTools)\n| where ProcessCommandLine matches regex CredentialTargets\n| where ProcessCommandLine matches regex RecursiveFlags\n| extend Actor = tolower(iff(isnotempty(AccountUpn), AccountUpn, strcat(AccountDomain, @\"\\\", AccountName)))\n| project TimeGenerated, DeviceName, Actor, FileName, ProcessCommandLine,\n          Parent = InitiatingProcessFileName, ParentCommandLine = InitiatingProcessCommandLine,\n          Grandparent = InitiatingProcessParentFileName, ReportId\n| sort by TimeGenerated desc",
+    "added": "2026-08-04"
   }
 ]
