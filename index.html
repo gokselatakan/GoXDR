@@ -361,6 +361,16 @@ html[data-theme="light"] .landing{background:var(--bg)}
 
 .hidden{display:none !important}
 .loading{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:13px}
+.err-banner{
+  position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;
+  background:#2A0F10;border:1px solid var(--crit);border-radius:10px;
+  padding:12px 14px;color:#FFD5D2;font-family:"IBM Plex Mono",monospace;font-size:12px;
+  line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.4);max-height:40vh;overflow-y:auto;
+}
+.err-banner .hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:10px}
+.err-banner .hdr b{font-family:"IBM Plex Sans Condensed";color:var(--crit);letter-spacing:.04em;text-transform:uppercase;font-size:11px}
+.err-banner button{border:1px solid var(--crit);border-radius:6px;padding:2px 9px;color:#FFD5D2;font-size:11px;flex:0 0 auto}
+.err-banner pre{white-space:pre-wrap;word-break:break-word;margin:0}
 
 @media (max-width:1180px){:root{--list:320px;--rail:200px}}
 @media (max-width:960px){.rail{display:none} .listpane{flex:0 0 280px} .counter-bar{grid-template-columns:1fr 1fr}}
@@ -522,6 +532,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
             GoX
           </a>
         </div>
+        <div style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim)">build 2026-08-04 21:43 UTC</div>
       </div>
     </div>
   </main>
@@ -581,12 +592,42 @@ html[data-theme="light"] .landing{background:var(--bg)}
     <div class="adv-inner" id="advInner"></div>
   </div>
 
+  <div id="errBanner"></div>
+
 </div>
 
 <script>
 /* ---------------- state ---------------- */
 let DATA = [];
 let LIKES = {};
+
+// Visible error reporting: any uncaught error or rejected promise renders a
+// dismissible banner instead of failing silently. This is the only reliable
+// way to diagnose engine-specific issues (e.g. WebKit/Safari) that don't
+// reproduce in other browsers or in headless testing.
+(function(){
+  let shown = new Set();
+  function report(msg){
+    if(shown.has(msg)) return;
+    shown.add(msg);
+    const el = document.getElementById('errBanner');
+    if(!el) return;
+    const box = document.createElement('div');
+    box.className = 'err-banner';
+    box.innerHTML = '<div class="hdr"><b>GoXDR hit an error</b><button type="button">Dismiss</button></div><pre></pre>';
+    box.querySelector('pre').textContent = msg;
+    box.querySelector('button').onclick = () => box.remove();
+    el.appendChild(box);
+  }
+  window.addEventListener('error', (e) => {
+    report((e.message || 'Unknown error') + '\n' + (e.filename ? (e.filename + ':' + e.lineno + ':' + e.colno) : '') + (e.error && e.error.stack ? ('\n' + e.error.stack) : ''));
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    report('Unhandled promise rejection: ' + (r && r.stack ? r.stack : String(r)));
+  });
+  window.__goxdrReportError = report;
+})();
 
 // Safe localStorage wrapper: Safari private browsing (and some iOS
 // tracking-prevention settings) can throw on any localStorage access.
@@ -826,10 +867,25 @@ function renderList(){
     $("#list").innerHTML = rows.map(q=>qrowHtml(q)).join("");
   }
   $("#list").querySelectorAll(".qrow").forEach(r=>{
-    r.onclick = ()=>{ state.sel = +r.dataset.id; renderList(); renderDetail(); };
+    r.onclick = ()=>{
+      try{
+        state.sel = +r.dataset.id;
+        renderList();
+        renderDetail();
+      }catch(err){
+        (window.__goxdrReportError||console.error)('qrow click failed: ' + (err && err.stack || err));
+      }
+    };
   });
   $("#list").querySelectorAll(".heart-mini").forEach(h=>{
-    h.onclick = (ev)=>{ ev.stopPropagation(); toggleLike(+h.dataset.id, h); };
+    h.onclick = (ev)=>{
+      try{
+        ev.stopPropagation();
+        toggleLike(+h.dataset.id, h);
+      }catch(err){
+        (window.__goxdrReportError||console.error)('heart click failed: ' + (err && err.stack || err));
+      }
+    };
   });
 }
 function qrowHtml(q){
@@ -853,16 +909,17 @@ function renderDetail(){
     $("#detailScroll").classList.add("hidden");
     return;
   }
-  const q = DATA.find(x=>x.id===state.sel);
-  if(!q){ state.sel=null; return renderDetail(); }
-  $("#emptyState").classList.add("hidden");
-  $("#detailScroll").classList.remove("hidden");
-  $("#detailScroll").scrollTop = 0;
-  const tacs = tacticsFor(q);
-  const platLabel = {xdr:"Defender XDR", sentinel:"Sentinel", both:"Sentinel + XDR"}[q.plat] || q.plat;
-  const liked = isLiked(q.id);
-  const cnt = likeCount(q.id);
-  $("#detailInner").innerHTML = `
+  try{
+    const q = DATA.find(x=>x.id===state.sel);
+    if(!q){ state.sel=null; return renderDetail(); }
+    $("#emptyState").classList.add("hidden");
+    $("#detailScroll").classList.remove("hidden");
+    $("#detailScroll").scrollTop = 0;
+    const tacs = tacticsFor(q);
+    const platLabel = {xdr:"Defender XDR", sentinel:"Sentinel", both:"Sentinel + XDR"}[q.plat] || q.plat;
+    const liked = isLiked(q.id);
+    const cnt = likeCount(q.id);
+    $("#detailInner").innerHTML = `
     <div class="d-eyebrow">${esc(q.cat)} · ${esc(q.sub)}</div>
     <h2 class="d-title">${esc(q.name)}</h2>
     <div class="d-meta">
@@ -900,14 +957,22 @@ function renderDetail(){
       </div>
     </div>
   `;
-  $("#detailHeart").onclick = ()=>toggleLike(q.id, $("#detailHeart"));
+    const dh = $("#detailHeart");
+    if(dh) dh.onclick = ()=>toggleLike(q.id, dh);
+  }catch(err){
+    (window.__goxdrReportError||console.error)('renderDetail failed: ' + (err && err.stack || err));
+  }
 }
 function copyKql(id, btn){
-  const q = DATA.find(x=>x.id===id);
-  navigator.clipboard?.writeText(q.kql);
-  const old = btn.textContent;
-  btn.textContent = "Copied";
-  setTimeout(()=>btn.textContent=old, 1200);
+  try{
+    const q = DATA.find(x=>x.id===id);
+    navigator.clipboard?.writeText(q.kql);
+    const old = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(()=>btn.textContent=old, 1200);
+  }catch(err){
+    (window.__goxdrReportError||console.error)('copyKql failed: ' + (err && err.stack || err));
+  }
 }
 
 /* ---------------- matrix ---------------- */
@@ -939,28 +1004,36 @@ function renderMatrix(){
   }).join("");
   $("#matrix").querySelectorAll(".mcol-head[data-tactic-only]").forEach(head=>{
     head.onclick = ()=>{
-      state.tactic = head.dataset.tacticOnly;
-      state.sub = null;
-      state.cat = "all"; state.sev="all"; state.plat="all"; state.sel=null; state.term="";
-      $("#q").value = "";
-      document.querySelectorAll(".chip").forEach(x=>{
-        if(x.dataset.k) x.setAttribute("aria-pressed", x.dataset.k==="all");
-        if(x.dataset.p) x.setAttribute("aria-pressed", x.dataset.p==="all");
-      });
-      goWorkspace();
+      try{
+        state.tactic = head.dataset.tacticOnly;
+        state.sub = null;
+        state.cat = "all"; state.sev="all"; state.plat="all"; state.sel=null; state.term="";
+        $("#q").value = "";
+        document.querySelectorAll(".chip").forEach(x=>{
+          if(x.dataset.k) x.setAttribute("aria-pressed", x.dataset.k==="all");
+          if(x.dataset.p) x.setAttribute("aria-pressed", x.dataset.p==="all");
+        });
+        goWorkspace();
+      }catch(err){
+        (window.__goxdrReportError||console.error)('tactic column click failed: ' + (err && err.stack || err));
+      }
     };
   });
   $("#matrix").querySelectorAll(".mcell").forEach(cell=>{
     cell.onclick = ()=>{
-      state.tactic = cell.dataset.tactic;
-      state.sub = cell.dataset.sub;
-      state.cat = "all"; state.sev="all"; state.plat="all"; state.sel=null; state.term="";
-      $("#q").value = "";
-      document.querySelectorAll(".chip").forEach(x=>{
-        if(x.dataset.k) x.setAttribute("aria-pressed", x.dataset.k==="all");
-        if(x.dataset.p) x.setAttribute("aria-pressed", x.dataset.p==="all");
-      });
-      goWorkspace();
+      try{
+        state.tactic = cell.dataset.tactic;
+        state.sub = cell.dataset.sub;
+        state.cat = "all"; state.sev="all"; state.plat="all"; state.sel=null; state.term="";
+        $("#q").value = "";
+        document.querySelectorAll(".chip").forEach(x=>{
+          if(x.dataset.k) x.setAttribute("aria-pressed", x.dataset.k==="all");
+          if(x.dataset.p) x.setAttribute("aria-pressed", x.dataset.p==="all");
+        });
+        goWorkspace();
+      }catch(err){
+        (window.__goxdrReportError||console.error)('matrix cell click failed: ' + (err && err.stack || err));
+      }
     };
   });
 }
@@ -1061,6 +1134,7 @@ async function boot(){
     }
   } catch(e){
     $("#landingLoading").textContent = "Failed to load queries.json — check the path.";
+    (window.__goxdrReportError||console.error)('boot() failed: ' + (e && e.stack || e));
   }
 }
 function wireup(){
