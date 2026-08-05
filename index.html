@@ -453,29 +453,41 @@ html[data-theme="light"] .landing{background:var(--bg)}
 
   try{
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js");
-    const { getDatabase, ref, get, runTransaction } =
+    const { getDatabase, ref, onValue, runTransaction } =
       await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js");
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const likesRoot = ref(db, "goxdr_likes");
 
-    window.GoXDRLikesReady = (async () => {
+    function parseCounts(snap){
       const counts = {};
-      try{
-        const snap = await get(likesRoot);
-        if(snap.exists()){
-          const val = snap.val();
-          for(const id in val){
-            const v = val[id];
-            // Defensive: accept either a plain number or a {count:N} object,
-            // in case data already exists from an earlier version of this feature.
-            counts[id] = typeof v === "number" ? v : (v && typeof v.count === "number" ? v.count : 0);
-          }
+      if(snap.exists()){
+        const val = snap.val();
+        for(const id in val){
+          const v = val[id];
+          // Defensive: accept either a plain number or a {count:N} object,
+          // in case data already exists from an earlier version of this feature.
+          counts[id] = typeof v === "number" ? v : (v && typeof v.count === "number" ? v.count : 0);
         }
-      }catch(e){ console.error("GoXDR: failed to load likes", e); }
+      }
       return counts;
-    })();
+    }
+
+    let resolveFirst, firstResolved = false;
+    window.GoXDRLikesReady = new Promise(res => { resolveFirst = res; });
+
+    // A live listener, not a one-time read: whenever anyone anywhere
+    // likes a query, every open tab (this one included) gets the updated
+    // counts immediately, without needing a page refresh.
+    onValue(likesRoot, (snap) => {
+      const counts = parseCounts(snap);
+      if(!firstResolved){ firstResolved = true; resolveFirst(counts); }
+      if(window.__goxdrLikesUpdated) window.__goxdrLikesUpdated(counts);
+    }, (err) => {
+      console.error("GoXDR: likes listener error", err);
+      if(!firstResolved){ firstResolved = true; resolveFirst({}); }
+    });
 
     window.GoXDRToggleLike = async (id, liked) => {
       try{
@@ -734,6 +746,30 @@ function updateLikeUI(id){
     if(bigCount) bigCount.textContent = cnt;
   }
 }
+// Called whenever the Firebase listener reports fresh counts, including
+// likes coming from a completely different device or tab. Patches every
+// heart currently on screen in place; only re-renders the list if it is
+// sorted by like count (where a remote like could change the ordering).
+window.__goxdrLikesUpdated = function(counts){
+  try{
+    LIKES = counts;
+    document.querySelectorAll('.heart-mini').forEach(mini=>{
+      const id = +mini.dataset.id;
+      mini.classList.toggle('liked', isLiked(id));
+      const span = mini.querySelector('span:last-child');
+      if(span) span.textContent = likeCount(id);
+    });
+    if(state.sel !== null){
+      const big = document.getElementById('detailHeart');
+      const bigCount = document.getElementById('detailHeartCount');
+      if(big) big.classList.toggle('liked', isLiked(state.sel));
+      if(bigCount) bigCount.textContent = likeCount(state.sel);
+    }
+    if(state.view === "workspace" && state.sortByLikes) renderList();
+  }catch(err){
+    (window.__goxdrReportError||console.error)('live likes update failed: ' + (err && err.stack || err));
+  }
+};
 function toggleLike(id, btnEl){
   const key = String(id);
   const wasLiked = LIKED_LOCAL.has(key);
@@ -1208,6 +1244,32 @@ function snapshotState(){
     sortByLikes: state.sortByLikes, newOnly: state.newOnly
   };
 }
+function stateToParams(s){
+  const p = new URLSearchParams();
+  if(s.view && s.view !== "grid") p.set("view", s.view);
+  if(s.cat && s.cat !== "all") p.set("cat", s.cat);
+  if(s.sub) p.set("sub", s.sub);
+  if(s.sev && s.sev !== "all") p.set("sev", s.sev);
+  if(s.plat && s.plat !== "all") p.set("plat", s.plat);
+  if(s.tactic) p.set("tactic", s.tactic);
+  if(typeof s.sel === "number") p.set("sel", String(s.sel));
+  if(s.sortByLikes) p.set("liked", "1");
+  if(s.newOnly) p.set("new", "1");
+  return p;
+}
+function paramsToState(p){
+  return {
+    view: p.get("view") || "grid",
+    cat: p.get("cat") || "all",
+    sub: p.get("sub") || null,
+    sev: p.get("sev") || "all",
+    plat: p.get("plat") || "all",
+    tactic: p.get("tactic") || null,
+    sel: p.has("sel") ? +p.get("sel") : null,
+    sortByLikes: p.get("liked") === "1",
+    newOnly: p.get("new") === "1"
+  };
+}
 function resetWorkspaceFilters(){
   state.sev = "all"; state.plat = "all"; state.sortByLikes = false; state.newOnly = false;
   document.querySelectorAll(".chip[data-k]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.k==="all"));
@@ -1216,7 +1278,12 @@ function resetWorkspaceFilters(){
   $("#newChip")?.setAttribute("aria-pressed","false");
 }
 function pushHistory(){
-  try{ history.pushState(snapshotState(), ""); }
+  try{
+    const s = snapshotState();
+    const qs = stateToParams(s).toString();
+    const url = location.pathname + (qs ? "?"+qs : "");
+    history.pushState(s, "", url);
+  }
   catch(e){ /* history API unavailable, navigation still works within the page */ }
 }
 function applyState(s){
@@ -1266,7 +1333,11 @@ async function boot(){
       $("#modeNew")?.classList.add("hidden");
       newChip?.classList.add("hidden");
     }
-    try{ history.replaceState(snapshotState(), ""); }catch(e){}
+    const initialParams = new URLSearchParams(location.search);
+    if([...initialParams.keys()].length){
+      applyState(paramsToState(initialParams));
+    }
+    try{ history.replaceState(snapshotState(), "", location.pathname + location.search); }catch(e){}
   } catch(e){
     $("#landingLoading").textContent = "Failed to load queries.json — check the path.";
     (window.__goxdrReportError||console.error)('boot() failed: ' + (e && e.stack || e));
