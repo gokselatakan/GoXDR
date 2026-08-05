@@ -438,59 +438,63 @@ html[data-theme="light"] .landing{background:var(--bg)}
 ::-webkit-scrollbar-track{background:transparent}
 </style>
 <script type="module">
-  // ── GoXDR Likes (Firebase Firestore) ──────────────────────────────────
-  // Fill in your Firebase project config below. Get it from:
-  // Firebase console → Project settings → General → Your apps → SDK setup and config
+  // ── GoXDR Likes (Firebase Realtime Database) ───────────────────────────
   const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyA5OQ3-5PU0V8fhbEx-NSZPhinR36ldcqI",
+    authDomain: "goxdr-likes.firebaseapp.com",
+    databaseURL: "https://goxdr-likes-default-rtdb.firebaseio.com",
+    projectId: "goxdr-likes",
+    storageBucket: "goxdr-likes.firebasestorage.app",
+    messagingSenderId: "874723798656",
+    appId: "1:874723798656:web:811f70c5dda772b4f50065"
   };
-  const isConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
+  const isConfigured = true;
   window.GoXDRFirebaseConfigured = isConfigured;
 
-  if(isConfigured){
-    try{
-      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js");
-      const { getFirestore, collection, getDocs, doc, setDoc, increment } =
-        await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+  try{
+    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js");
+    const { getDatabase, ref, get, runTransaction } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js");
 
-      const app = initializeApp(firebaseConfig);
-      const db = getFirestore(app);
-      const likesCol = collection(db, "goxdr_likes");
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const likesRoot = ref(db, "goxdr_likes");
 
-      window.GoXDRLikesReady = (async () => {
-        const counts = {};
-        try{
-          const snap = await getDocs(likesCol);
-          snap.forEach(d => { counts[d.id] = d.data().count || 0; });
-        }catch(e){ console.error("GoXDR: failed to load likes", e); }
-        return counts;
-      })();
+    window.GoXDRLikesReady = (async () => {
+      const counts = {};
+      try{
+        const snap = await get(likesRoot);
+        if(snap.exists()){
+          const val = snap.val();
+          for(const id in val){
+            const v = val[id];
+            // Defensive: accept either a plain number or a {count:N} object,
+            // in case data already exists from an earlier version of this feature.
+            counts[id] = typeof v === "number" ? v : (v && typeof v.count === "number" ? v.count : 0);
+          }
+        }
+      }catch(e){ console.error("GoXDR: failed to load likes", e); }
+      return counts;
+    })();
 
-      window.GoXDRToggleLike = async (id, liked) => {
-        try{
-          const ref = doc(db, "goxdr_likes", String(id));
-          await setDoc(ref, { count: increment(liked ? 1 : -1) }, { merge: true });
-        }catch(e){ console.error("GoXDR: failed to sync like", e); }
-      };
-    }catch(e){
-      console.error("GoXDR: Firebase failed to load, falling back to local counts", e);
-      window.GoXDRFirebaseConfigured = false;
-      window.GoXDRLikesReady = Promise.resolve({});
-      window.GoXDRToggleLike = async () => {};
-    }
-  } else {
-    // No Firebase config yet: counts stay in this browser only (localStorage),
-    // so the feature works immediately and upgrades to shared counts once configured.
+    window.GoXDRToggleLike = async (id, liked) => {
+      try{
+        const likeRef = ref(db, "goxdr_likes/" + id);
+        await runTransaction(likeRef, (current) => {
+          const n = typeof current === "number" ? current : (current && typeof current.count === "number" ? current.count : 0);
+          return Math.max(0, n + (liked ? 1 : -1));
+        });
+      }catch(e){ console.error("GoXDR: failed to sync like", e); }
+    };
+  }catch(e){
+    console.error("GoXDR: Firebase failed to load, falling back to local counts", e);
+    window.GoXDRFirebaseConfigured = false;
     window.GoXDRLikesReady = Promise.resolve({});
     window.GoXDRToggleLike = async () => {};
   }
 </script>
 </head>
+
 <body>
 <div class="app">
 
@@ -714,6 +718,22 @@ async function loadLikes(){
   }
 }
 
+function updateLikeUI(id){
+  const liked = isLiked(id);
+  const cnt = likeCount(id);
+  const mini = document.querySelector(`.heart-mini[data-id="${id}"]`);
+  if(mini){
+    mini.classList.toggle('liked', liked);
+    const span = mini.querySelector('span:last-child');
+    if(span) span.textContent = cnt;
+  }
+  if(state.sel === id){
+    const big = document.getElementById('detailHeart');
+    const bigCount = document.getElementById('detailHeartCount');
+    if(big) big.classList.toggle('liked', liked);
+    if(bigCount) bigCount.textContent = cnt;
+  }
+}
 function toggleLike(id, btnEl){
   const key = String(id);
   const wasLiked = LIKED_LOCAL.has(key);
@@ -734,8 +754,11 @@ function toggleLike(id, btnEl){
     btnEl.classList.add('pop');
     setTimeout(()=>btnEl.classList.remove('pop'), 320);
   }
-  renderList();
-  if(state.sel===id) renderDetail();
+  // Patch the affected heart elements directly rather than re-rendering
+  // the whole list/detail panel from inside the click handler of one of
+  // their own children (the same self-destruction pattern fixed earlier
+  // for qrow/rail-item clicks).
+  updateLikeUI(id);
 }
 
 /* ---------------- ATT&CK tactic mapping ---------------- */
