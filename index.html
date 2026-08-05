@@ -390,7 +390,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
 @media (max-width:960px){.rail{display:none} .listpane{flex:0 0 280px} .counter-bar{grid-template-columns:1fr 1fr}}
 .mobile-back{display:none}
 @media (max-width:680px){
-  .topbar{height:auto;min-height:54px;flex-wrap:wrap;row-gap:8px;padding:8px 12px}
+  .topbar{height:auto;min-height:54px;flex:0 0 auto;flex-wrap:wrap;row-gap:8px;padding:8px 12px}
   .brand{flex:0 1 auto}
   .spacer{display:none}
   .tools{flex:0 0 auto;margin-left:auto;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;max-width:60%}
@@ -398,7 +398,11 @@ html[data-theme="light"] .landing{background:var(--bg)}
   .tool{flex:0 0 auto;padding:5px 9px;font-size:10px}
   .search{order:3;flex:1 1 100%;max-width:none}
   .search .hint{display:none}
-  .search input{height:38px}
+  /* iOS Safari auto-zooms the whole page on focus if an input's computed
+     font-size is under 16px. That auto-zoom is what was making the page
+     look "not fit to screen" and could scroll the input itself out of
+     the visible (zoomed) area while typing. 16px avoids the zoom entirely. */
+  .search input{height:40px;font-size:16px}
   .listpane{flex:1;border-right:none}
   .detail{display:none}
   .counter-bar{grid-template-columns:1fr 1fr}
