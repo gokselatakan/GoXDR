@@ -337,13 +337,14 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .matrix-head h2 .accent{color:var(--orange)}
 .matrix-head p{color:var(--muted);font-size:13.5px;max-width:64ch}
 .legend{display:flex;gap:16px;margin:14px 0 20px;font-size:11px;color:var(--dim);font-family:"IBM Plex Sans Condensed";letter-spacing:.06em;text-transform:uppercase;flex-wrap:wrap}
+.legend.stage-legend{margin-top:-8px}
 .legend .item{display:flex;align-items:center;gap:6px}
 .legend .swatch{width:14px;height:10px;border-radius:2px;border:1px solid var(--line)}
 .matrix-scroll{overflow-x:auto;overflow-y:hidden;padding:0 28px 40px;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
 .matrix{max-width:1400px;margin:0 auto;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(140px, 1fr);gap:8px;min-width:min-content}
 .mcol{display:flex;flex-direction:column;gap:6px}
 .mcol-head{padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:7px;border-top:2px solid var(--blue);width:100%;text-align:left;transition:.12s;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:rgba(76,194,255,.25)}
-@media (hover:hover){.mcol-head:hover{border-color:var(--blue);background:var(--surface-2)}}
+@media (hover:hover){.mcol-head:hover{border-left-color:var(--blue);border-right-color:var(--blue);border-bottom-color:var(--blue);background:var(--surface-2)}}
 .mcol-head .name{font-family:"IBM Plex Sans Condensed";font-size:11.5px;font-weight:700;letter-spacing:.04em;color:var(--text);line-height:1.2;margin-bottom:4px}
 .mcol-head .meta{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--dim);display:flex;justify-content:space-between}
 .mcol-head .meta b{color:var(--blue);font-weight:600}
@@ -653,6 +654,11 @@ html[data-theme="light"] .landing{background:var(--bg)}
         <div class="item"><span class="swatch" style="background:rgba(76,194,255,.14);border-color:var(--blue-dim)"></span>3-5 queries</div>
         <div class="item"><span class="swatch" style="background:rgba(76,194,255,.22);border-color:var(--blue)"></span>6+ queries</div>
       </div>
+      <div class="legend stage-legend">
+        <div class="item"><span class="swatch" style="background:var(--blue);border-color:var(--blue)"></span>Early stage: recon, initial access, execution</div>
+        <div class="item"><span class="swatch" style="background:var(--violet);border-color:var(--violet)"></span>Mid stage: persistence through lateral movement</div>
+        <div class="item"><span class="swatch" style="background:var(--crit);border-color:var(--crit)"></span>Late stage: collection, C2, exfiltration, impact</div>
+      </div>
     </div>
     <div class="matrix-scroll"><div class="matrix" id="matrix"></div></div>
   </div>
@@ -807,6 +813,13 @@ const TACTIC_ORDER = [
   "Defense Evasion","Credential Access","Discovery","Lateral Movement",
   "Collection","Command and Control","Exfiltration","Impact"
 ];
+const TACTIC_STAGE = {
+  "Reconnaissance":"early","Initial Access":"early","Execution":"early",
+  "Persistence":"mid","Privilege Escalation":"mid","Defense Evasion":"mid",
+  "Credential Access":"mid","Discovery":"mid","Lateral Movement":"mid",
+  "Collection":"late","Command and Control":"late","Exfiltration":"late","Impact":"late"
+};
+const STAGE_COLOR_VAR = { early:"--blue", mid:"--violet", late:"--crit" };
 const TACTIC_KEYWORDS = {
   "Reconnaissance":["recon","enumeration","enumerate","ldap query","scan","bloodhound","graph api"],
   "Initial Access":["phishing","brute force","password spray","credential stuffing","consent","aitm","initial access","new country","impossible travel","botnet","malicious url","spf","dkim","dmarc"],
@@ -1121,8 +1134,10 @@ function renderMatrix(){
     items.forEach(q=>{ byKey[q.sub] = (byKey[q.sub]||0) + 1; });
     const ranked = Object.entries(byKey).sort((a,b)=>b[1]-a[1]);
     const total = cover[t];
+    const stage = TACTIC_STAGE[t] || "mid";
+    const stageColor = `var(${STAGE_COLOR_VAR[stage]})`;
     return `<div class="mcol">
-      <button class="mcol-head" data-tactic-only="${esc(t)}" title="Show all queries mapped to ${esc(t)}">
+      <button class="mcol-head" data-tactic-only="${esc(t)}" title="Show all queries mapped to ${esc(t)}" style="border-top-color:${stageColor}">
         <div class="name">${t}</div>
         <div class="meta"><span>${ranked.length} groups</span><b>${total} queries</b></div>
       </button>
