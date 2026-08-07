@@ -2823,5 +2823,28 @@
     "desc": "Somebody shopping for the loot. Detects endpoint processes running credential search commands (findstr, Select-String, grep, reg query, recursive gci) targeting password credential and secret terms. Standard post-compromise recon under T1552.001 Unsecured Credentials in Files. Fast quiet and one of the first things an attacker runs after landing.",
     "kql": "let Lookback = 30d;\nlet SearchTools = dynamic([\"findstr\", \"Select-String\", \"sls\", \"grep\", \"reg\", \"Get-ChildItem\", \"gci\"]);\nlet CredentialTargets = @\"(?i)(password|passwd|pwd|passcode|credential|creds|secret|unattend|sysprep)\";\nlet RecursiveFlags = @\"(?i)(-recurse|/s\\b|/si\\b|\\s-r\\b|\\*\\.|--include)\";\nDeviceProcessEvents\n| where TimeGenerated > ago(Lookback)\n| where isnotempty(ProcessCommandLine)\n| where ProcessCommandLine has_any (SearchTools)\n| where ProcessCommandLine matches regex CredentialTargets\n| where ProcessCommandLine matches regex RecursiveFlags\n| extend Actor = tolower(iff(isnotempty(AccountUpn), AccountUpn, strcat(AccountDomain, @\"\\\", AccountName)))\n| project TimeGenerated, DeviceName, Actor, FileName, ProcessCommandLine,\n          Parent = InitiatingProcessFileName, ParentCommandLine = InitiatingProcessCommandLine,\n          Grandparent = InitiatingProcessParentFileName, ReportId\n| sort by TimeGenerated desc",
     "added": "2026-08-04"
+  },
+  {
+    "id": 144,
+    "name": "Credential-Named Files That Have Been Shared",
+    "cat": "Collaboration",
+    "sub": "Data Protection",
+    "plat": "sentinel",
+    "tables": [
+      "OfficeActivity"
+    ],
+    "tags": [
+      "credential file",
+      "sharing",
+      "anonymous link",
+      "external share",
+      "exposed",
+      "incident",
+      "hygiene"
+    ],
+    "sev": "critical",
+    "desc": "The sharpest end of the credential file problem. Surfaces share operations against files with credential-like names, ranked by share scope. Anonymous links come first because they need no authentication at all, then external recipients, then organisation-wide links, then named internal shares. A row showing AnonymousLinkUsed against Logins.xlsx is an incident.",
+    "kql": "let Lookback = 30d;\nlet CredentialTerms = @\"(?i)(password|passwrd|passwd|pwd|passcode|credential|creds|logins|secret|apikey|api[_\\- ]key|privatekey|id_rsa)\";\nlet BenignTerms = @\"(?i)(compass|passport|passenger|passive|passage|bypass|encompass|surpass|secretar|secret santa|passwordless|password[_\\- ]?polic|password[_\\- ]?manager|password[_\\- ]?expir|(reset|change|forgot)[_\\- ]?password|password[_\\- ]?(reset|change)|credential[_\\- ]?guard)\";\nlet ShareOperations = dynamic([\"AnonymousLinkCreated\",\"AnonymousLinkUsed\",\"SecureLinkCreated\",\"AddedToSecureLink\",\"SharingInvitationCreated\",\"SharingSet\",\"CompanyLinkCreated\",\"SharingLinkCreated\",\"SharingLinkUpdated\"]);\nOfficeActivity\n| where TimeGenerated > ago(Lookback)\n| where RecordType in (\"SharePointSharingOperation\", \"SharePointFileOperation\")\n| where Operation in (ShareOperations)\n| where isnotempty(SourceFileName)\n| where SourceFileName matches regex CredentialTerms\n| where not(SourceFileName matches regex BenignTerms)\n| extend ShareScope = case(\n      Operation startswith \"Anonymous\", \"Anyone with the link\",\n      TargetUserOrGroupType in (\"Guest\", \"Partner\"), \"External recipient\",\n      Operation startswith \"Company\", \"Anyone in the organisation\",\n      \"Named internal recipient\")\n| extend ScopeRank = case(\n      Operation startswith \"Anonymous\", 1,\n      TargetUserOrGroupType in (\"Guest\", \"Partner\"), 2,\n      Operation startswith \"Company\", 3,\n      4)\n| project TimeGenerated, ScopeRank, ShareScope, Sharer = UserId, Operation,\n          SourceFileName, SourceFileExtension, SharedWith = TargetUserOrGroupName,\n          TargetUserOrGroupType, SharingType, Site_Url, SourceRelativeUrl, ClientIP, UserAgent\n| sort by ScopeRank asc, TimeGenerated desc",
+    "added": "2026-08-06"
   }
 ]
