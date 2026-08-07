@@ -2803,29 +2803,6 @@
   },
   {
     "id": 143,
-    "name": "Credential Discovery on Endpoints (T1552.001)",
-    "cat": "XDR",
-    "sub": "Endpoint",
-    "plat": "xdr",
-    "tables": [
-      "DeviceProcessEvents"
-    ],
-    "tags": [
-      "credential discovery",
-      "T1552.001",
-      "findstr",
-      "select-string",
-      "reg",
-      "threat hunt",
-      "attacker recon"
-    ],
-    "sev": "critical",
-    "desc": "Somebody shopping for the loot. Detects endpoint processes running credential search commands (findstr, Select-String, grep, reg query, recursive gci) targeting password credential and secret terms. Standard post-compromise recon under T1552.001 Unsecured Credentials in Files. Fast quiet and one of the first things an attacker runs after landing.",
-    "kql": "let Lookback = 30d;\nlet SearchTools = dynamic([\"findstr\", \"Select-String\", \"sls\", \"grep\", \"reg\", \"Get-ChildItem\", \"gci\"]);\nlet CredentialTargets = @\"(?i)(password|passwd|pwd|passcode|credential|creds|secret|unattend|sysprep)\";\nlet RecursiveFlags = @\"(?i)(-recurse|/s\\b|/si\\b|\\s-r\\b|\\*\\.|--include)\";\nDeviceProcessEvents\n| where TimeGenerated > ago(Lookback)\n| where isnotempty(ProcessCommandLine)\n| where ProcessCommandLine has_any (SearchTools)\n| where ProcessCommandLine matches regex CredentialTargets\n| where ProcessCommandLine matches regex RecursiveFlags\n| extend Actor = tolower(iff(isnotempty(AccountUpn), AccountUpn, strcat(AccountDomain, @\"\\\", AccountName)))\n| project TimeGenerated, DeviceName, Actor, FileName, ProcessCommandLine,\n          Parent = InitiatingProcessFileName, ParentCommandLine = InitiatingProcessCommandLine,\n          Grandparent = InitiatingProcessParentFileName, ReportId\n| sort by TimeGenerated desc",
-    "added": "2026-08-04"
-  },
-  {
-    "id": 144,
     "name": "Credential-Named Files That Have Been Shared",
     "cat": "Collaboration",
     "sub": "Data Protection",
