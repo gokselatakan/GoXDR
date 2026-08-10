@@ -2950,8 +2950,8 @@
       "published"
     ],
     "sev": "medium",
-    "desc": "Flags published agents with missing or placeholder instructions. An agent without clear system-prompt boundaries is more exposed to prompt injection, since there is no defined behavior for it to deviate from.",
-    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| where PublishedStatus == \"Published\"\n| where isempty(Instructions) or Instructions == \"N/A\"\n| project Timestamp, AgentId, Name, Platform, Owners, SharedWith, CreatedDateTime, LastPublishedDateTime",
+    "desc": "Flags published agents with missing or placeholder instructions. An agent without clear system-prompt boundaries is more exposed to prompt injection, since there is no defined behavior for it to deviate from. Known false positives include agents still in development that have not had instructions configured yet, agents intentionally built for broad or undefined use cases and internal testing or experimental agents that do not need specific behavioral instructions.",
+    "kql": "// Known FPs:\n//   - New agents created by developers that are still in the drafting/development phase and haven't had instructions configured yet.\n//   - Agents intended for broad or undefined use cases where explicit instructions were intentionally omitted.\n//   - Internal testing or experimental agents that do not require specific behavioral instructions.\nlet Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| where PublishedStatus == \"Published\"\n| where isempty(Instructions) or Instructions == \"N/A\"\n| project Timestamp, AgentId, Name, Platform, Owners, SharedWith, CreatedDateTime, LastPublishedDateTime",
     "added": "2026-08-10"
   }
 ]
