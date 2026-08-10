@@ -2932,5 +2932,26 @@
     "desc": "Groups local AI agent usage by account SID rather than account name, since account name is sometimes not populated in agent telemetry while the SID almost always is. Useful during incident response: given a compromised device or user, quickly pull every local AI agent tied to that account, including any a name-based lookup would miss.",
     "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend\n    DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName),\n    AccountName = tostring(ParsedAgentData.localAgentMetadata.accountName),\n    AccountSid = tostring(ParsedAgentData.localAgentMetadata.accountSid)\n| summarize\n    TotalAgents = count(),\n    Agents = make_list(bag_pack(\"Name\", Name, \"DeviceName\", DeviceName, \"AgentId\", AgentId))\n    by AccountSid, AccountName\n| sort by TotalAgents desc",
     "added": "2026-08-09"
+  },
+  {
+    "id": 149,
+    "name": "Published Agent Without Instructions",
+    "cat": "AI Security",
+    "sub": "Agent Governance",
+    "plat": "xdr",
+    "tables": [
+      "AgentsInfo"
+    ],
+    "tags": [
+      "ai agent",
+      "instructions",
+      "prompt injection",
+      "governance",
+      "published"
+    ],
+    "sev": "medium",
+    "desc": "Flags published agents with missing or placeholder instructions. An agent without clear system-prompt boundaries is more exposed to prompt injection, since there is no defined behavior for it to deviate from.",
+    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| where PublishedStatus == \"Published\"\n| where isempty(Instructions) or Instructions == \"N/A\"\n| project Timestamp, AgentId, Name, Platform, Owners, SharedWith, CreatedDateTime, LastPublishedDateTime",
+    "added": "2026-08-10"
   }
 ]
