@@ -861,16 +861,16 @@ const countByCat = c => DATA.filter(q=>q.cat===c).length;
 const sevCountByCat = (c,s) => DATA.filter(q=>q.cat===c && q.sev===s).length;
 const CAT_DESCS = {
   "Identity":"Sign-in anomalies, risky authentication, privileged account posture.",
-  "Non-Interactive":"Token replay, refresh token abuse, service principal traffic.",
+  "Non-Interactive":"Token replay, refresh token abuse, shadow IT detection.",
   "NTLM":"Legacy authentication, relay indicators, downgrade attempts.",
   "LDAP":"Directory reconnaissance, enumeration, anomalous queries.",
-  "App Identity":"Service principals, consent grants, credential additions.",
+  "App Identity":"Service principal anomalies, credential changes, botnet patterns.",
   "OAuth":"Consent grants, application governance, permission abuse.",
-  "Email":"BEC, AiTM, phishing, mailbox exfiltration and post-compromise.",
+  "Email":"BEC, AiTM, phishing, malware and mailbox exfiltration.",
   "Collaboration":"Teams, SharePoint and data protection signals.",
   "XDR":"Cross-workload correlation, SOC metrics, Azure activity.",
   "Geolocation":"Location correlation, IP intelligence enrichment.",
-  "AI Security":"Copilot governance, agent activity, prompt abuse."
+  "AI Security":"AI agent inventory, governance and tampering detection."
 };
 
 /* ---------------- overview ---------------- */
