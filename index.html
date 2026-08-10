@@ -1185,6 +1185,25 @@ function renderMatrix(){
 /* ---------------- advisories ---------------- */
 const ADVISORIES = [
   {
+    date:"2026-08-09", kind:"Schema validation", impact:"Informational",
+    title:"AgentsInfo table schema verified against a live tenant",
+    body:`<p>Microsoft retired the Copilot Studio-specific <code>AIAgentsInfo</code> table in favor of a unified <code>AgentsInfo</code> table covering all agent types, including Copilot Studio, Microsoft Foundry, third-party agents and endpoint-discovered local agents. <code>AIAgentsInfo</code> stayed queryable until 1 July 2026 for backward compatibility, but the schema and column names changed along with the rename.</p>
+    <p>A community write-up on hunting local AI agents used field names that do not exist in the live schema, including <code>AIAgentId</code> and a differently structured <code>RawAgentInfo</code> payload. Running the draft queries against a real tenant returned a straight column-not-found error rather than an empty result.</p>
+    <p>A <code>getschema</code> pull on <code>AgentsInfo</code> confirmed the real column set, most notably <code>AgentId</code> in place of <code>AIAgentId</code> and <code>Name</code> in place of <code>AIAgentName</code>. Four new queries were rewritten against the verified schema:</p>
+    <ul>
+      <li>Local AI Agent Inventory</li>
+      <li>AI Agent Vendor Prevalence</li>
+      <li>Devices Running Multiple Local AI Agents</li>
+      <li>Users Running Multiple Local AI Agents (SID-Based)</li>
+    </ul>
+    <p>All four ran clean in Advanced Hunting once corrected. The existing Agent Governance queries in this library were checked against the same schema pull and already used the correct field names, so no changes were needed there.</p>`,
+    refs:[
+      ["Microsoft Learn · AgentsInfo table","https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-agentsinfo-table"],
+      ["Microsoft Learn · Advanced hunting schema changes","https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-schema-changes"]
+    ],
+    filter:{ids:[119,120,145,146,147,148]}
+  },
+  {
     date:"2026-07-14", kind:"Schema deprecation", impact:"High impact",
     title:"AADSignInEventsBeta table retired",
     body:`<p>To align with Microsoft Entra product branding, <code>AADSignInEventsBeta</code> was deprecated and permanently retired in the Defender XDR Advanced Hunting schema. Column names in the replacement table were also updated.</p>
@@ -1207,7 +1226,9 @@ function renderAdvisories(){
     <h2>Schema <span class="accent">advisories</span></h2>
     <p class="lede">Microsoft Sentinel and Defender XDR schema deprecations tracked here, with the library impact and the queries that were updated as a result.</p>
     ${ADVISORIES.map(a=>{
-      const affected = a.filter?.updated ? DATA.filter(q=>q.updated===a.filter.updated) : [];
+      const affected = a.filter?.updated ? DATA.filter(q=>q.updated===a.filter.updated)
+                      : a.filter?.ids ? DATA.filter(q=>a.filter.ids.includes(q.id))
+                      : [];
       return `<div class="adv-entry">
         <div class="head">
           <span class="kind">${esc(a.kind)}</span>
