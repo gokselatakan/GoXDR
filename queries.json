@@ -2844,8 +2844,93 @@
       "exfiltration"
     ],
     "sev": "critical",
-    "desc": "Monitors for sensitive Azure AD app role grants to service principals, followed within 24 hours by an anomalous surge in sign-in activity. This behavior is a common indicator of an adversary leveraging newly acquired permissions for large scale data access or exfiltration.",
-    "kql": "//   - Adjust SensitivePermissions to match the app roles considered privileged in your tenant.\n//   - Adjust SpikeMultiplier and MinHourlySignIns based on observed sign-in volume noise.\n//   - Correlation between PrivilegedGrants and Spikes uses ServicePrincipalName, not AppId. Testing against real tenant audit log data showed TargetResources[0].id on this event does not reliably match ServicePrincipalId in AADServicePrincipalSignInLogs, so an AppId-based join produces zero results even when real activity exists. Name-based correlation is the validated working approach; the residual risk is two distinct service principals sharing a display name, which is rare and can be reviewed manually if it ever fires.\n//   - FirstPartyAppIdExclusions and FirstPartyNameExclusions now both cover the same six known first-party Microsoft service principals (Microsoft Graph, Office 365 Exchange Online, Office 365 SharePoint Online, Azure Active Directory, Skype for Business Online and Microsoft Office 365 Portal), each keyed by whichever identifier its respective source table reliably exposes: AppId for AADServicePrincipalSignInLogs, display name for AuditLogs. This removes the prior implicit reliance on inner-join semantics to fully protect all six first-party SPs, since each side now independently excludes all six.\n// Known FPs:\n//   - Legitimate administrative delegation of sensitive app roles combined with normal post-onboarding sign-in ramp-up.\n//   - Service principals with highly variable/bursty legitimate traffic patterns not represented during the baseline window.\n//   - Two distinct service principals sharing an identical display name would have their activity merged.\n// Known FNs:\n//   - Slow, low-and-slow privilege abuse that never produces a qualifying hourly sign-in spike will not be detected.\nlet LookbackWindow = 30d;\nlet BaselineWindowStart = bin(ago(9d), 1h);\nlet BaselineWindowEnd = bin(ago(2d), 1h);\nlet MinHourlySignIns = 10;\nlet SpikeMultiplier = 5;\nlet SensitivePermissions = dynamic([\n    \"RoleManagement.ReadWrite.Directory\",\n    \"Application.ReadWrite.All\",\n    \"Directory.ReadWrite.All\",\n    \"Mail.ReadWrite\",\n    \"Sites.FullControl.All\",\n    \"User.ReadWrite.All\"\n]);\nlet FirstPartyAppIdExclusions = dynamic([\n    \"00000003-0000-0000-c000-000000000000\",\n    \"00000002-0000-0ff1-ce00-000000000000\",\n    \"00000003-0000-0ff1-ce00-000000000000\",\n    \"00000002-0000-0000-c000-000000000000\",\n    \"00000004-0000-0ff1-ce00-000000000000\",\n    \"00000006-0000-0ff1-ce00-000000000000\"\n]);\nlet FirstPartyNameExclusions = dynamic([\n    \"Skype for Business Online\",\n    \"Microsoft Office 365 Portal\",\n    \"Microsoft Graph\",\n    \"Office 365 Exchange Online\",\n    \"Office 365 SharePoint Online\",\n    \"Azure Active Directory\"\n]);\nlet PrivilegedGrants = AuditLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where Category =~ \"ApplicationManagement\" and OperationName =~ \"Add app role assignment to service principal\"\n| mv-expand TargetResource = TargetResources\n| where TargetResource.type =~ \"ServicePrincipal\"\n| extend ServicePrincipalName = tostring(TargetResource.displayName)\n| where ServicePrincipalName !in~ (FirstPartyNameExclusions)\n| mv-expand modifiedProperty = TargetResource.modifiedProperties\n| where tostring(modifiedProperty.displayName) =~ \"AppRole.Value\"\n| extend GrantedPermission = trim(@'[\"\\s]+', tostring(modifiedProperty.newValue))\n| where GrantedPermission in (SensitivePermissions)\n| project GrantTime = TimeGenerated, ServicePrincipalName, GrantedPermission;\nlet HourlyBins = range TimeBin from BaselineWindowStart to BaselineWindowEnd step 1h;\nlet BaselineServicePrincipals = AADServicePrincipalSignInLogs\n| where TimeGenerated between (BaselineWindowStart .. BaselineWindowEnd)\n| where AppId !in (FirstPartyAppIdExclusions)\n| distinct ServicePrincipalName;\nlet BaselineActivity = AADServicePrincipalSignInLogs\n| where TimeGenerated between (BaselineWindowStart .. BaselineWindowEnd)\n| where AppId !in (FirstPartyAppIdExclusions)\n| summarize HourlySignIns = count() by ServicePrincipalName, TimeBin = bin(TimeGenerated, 1h);\nlet Baseline = BaselineServicePrincipals\n| extend dummy = 1\n| join kind=inner (HourlyBins | extend dummy = 1) on dummy\n| project ServicePrincipalName, TimeBin\n| join kind=leftouter BaselineActivity on ServicePrincipalName, TimeBin\n| extend HourlySignIns = coalesce(HourlySignIns, 0)\n| summarize AvgHourly = avg(HourlySignIns) by ServicePrincipalName;\nlet Spikes = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where AppId !in (FirstPartyAppIdExclusions)\n| summarize HourlySignIns = count() by ServicePrincipalName, bin(TimeGenerated, 1h)\n| join kind=inner Baseline on ServicePrincipalName\n| where HourlySignIns > AvgHourly * SpikeMultiplier and HourlySignIns >= MinHourlySignIns\n| project VelocityTime = TimeGenerated, ServicePrincipalName, HourlySignIns, AvgHourly;\nPrivilegedGrants\n| join kind=inner Spikes on ServicePrincipalName\n| where VelocityTime between (GrantTime .. datetime_add('day', 1, GrantTime))\n| summarize arg_min(VelocityTime, *) by ServicePrincipalName, GrantTime\n| project GrantTime, ServicePrincipalName, GrantedPermission, VelocityTime, HourlySignIns, AvgHourly\n| order by GrantTime desc",
+    "desc": "Monitors for sensitive Azure AD app role grants to service principals, followed within 24 hours by an anomalous surge in sign-in activity. This behavior is a common indicator of an adversary leveraging newly acquired permissions for large-scale data access or exfiltration.",
+    "kql": "// Title: Privileged App Role Grant Followed by Service Principal Sign-In Spike\n// Description: Detects sensitive Azure AD app role (API permission) grants to a service principal that are followed within 24 hours by an anomalous spike in that service principal's sign-in volume relative to its own trailing baseline. This pattern is consistent with an adversary escalating a service principal's privileges and then using it for large-scale data access or exfiltration.\n// Type: Scheduled Analytics Rule\n// Tables: AuditLogs, AADServicePrincipalSignInLogs\n// Connectors: Azure Active Directory (AuditLogs, AADServicePrincipalSignInLogs)\n// License: N/A\n// Tuning:\n//   - Adjust SensitivePermissions to match the app roles considered privileged in your tenant.\n//   - Adjust SpikeMultiplier and MinHourlySignIns based on observed sign-in volume noise.\n//   - Correlation between PrivilegedGrants and Spikes uses ServicePrincipalName, not AppId. Testing against real tenant audit log data showed TargetResources[0].id on this event does not reliably match ServicePrincipalId in AADServicePrincipalSignInLogs, so an AppId-based join produces zero results even when real activity exists. Name-based correlation is the validated working approach; the residual risk is two distinct service principals sharing a display name, which is rare and can be reviewed manually if it ever fires.\n//   - FirstPartyAppIdExclusions and FirstPartyNameExclusions now both cover the same six known first-party Microsoft service principals (Microsoft Graph, Office 365 Exchange Online, Office 365 SharePoint Online, Azure Active Directory, Skype for Business Online and Microsoft Office 365 Portal), each keyed by whichever identifier its respective source table reliably exposes: AppId for AADServicePrincipalSignInLogs, display name for AuditLogs. This removes the prior implicit reliance on inner-join semantics to fully protect all six first-party SPs, since each side now independently excludes all six.\n// Known FPs:\n//   - Legitimate administrative delegation of sensitive app roles combined with normal post-onboarding sign-in ramp-up.\n//   - Service principals with highly variable/bursty legitimate traffic patterns not represented during the baseline window.\n//   - Two distinct service principals sharing an identical display name would have their activity merged.\n// Known FNs:\n//   - Slow, low-and-slow privilege abuse that never produces a qualifying hourly sign-in spike will not be detected.\nlet LookbackWindow = 30d;\nlet BaselineWindowStart = bin(ago(9d), 1h);\nlet BaselineWindowEnd = bin(ago(2d), 1h);\nlet MinHourlySignIns = 10;\nlet SpikeMultiplier = 5;\nlet SensitivePermissions = dynamic([\n    \"RoleManagement.ReadWrite.Directory\",\n    \"Application.ReadWrite.All\",\n    \"Directory.ReadWrite.All\",\n    \"Mail.ReadWrite\",\n    \"Sites.FullControl.All\",\n    \"User.ReadWrite.All\"\n]);\nlet FirstPartyAppIdExclusions = dynamic([\n    \"00000003-0000-0000-c000-000000000000\",\n    \"00000002-0000-0ff1-ce00-000000000000\",\n    \"00000003-0000-0ff1-ce00-000000000000\",\n    \"00000002-0000-0000-c000-000000000000\",\n    \"00000004-0000-0ff1-ce00-000000000000\",\n    \"00000006-0000-0ff1-ce00-000000000000\"\n]);\nlet FirstPartyNameExclusions = dynamic([\n    \"Skype for Business Online\",\n    \"Microsoft Office 365 Portal\",\n    \"Microsoft Graph\",\n    \"Office 365 Exchange Online\",\n    \"Office 365 SharePoint Online\",\n    \"Azure Active Directory\"\n]);\nlet PrivilegedGrants = AuditLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where Category =~ \"ApplicationManagement\" and OperationName =~ \"Add app role assignment to service principal\"\n| mv-expand TargetResource = TargetResources\n| where TargetResource.type =~ \"ServicePrincipal\"\n| extend ServicePrincipalName = tostring(TargetResource.displayName)\n| where ServicePrincipalName !in~ (FirstPartyNameExclusions)\n| mv-expand modifiedProperty = TargetResource.modifiedProperties\n| where tostring(modifiedProperty.displayName) =~ \"AppRole.Value\"\n| extend GrantedPermission = trim(@'[\"\\s]+', tostring(modifiedProperty.newValue))\n| where GrantedPermission in (SensitivePermissions)\n| project GrantTime = TimeGenerated, ServicePrincipalName, GrantedPermission;\nlet HourlyBins = range TimeBin from BaselineWindowStart to BaselineWindowEnd step 1h;\nlet BaselineServicePrincipals = AADServicePrincipalSignInLogs\n| where TimeGenerated between (BaselineWindowStart .. BaselineWindowEnd)\n| where AppId !in (FirstPartyAppIdExclusions)\n| distinct ServicePrincipalName;\nlet BaselineActivity = AADServicePrincipalSignInLogs\n| where TimeGenerated between (BaselineWindowStart .. BaselineWindowEnd)\n| where AppId !in (FirstPartyAppIdExclusions)\n| summarize HourlySignIns = count() by ServicePrincipalName, TimeBin = bin(TimeGenerated, 1h);\nlet Baseline = BaselineServicePrincipals\n| extend dummy = 1\n| join kind=inner (HourlyBins | extend dummy = 1) on dummy\n| project ServicePrincipalName, TimeBin\n| join kind=leftouter BaselineActivity on ServicePrincipalName, TimeBin\n| extend HourlySignIns = coalesce(HourlySignIns, 0)\n| summarize AvgHourly = avg(HourlySignIns) by ServicePrincipalName;\nlet Spikes = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where AppId !in (FirstPartyAppIdExclusions)\n| summarize HourlySignIns = count() by ServicePrincipalName, bin(TimeGenerated, 1h)\n| join kind=inner Baseline on ServicePrincipalName\n| where HourlySignIns > AvgHourly * SpikeMultiplier and HourlySignIns >= MinHourlySignIns\n| project VelocityTime = TimeGenerated, ServicePrincipalName, HourlySignIns, AvgHourly;\nPrivilegedGrants\n| join kind=inner Spikes on ServicePrincipalName\n| where VelocityTime between (GrantTime .. datetime_add('day', 1, GrantTime))\n| summarize arg_min(VelocityTime, *) by ServicePrincipalName, GrantTime\n| project GrantTime, ServicePrincipalName, GrantedPermission, VelocityTime, HourlySignIns, AvgHourly\n| order by GrantTime desc",
     "added": "2026-08-06"
+  },
+  {
+    "id": 145,
+    "name": "Local AI Agent Inventory",
+    "cat": "AI Security",
+    "sub": "Agent Inventory",
+    "plat": "xdr",
+    "tables": [
+      "AgentsInfo"
+    ],
+    "tags": [
+      "ai agent",
+      "inventory",
+      "local agent",
+      "shadow ai",
+      "endpoint",
+      "discovery"
+    ],
+    "sev": "low",
+    "desc": "Builds a current-state inventory of local AI agents (CLI tools, desktop apps, agentic IDEs, editor extensions) discovered on onboarded endpoints. AgentsInfo stores periodic snapshots rather than one-time events, so this dedupes to the latest snapshot per agent. Only vendor-supported local agent types are discovered, so an empty result does not guarantee no local agents are running, only that none of the supported types were detected.",
+    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend\n    Vendor = tostring(ParsedAgentData.localAgentMetadata.vendor),\n    DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName),\n    AccountName = tostring(ParsedAgentData.localAgentMetadata.accountName),\n    AccountDomain = tostring(ParsedAgentData.localAgentMetadata.accountDomain),\n    RelatedProcess = tostring(ParsedAgentData.localAgentMetadata.relatedProcess),\n    TrustedProcess = tostring(ParsedAgentData.localAgentMetadata.trustedProcess),\n    OSPlatform = tostring(ParsedAgentData.localAgentMetadata.osPlatform)\n| project Timestamp, Name, PublishedStatus, AccountName, AccountDomain, Vendor, DeviceName, OSPlatform, RelatedProcess, TrustedProcess, LifecycleStatus, AgentId\n| sort by Vendor asc, Name asc",
+    "added": "2026-08-09"
+  },
+  {
+    "id": 146,
+    "name": "AI Agent Vendor Prevalence",
+    "cat": "AI Security",
+    "sub": "Agent Inventory",
+    "plat": "xdr",
+    "tables": [
+      "AgentsInfo"
+    ],
+    "tags": [
+      "ai agent",
+      "vendor",
+      "inventory",
+      "local agent",
+      "reporting"
+    ],
+    "sev": "low",
+    "desc": "Ranks local AI agent vendors by device count across the environment. A quick way to see which AI tools have the largest footprint before deciding where to focus AI governance policy or vendor risk review.",
+    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend Vendor = tostring(parse_json(RawAgentInfo).localAgentMetadata.vendor)\n| summarize VendorCount = count() by Vendor\n| sort by VendorCount desc",
+    "added": "2026-08-09"
+  },
+  {
+    "id": 147,
+    "name": "Devices Running Multiple Local AI Agents",
+    "cat": "AI Security",
+    "sub": "Agent Inventory",
+    "plat": "xdr",
+    "tables": [
+      "AgentsInfo"
+    ],
+    "tags": [
+      "ai agent",
+      "shadow ai",
+      "sprawl",
+      "local agent",
+      "endpoint"
+    ],
+    "sev": "medium",
+    "desc": "Lists endpoints hosting local AI agents ranked by agent count, with a configurable threshold to surface devices with an unusually high concentration. A single device running many different agents is worth reviewing for shadow AI sprawl or an unmanaged developer workstation accumulating tools outside policy.",
+    "kql": "let Lookback = 30d;\nlet MinAgentsPerDevice = 5;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName)\n| summarize\n    TotalAgentsOnDevice = count(),\n    Agents = make_list(bag_pack(\"Name\", Name, \"PublishedStatus\", PublishedStatus, \"AgentId\", AgentId))\n    by DeviceName\n| where TotalAgentsOnDevice >= MinAgentsPerDevice\n| sort by TotalAgentsOnDevice desc",
+    "added": "2026-08-09"
+  },
+  {
+    "id": 148,
+    "name": "Users Running Multiple Local AI Agents (SID-Based)",
+    "cat": "AI Security",
+    "sub": "Agent Inventory",
+    "plat": "xdr",
+    "tables": [
+      "AgentsInfo"
+    ],
+    "tags": [
+      "ai agent",
+      "sid",
+      "incident response",
+      "local agent",
+      "user activity"
+    ],
+    "sev": "medium",
+    "desc": "Groups local AI agent usage by account SID rather than account name, since account name is sometimes not populated in agent telemetry while the SID almost always is. Useful during incident response: given a compromised device or user, quickly pull every local AI agent tied to that account, including any a name-based lookup would miss.",
+    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend\n    DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName),\n    AccountName = tostring(ParsedAgentData.localAgentMetadata.accountName),\n    AccountSid = tostring(ParsedAgentData.localAgentMetadata.accountSid)\n| summarize\n    TotalAgents = count(),\n    Agents = make_list(bag_pack(\"Name\", Name, \"DeviceName\", DeviceName, \"AgentId\", AgentId))\n    by AccountSid, AccountName\n| sort by TotalAgents desc",
+    "added": "2026-08-09"
   }
 ]
