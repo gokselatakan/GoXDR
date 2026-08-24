@@ -2953,5 +2953,26 @@
     "desc": "Flags published agents with missing or placeholder instructions. An agent without clear system-prompt boundaries is more exposed to prompt injection, since there is no defined behavior for it to deviate from. Known false positives include agents still in development that have not had instructions configured yet, agents intentionally built for broad or undefined use cases and internal testing or experimental agents that do not need specific behavioral instructions.",
     "kql": "// Known FPs:\n//   - New agents created by developers that are still in the drafting/development phase and haven't had instructions configured yet.\n//   - Agents intended for broad or undefined use cases where explicit instructions were intentionally omitted.\n//   - Internal testing or experimental agents that do not require specific behavioral instructions.\nlet Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| where PublishedStatus == \"Published\"\n| where isempty(Instructions) or Instructions == \"N/A\"\n| project Timestamp, AgentId, Name, Platform, Owners, SharedWith, CreatedDateTime, LastPublishedDateTime",
     "added": "2026-08-10"
+  },
+  {
+    "id": 150,
+    "name": "Agent User Added to Group",
+    "cat": "AI Security",
+    "sub": "Agent Governance",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "ai agent",
+      "group membership",
+      "dynamic group",
+      "persistence",
+      "entra agent id"
+    ],
+    "sev": "medium",
+    "desc": "Flags Entra Agent ID identities (agentType agentIDuser, agenticApp, agenticAppInstance or agentIdentityBlueprintPrincipal) added as a member of a group, using the documented agentType field Microsoft now stamps on AuditLogs \"Add member to group\" events. Agent User objects carry userType==\"Member\", the same shape as a human account, so a dynamic group built for people can silently absorb an agent identity along with whatever licenses, roles or app permissions that group confers. MITRE ATT&CK: T1098 (Account Manipulation), T1098.003 (Additional Cloud Roles). SOC action: check whether the group is dynamic and, if so, review its membership rule for an unintended match; confirm with the group/app owner whether agent membership was deliberate; if not, remove the agent and review what access it inherited. Known limitation: while Entra Agent ID is in preview, agentType/blueprintId population is inconsistent across tenants, so an empty result is not proof no agent joined a group -- only that this field didn't catch it.",
+    "kql": "// mv-expand + type match avoids relying on undocumented TargetResources array order\n// Grouped by Id (unique per audit record), not CorrelationId, so a batch/bulk add\n// sharing one CorrelationId can't collapse into one row\nAuditLogs\n| where TimeGenerated > ago(1d)\n| where Category == \"GroupManagement\"\n| where OperationName == \"Add member to group\"\n| mv-expand TargetResources\n| extend ResourceType = tostring(TargetResources.type)\n| extend ResourceAgentType = tostring(TargetResources.agentType)\n| extend ResourceId = tostring(TargetResources.id)\n| extend ResourceUPN = tostring(TargetResources.userPrincipalName)\n| extend ResourceDisplayName = tostring(TargetResources.displayName)\n| summarize\n    AddedMemberId = anyif(ResourceId, ResourceType == \"User\"),\n    AddedMemberUPN = anyif(ResourceUPN, ResourceType == \"User\"),\n    AddedMemberAgentType = anyif(ResourceAgentType, ResourceType == \"User\"),\n    GroupId = anyif(ResourceId, ResourceType == \"Group\"),\n    GroupName = anyif(ResourceDisplayName, ResourceType == \"Group\"),\n    InitiatedByAny = any(InitiatedBy),\n    EventTime = any(TimeGenerated),\n    EventCorrelationId = any(CorrelationId)\n    by Id\n| where isnotempty(AddedMemberAgentType) and AddedMemberAgentType !in (\"notAgentic\", \"\")\n| extend Initiator = coalesce(tostring(InitiatedByAny.user.userPrincipalName), tostring(InitiatedByAny.app.displayName), \"unknown\")\n| project TimeGenerated = EventTime, GroupName, GroupId, AddedMemberUPN, AddedMemberId, AddedMemberAgentType, Initiator, CorrelationId = EventCorrelationId\n| sort by TimeGenerated desc\n// Preview limitation: agentType/blueprintId fields may be inconsistently populated\n// across tenants while Entra Agent ID is in preview -- false negatives, not just false positives.",
+    "added": "2026-08-24"
   }
 ]
