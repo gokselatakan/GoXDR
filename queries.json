@@ -3058,5 +3058,238 @@
     "desc": "Baseline hunting query, not an alert: surfaces every SKILL.md created or changed in OneDrive or SharePoint, the instruction files that tools like Claude Code and Copilot Cowork load and follow autonomously. A SKILL.md planted or edited by someone other than its known owner is a plausible instruction-injection vector into whatever agent reads it next, closer to a supply chain concern than a classic file-share alert, so the goal here is visibility into where these files exist and who is touching them, not a single confirmed-bad signal. The Tool column is a folder-path guess (cowork/skills vs .claude/skills) and the common-dependency exclusions (node_modules, .venv, vendor, build output) are plain substring matches, both can be renamed around, so treat this as a map of the agent skill footprint to review periodically rather than a precise detector. MITRE ATT&CK: T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain), closest available mapping for this class of agent-tooling abuse. SOC action: for a SKILL.md touched by an unexpected user or appearing in a shared/synced location outside an individual's own OneDrive, read its actual instructions before deciding anything, a line telling the agent to exfiltrate data, call an unfamiliar tool or ignore prior constraints is the real indicator, the file event itself is not.",
     "kql": "// Agent skill files (SKILL.md) created or changed in OneDrive and SharePoint. Hunting query, not an alert.\n// Requires the Sentinel Office 365 connector with SharePoint and OneDrive audit enabled.\n// Tool labels are folder-path heuristics. Noise exclusions are substring matches and can be evaded.\nlet Lookback = 14d;\nOfficeActivity\n| where TimeGenerated > ago(Lookback)\n| where OfficeWorkload in~ (\"OneDrive\", \"SharePoint\")\n| where Operation in~ (\"FileUploaded\", \"FileModified\", \"FileSyncUploadedFull\", \"FileRenamed\", \"FileMoved\", \"FileCopied\")\n| where SourceFileName =~ \"SKILL.md\" or DestinationFileName =~ \"SKILL.md\"\n| extend Path = tolower(strcat(tostring(SourceRelativeUrl), \" \", tostring(DestinationRelativeUrl), \" \", tostring(OfficeObjectId)))\n| where Path !contains \".venv\"\n    and Path !contains \"site-packages\"\n    and Path !contains \"node_modules\"\n    and Path !contains \"__pycache__\"\n    and Path !contains \".git/\"\n    and Path !contains \"/dist/\"\n    and Path !contains \"/build/\"\n    and Path !contains \"/vendor/\"\n| extend Tool = case(\n    Path contains \"cowork/skills\", \"Copilot Cowork\",\n    Path contains \".claude/skills\", \"Claude Code\",\n    \"Other\")\n| extend FolderRef = coalesce(SourceRelativeUrl, OfficeObjectId)\n| project TimeGenerated, OfficeWorkload, Operation, Tool, FolderRef, SourceFileName, DestinationFileName, UserId\n| order by TimeGenerated desc",
     "added": "2026-10-01"
+  },
+  {
+    "id": 155,
+    "name": "Azure CLI Password Spray Across Many Identities",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "azure cli",
+      "password spray",
+      "lshiy"
+    ],
+    "sev": "high",
+    "desc": "Flags a single source IP authenticating via the Azure CLI client (well-known AppId 04b07795-8ddb-461a-bbee-02f9e1bf7b46) against 20+ distinct accounts while averaging 5 or fewer attempts per account, the low-and-slow signature behind LSHIY's 81-million-attempt Azure CLI spray campaign (June 2026) that evaded per-account lockout thresholds. MITRE ATT&CK: T1110.003 (Password Spraying). SOC action: for any hit, check SuccessfulAccounts and prioritize those for forced password reset and session revocation regardless of whether conditional access blocked the sign-in, since the Azure CLI path has historically had gaps in CA coverage. Known false positives: shared CI/CD runners or automation hosts running Azure CLI against many service accounts from one egress IP, exclude those by IP or account prefix once identified.",
+    "kql": "let azureCliAppId = \"04b07795-8ddb-461a-bbee-02f9e1bf7b46\";\nSigninLogs\n| where TimeGenerated > ago(7d)\n| where AppId == azureCliAppId or AppDisplayName has \"Azure CLI\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| summarize\n    TargetedAccounts   = dcount(UserPrincipalName),\n    Attempts           = count(),\n    Failures           = countif(ResultType != \"0\"),\n    Successes          = countif(ResultType == \"0\"),\n    SucceededAccounts  = make_set_if(UserPrincipalName, ResultType == \"0\", 25),\n    FailureCodes       = make_set(ResultType, 10),\n    Countries          = make_set(Country, 5),\n    FirstSeen          = min(TimeGenerated),\n    LastSeen           = max(TimeGenerated)\n    by IPAddress\n| extend AttemptsPerAccount = todouble(Attempts) / todouble(TargetedAccounts)\n| where TargetedAccounts >= 20 and AttemptsPerAccount <= 5\n| sort by Successes desc, TargetedAccounts desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 156,
+    "name": "Successful Azure CLI Sign-In Without MFA",
+    "cat": "Identity",
+    "sub": "Conditional Access",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "azure cli",
+      "mfa gap",
+      "conditional access"
+    ],
+    "sev": "critical",
+    "desc": "Surfaces successful Azure CLI sign-ins that completed with single-factor authentication, meaning conditional access policies claiming to enforce MFA did not cover this client path. This is the actual compromise condition in the LSHIY campaign: 81M spray attempts only mattered where a guessed password cleared without a second factor. SOC action: treat every row as a live CA gap, not just a suspicious sign-in, confirm the account's password was not guessed (cross-reference with the companion spray-detection query) and close the policy gap for the Azure CLI/legacy auth client app, not only the individual account. MITRE ATT&CK: T1078.004 (Valid Accounts: Cloud Accounts). Known false positives: break-glass/emergency access accounts intentionally excluded from CA by design, and service accounts using Azure CLI under a certificate or managed identity flow that is legitimately exempt from interactive MFA.",
+    "kql": "let azureCliAppId = \"04b07795-8ddb-461a-bbee-02f9e1bf7b46\";\nSigninLogs\n| where TimeGenerated > ago(30d)\n| where AppId == azureCliAppId or AppDisplayName has \"Azure CLI\"\n| where ResultType == \"0\"\n| where AuthenticationRequirement == \"singleFactorAuthentication\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| summarize\n    SignIns        = count(),\n    Addresses      = dcount(IPAddress),\n    AddressSample  = make_set(IPAddress, 10),\n    Countries      = make_set(Country, 5),\n    CAStatus       = make_set(ConditionalAccessStatus, 5),\n    Resources      = make_set(ResourceDisplayName, 10),\n    FirstSeen      = min(TimeGenerated),\n    LastSeen       = max(TimeGenerated)\n    by UserPrincipalName\n| sort by Addresses desc, SignIns desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 157,
+    "name": "Authentication Method Registration After Failed Sign-Ins",
+    "cat": "Identity",
+    "sub": "MFA Attacks",
+    "plat": "sentinel",
+    "tables": [
+      "SigninLogs",
+      "AuditLogs"
+    ],
+    "tags": [
+      "unc6671",
+      "vishing",
+      "mfa re-registration"
+    ],
+    "sev": "critical",
+    "desc": "Correlates 3 or more failed sign-ins with a successful security-info/authentication-method registration on the same account within the following hour. Documented by Google TIG/Mandiant for UNC6671's passkey vishing: the actor phones the victim claiming to be IT, walks them through 'verifying' their account during a string of failed attempts, then has them approve or register a new authentication method that survives a later password reset. MITRE ATT&CK: T1556.006 (Modify Authentication Process: Multi-Factor Authentication). SOC action: call the user on a channel you control to confirm they registered the method themselves; if not, remove it immediately and check whether a passkey was added, since that persists through password resets that would normally contain a compromise. Known false positives: a user who genuinely mistypes their password a few times before successfully resetting and re-registering MFA through legitimate self-service flows.",
+    "kql": "let lookback = 14d;\nlet failed_signins =\n    SigninLogs\n    | where TimeGenerated > ago(lookback)\n    | where ResultType != \"0\"\n    | project UserPrincipalName, FailureTime = TimeGenerated, FailureIP = IPAddress;\nAuditLogs\n| where TimeGenerated > ago(lookback)\n| where Result =~ \"success\"\n| where OperationName contains \"security info\" or OperationName contains \"authentication method\"\n| extend TargetUpn = tolower(tostring(TargetResources[0].userPrincipalName))\n| extend Initiator = tolower(tostring(InitiatedBy.user.userPrincipalName))\n| where isnotempty(TargetUpn)\n| join kind=inner failed_signins on $left.TargetUpn == $right.UserPrincipalName\n| where FailureTime between (TimeGenerated - 1h .. TimeGenerated)\n| summarize FailedAttempts = count(), FirstFailure = min(FailureTime), DistinctFailureIPs = dcount(FailureIP), FailureIPs = make_set(FailureIP, 10) by TargetUpn, Initiator, OperationName, RegistrationTime = TimeGenerated\n| where FailedAttempts >= 3\n| order by RegistrationTime desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 158,
+    "name": "Bulk Deletion of Security Notification Emails",
+    "cat": "Email",
+    "sub": "Post-Compromise",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "unc6671",
+      "defense evasion",
+      "mailbox cleanup"
+    ],
+    "sev": "high",
+    "desc": "Flags a mailbox where 3 or more password, passkey, sign-in or security-alert notification messages were deleted in a short span. Part of UNC6671's post-compromise cleanup, systematically removing the emails a victim would otherwise see telling them their account changed. MITRE ATT&CK: T1070.008 (Indicator Removal: Clear Mailbox Data). SOC action: check what the deleted notifications were actually about (Subjects field) and cross-reference the account against recent authentication-method or password-reset activity, mailbox cleanup after a real security event is a strong persistence signal, not noise to dismiss. Known false positives: aggressive inbox rules or third-party cleanup tools some users run to declutter notification spam on their own.",
+    "kql": "let lookback = 14d;\nCloudAppEvents\n| where Timestamp > ago(lookback)\n| where ActionType in~ (\"MoveToDeletedItems\", \"SoftDelete\", \"HardDelete\")\n| extend Subject = tolower(tostring(ObjectName))\n| where Subject contains \"password\" or Subject contains \"passkey\" or Subject contains \"security info\" or Subject contains \"sign-in\" or Subject contains \"multi-factor\" or Subject contains \"verification\" or Subject contains \"security alert\"\n| summarize DeletedNotices = count(), FirstDelete = min(Timestamp), LastDelete = max(Timestamp), Subjects = make_set(ObjectName, 10), DeleteIPs = make_set(IPAddress, 5), Clients = make_set(UserAgent, 5) by AccountObjectId, AccountDisplayName, Application\n| where DeletedNotices >= 3\n| order by LastDelete desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 159,
+    "name": "Scripted Bulk File Access by Non-Browser User-Agent",
+    "cat": "Collaboration",
+    "sub": "Data Protection",
+    "plat": "xdr",
+    "tables": [
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "unc6671",
+      "exfiltration",
+      "automation"
+    ],
+    "sev": "high",
+    "desc": "Flags an account pulling 25+ distinct files through a scripted client (python-requests, curl, PowerShell, Go-http-client, okhttp) rather than a browser or sync client. Part of UNC6671's exfiltration stage: once inside, the actor used command-line tooling to pull volumes of files at a pace no interactive user matches. SOC action: pull the full file list and check whether it spans multiple sensitive sites/libraries rather than one legitimate bulk-download use case, and correlate the IP/ISP against the account's normal working location. MITRE ATT&CK: T1020 (Automated Exfiltration). Known false positives: legitimate backup, DLP, eDiscovery or migration tooling that also authenticates as a user and pulls files via script, exclude those service accounts once identified rather than raising the threshold tenant-wide.",
+    "kql": "let lookback = 7d;\nCloudAppEvents\n| where Timestamp > ago(lookback)\n| where ActionType in~ (\"FileAccessed\", \"FileDownloaded\", \"FileSyncDownloadedFull\")\n| where UserAgent contains \"python-requests\" or UserAgent contains \"python-urllib\" or UserAgent contains \"WindowsPowerShell\" or UserAgent contains \"Go-http-client\" or UserAgent contains \"okhttp\" or UserAgent contains \"curl\"\n| summarize FileEvents = count(), DistinctFiles = dcount(ObjectId), FirstSeen = min(Timestamp), LastSeen = max(Timestamp), Clients = make_set(UserAgent, 5), SourceIPs = make_set(IPAddress, 10), Providers = make_set(Isp, 5) by AccountObjectId, AccountDisplayName, Application\n| where DistinctFiles >= 25\n| order by DistinctFiles desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 160,
+    "name": "Computer Account Creation (Machine Account Quota Abuse)",
+    "cat": "LDAP",
+    "sub": "Privileged",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityEvent"
+    ],
+    "tags": [
+      "machine account quota",
+      "ms-ds-machineaccountquota",
+      "persistence"
+    ],
+    "sev": "critical",
+    "desc": "Flags unprivileged-looking accounts creating computer accounts in the domain, exploiting the default MachineAccountQuota of 10 that lets any authenticated user join machines to AD unless explicitly hardened. CISA's joint red-team assessment of two SOCs used this exact gap for persistence and relay setup. MITRE ATT&CK: T1136.002 (Create Account: Domain Account). SOC action: verify the creator against your actual provisioning accounts list, if it's a standard user account, the finding is real, check what the new computer object was used for next (relay, Kerberos delegation abuse) and consider setting MachineAccountQuota to 0 tenant-wide. Known false positives: legitimate SCCM/MDT imaging or domain-join automation accounts not yet in your provisioning allowlist, add them to provisioning_accounts rather than ignoring the finding.",
+    "kql": "let lookback = 30d;\nlet provisioning_accounts = dynamic([\"SCCM-JOIN$\", \"svc-imaging\", \"MDT-DEPLOY$\"]);\nSecurityEvent\n| where TimeGenerated > ago(lookback)\n| where EventID == 4741\n| extend Creator = tolower(SubjectAccount), CreatedAccount = tolower(TargetAccount)\n| where SubjectUserName !in~ (provisioning_accounts)\n| summarize\n    AccountsCreated = dcount(CreatedAccount),\n    Created         = make_set(CreatedAccount, 25),\n    Controllers     = make_set(Computer, 5),\n    FirstSeen       = min(TimeGenerated),\n    LastSeen        = max(TimeGenerated)\n    by Creator\n| sort by AccountsCreated desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 161,
+    "name": "Certificate Issuance Subject Name Mismatch (ESC1)",
+    "cat": "LDAP",
+    "sub": "Privileged",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityEvent"
+    ],
+    "tags": [
+      "adcs",
+      "esc1",
+      "certificate abuse"
+    ],
+    "sev": "critical",
+    "desc": "Flags a certificate request where the issued Subject Alternative Name does not contain the requester's own account name, the signature of an ESC1-misconfigured template letting any user request a certificate that authenticates as someone else. CISA's two-SOC red team assessment exploited exactly this misconfiguration to impersonate privileged accounts. This is the exploitation companion to a template-enumeration query, enumeration shows the weakness exists, this shows it was actually used. MITRE ATT&CK: T1649 (Steal or Forge Authentication Certificates). SOC action: on a hit, treat the SubjectAltName identity as compromised immediately (its credential material is now forgeable) and revoke the issued certificate, then fix the vulnerable template's enrollment permissions and EKU settings rather than only responding to individual requests. Known false positives: none expected if your templates are correctly scoped, this specific combination (mismatched SAN, successful issuance) should not occur legitimately. Requires certificate services auditing (events 4886/4887) enabled on the CA.",
+    "kql": "let lookback = 30d;\nSecurityEvent\n| where TimeGenerated > ago(lookback)\n| where EventID in (4886, 4887)\n| extend Requester       = tolower(extract(@'(?i)Requester:\\s*([^\\r\\n]+)', 1, EventData)),\n         Template        = extract(@'(?i)Template:\\s*([^\\r\\n]+)', 1, EventData),\n         SubjectAltName  = tolower(extract(@'(?i)Subject Alternative Name:\\s*([^\\r\\n]+)', 1, EventData)),\n         RequestId       = extract(@'(?i)Request ID:\\s*([^\\r\\n]+)', 1, EventData)\n| where isnotempty(SubjectAltName)\n| extend RequesterName = tostring(split(Requester, '\\\\')[-1])\n| where isnotempty(RequesterName)\n| where not(SubjectAltName has RequesterName)\n| project TimeGenerated, Computer, EventID, RequestId, Requester, Template, SubjectAltName\n| sort by TimeGenerated desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 162,
+    "name": "Directory Replication Request (DCSync)",
+    "cat": "LDAP",
+    "sub": "Attack Detection",
+    "plat": "sentinel",
+    "tables": [
+      "SecurityEvent"
+    ],
+    "tags": [
+      "dcsync",
+      "credential dumping",
+      "mimikatz"
+    ],
+    "sev": "critical",
+    "desc": "Flags a directory replication request (DS-Replication-Get-Changes / DS-Replication-Get-Changes-All) made by an account that is not a domain controller or a known Entra Connect/sync service account, the DCSync technique for pulling password hashes straight from AD without touching lsass. CISA's red team used this to harvest an AES256 hash and exchange it for a Kerberos TGT. MITRE ATT&CK: T1003.006 (OS Credential Dumping: DCSync). SOC action: treat any hit as a near-certain domain compromise, the requesting account's permissions were abused to grant replication rights it should never have had, reset krbtgt (twice) and every credential the account could reach. Known false positives: legitimate AD-to-Entra sync accounts (Azure AD Connect, Entra Cloud Sync) not yet in the exclusion list, add them by name once confirmed rather than widening the GUID filter.",
+    "kql": "let lookback = 30d;\nlet replication_guids = dynamic([\n    \"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2\",\n    \"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2\",\n    \"89e95b76-444d-4c62-991a-0facbeda640c\"]);\nlet sync_accounts = dynamic([\"msol_\", \"aad_\", \"svc-adsync\"]);\nSecurityEvent\n| where TimeGenerated > ago(lookback)\n| where EventID == 4662\n| where ObjectType has \"domainDNS\"\n| where Properties has_any (replication_guids)\n| extend Requester = tolower(SubjectAccount)\n| where not(Requester endswith \"$\")\n| where not(Requester has_any (sync_accounts))\n| summarize\n    Requests    = count(),\n    Controllers = make_set(Computer, 5),\n    FirstSeen   = min(TimeGenerated),\n    LastSeen    = max(TimeGenerated)\n    by Requester\n| sort by Requests desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 163,
+    "name": "Application Secret Added Then Used for Mailbox Access",
+    "cat": "App Identity",
+    "sub": "Credential Mgmt",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs",
+      "CloudAppEvents"
+    ],
+    "tags": [
+      "oauth",
+      "client secret",
+      "mailbox abuse"
+    ],
+    "sev": "critical",
+    "desc": "Correlates a new client secret added to an application with that application's OAuth token being used for mailbox actions (read, send, bind) within the following week. CISA's red team identified an app owner with Mail.ReadWrite, obtained their refresh token, added a new client secret, and read mailbox data with the resulting token, all without ever touching the owner's own credentials. MITRE ATT&CK: T1550.001 (Use Alternate Authentication Material: Application Access Token). SOC action: confirm with the app owner whether they added the secret; if not, remove it immediately, audit every mailbox the app can reach for what was actually accessed, and review the app's permission grant, Mail.ReadWrite on an app most owners added for a narrower purpose is itself worth tightening. Known false positives: legitimate CI/CD or integration pipelines that rotate app secrets on a schedule and immediately resume normal mailbox automation, exclude those app IDs once confirmed.",
+    "kql": "let lookback = 30d;\nlet secret_additions =\n    AuditLogs\n    | where TimeGenerated > ago(lookback)\n    | where OperationName has_any (\"Add service principal credentials\", \"Update application\", \"Certificates and secrets management\")\n    | where Result == \"success\"\n    | mv-expand TargetResources\n    | extend AppId   = tolower(tostring(TargetResources.id)),\n             AppName = tostring(TargetResources.displayName),\n             Actor   = tolower(tostring(InitiatedBy.user.userPrincipalName)),\n             ActorIp = tostring(InitiatedBy.user.ipAddress)\n    | where isnotempty(AppId)\n    | project AppId, AppName, Actor, ActorIp, SecretAddedAt = TimeGenerated;\nCloudAppEvents\n| where Timestamp > ago(lookback)\n| where ActionType has_any (\"MailItemsAccessed\", \"Send\", \"MessageBind\")\n| extend AppId = tolower(OAuthAppId)\n| where isnotempty(AppId)\n| join kind=inner secret_additions on AppId\n| where Timestamp > SecretAddedAt\n| summarize\n    MailboxActions = count(),\n    Mailboxes      = dcount(AccountObjectId),\n    Addresses      = make_set(IPAddress, 10),\n    Actions        = make_set(ActionType, 5),\n    FirstUse       = min(Timestamp),\n    LastUse        = max(Timestamp)\n    by AppId, AppName, Actor, ActorIp, SecretAddedAt\n| where FirstUse between (SecretAddedAt .. SecretAddedAt + 7d)\n| sort by SecretAddedAt desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 164,
+    "name": "Device Code Authentication Rarity Hunt",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "both",
+    "tables": [
+      "SigninLogs"
+    ],
+    "tags": [
+      "device code",
+      "phishing-as-a-service",
+      "hunting"
+    ],
+    "sev": "medium",
+    "desc": "Baseline hunting query, not an alert: lists every account that successfully completed a device-code sign-in in the last 30 days. Device code grant is an input-constrained-device flow, so in most tenants it is unused or limited to a small known set of clients and people, which is what makes any new appearance worth reading. Part of the device-code phishing-as-a-service surge reported mid-2026. Complements the GoXDR query that ties device code to a subsequent device registration, this one has no correlation gate, it is a rarity census. MITRE ATT&CK: T1528 (Steal Application Access Token). SOC action: for each hit, confirm the user and app against your known legitimate device-code use cases (CLI tools, IoT, conference-room devices), anything outside that list warrants a direct check with the user. Known limitation, stated plainly by the source: the sign-in record itself shows nothing deceptive, the victim genuinely authenticated, so this only narrows where to look, it does not confirm compromise.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(30d)\n| where AuthenticationProtocol =~ \"deviceCode\"\n    or ResultType == \"70016\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| extend City    = tostring(LocationDetails.city)\n| summarize    Attempts    = count(),\n    Successes   = countif(ResultType == \"0\"),\n    Apps        = make_set(AppDisplayName, 10),\n    Resources   = make_set(ResourceDisplayName, 10),\n    Addresses   = make_set(IPAddress, 10),\n    Countries   = make_set(Country, 5),\n    UserAgents  = make_set(UserAgent, 5),\n    FirstSeen   = min(TimeGenerated),\n    LastSeen    = max(TimeGenerated)\n    by UserPrincipalName\n| where Successes > 0\n| sort by FirstSeen desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 165,
+    "name": "Token Use From a Different Country After Interactive Sign-In",
+    "cat": "Identity",
+    "sub": "Token Attacks",
+    "plat": "sentinel",
+    "tables": [
+      "SigninLogs",
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "token theft",
+      "device code",
+      "geo anomaly"
+    ],
+    "sev": "high",
+    "desc": "Joins an interactive sign-in to a non-interactive token-use event for the same account within 24 hours, then flags pairs where the countries differ. When a token is stolen rather than a password, the original authentication event stays clean, the compromise only shows up in the gap between where the user signed in and where the token later gets used, which is exactly the pattern device-code phishing produces. MITRE ATT&CK: T1528 (Steal Application Access Token). SOC action: check UseApps and Resources for anything the user would not normally run, then revoke refresh tokens for the account and force reauthentication. Known limitation, stated plainly by the source: country comparison is coarse, an operator in the same country as the victim produces nothing, and VPN or corporate proxy egress in a different country from the user's real location is a realistic false positive, check UseIPs against known corporate egress ranges before escalating.",
+    "kql": "let huntWindow = 7d;\nlet interactive =\n    SigninLogs\n    | where TimeGenerated > ago(huntWindow)\n    | where ResultType == \"0\"\n    | project UserPrincipalName, AuthTime = TimeGenerated,\n              AuthIP      = IPAddress,\n              AuthCountry = tostring(LocationDetails.countryOrRegion),\n              AuthApp     = AppDisplayName;\nlet tokenUse =\n    AADNonInteractiveUserSignInLogs\n    | where TimeGenerated > ago(huntWindow)\n    | where ResultType == \"0\"\n    | project UserPrincipalName, UseTime = TimeGenerated,\n              UseIP      = IPAddress,\n              UseCountry = tostring(LocationDetails.countryOrRegion),\n              UseApp     = AppDisplayName,\n              UseResource = ResourceDisplayName;\ninteractive\n| join kind=inner tokenUse on UserPrincipalName\n| where UseTime between (AuthTime .. AuthTime + 24h)\n| where UseCountry != AuthCountry and isnotempty(UseCountry) and isnotempty(AuthCountry)\n| summarize    Uses       = count(),\n    UseApps    = make_set(UseApp, 10),\n    Resources  = make_set(UseResource, 10),\n    UseIPs     = make_set(UseIP, 10),\n    FirstUse   = min(UseTime)\n    by UserPrincipalName, AuthTime, AuthIP, AuthCountry, UseCountry\n| sort by FirstUse desc",
+    "added": "2026-10-01"
+  },
+  {
+    "id": 166,
+    "name": "Device Login Page Link Clicked From Email or Teams",
+    "cat": "Email",
+    "sub": "Phishing",
+    "plat": "xdr",
+    "tables": [
+      "UrlClickEvents",
+      "EmailUrlInfo",
+      "EmailEvents"
+    ],
+    "tags": [
+      "device code",
+      "phishing-as-a-service",
+      "safe links"
+    ],
+    "sev": "high",
+    "desc": "Flags a click on a genuine Microsoft device-login URL that arrived through email or Teams. A device login page is something a user reaches because a device in front of them displayed a code, not something that should arrive as a link in a message, so the combination of that exact destination with a mail/chat origin is the anomaly, the domain itself is legitimate Microsoft infrastructure and will not trip a malicious-URL detector. SOC action: pull the sender and subject for context, treat as an active device-code phishing attempt and pair this with the sign-in rarity hunt for the same user around the same timestamp, then warn the user before they enter any code. MITRE ATT&CK: T1566 (Phishing), T1204.001 (User Execution: Malicious Link). Known limitation, stated plainly by the source: this depends on Safe Links rewriting and click telemetry, a device-code link delivered through a channel outside that protection (an unmonitored chat app, a QR code, a phone call) will not appear here at all.",
+    "kql": "UrlClickEvents\n| where Timestamp > ago(30d)\n| where Url has_any (\n      \"microsoft.com/devicelogin\",\n      \"login.microsoftonline.com/common/oauth2/deviceauth\",\n      \"aka.ms/devicelogin\")\n| where Workload in (\"Email\", \"Teams\")\n| join kind=leftouter (\n    EmailUrlInfo\n    | where Timestamp > ago(30d)\n    | project NetworkMessageId, UrlDomain, Url) on $left.NetworkMessageId == $right.NetworkMessageId\n| join kind=leftouter (\n    EmailEvents\n    | where Timestamp > ago(30d)\n    | project NetworkMessageId, SenderFromAddress, Subject, EmailDirection) on NetworkMessageId\n| project Timestamp, AccountUpn, Url, ActionType, Workload,\n          SenderFromAddress, Subject, EmailDirection, IPAddress\n| sort by Timestamp desc",
+    "added": "2026-10-01"
   }
 ]
