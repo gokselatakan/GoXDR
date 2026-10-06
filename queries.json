@@ -3293,28 +3293,24 @@
     "added": "2026-10-01"
   },
   {
-    "id": 167,
-    "name": "AI Coding Assistant CLI Launched With Permission-Bypass Flags",
-    "cat": "AI Security",
-    "sub": "Agent Governance",
-    "plat": "xdr",
-    "tables": [
-      "DeviceProcessEvents"
-    ],
-    "tags": [
-      "ai agent",
-      "coding assistant",
-      "permission bypass",
-      "agentic ai",
-      "hunting"
-    ],
-    "sev": "medium",
-    "desc": "Hunting query, not an alert. Detects AI coding assistant CLIs (Claude Code, Amazon Q CLI, Codex CLI, Gemini CLI) launched with flags that skip permission prompts, bypass approvals or disable the sandbox. Runs with a scripted parent or non-interactive mode are sorted first, since nobody is watching the agent in those cases."
-
-Review the parent chain and command line, then confirm the developer and the environment. Known false positives: developers using these flags on purpose in local or throwaway environments.
-
-Limitation: matching is on literal command-line text, so config-file or env-based modes and Claude Code's --permission-mode bypassPermissions form are not caught.",
-    "kql": "// AI coding assistant CLIs launched with permission-bypass flags. Hunting query, not an alert.\n// Developers use these flags legitimately. Review the parent chain and command line.\nlet Lookback = 14d;\nlet Runtimes = dynamic([\"node\", \"node.exe\", \"npm\", \"npm.exe\", \"npx\", \"npx.exe\", \"python\", \"python3\", \"python.exe\", \"wscript.exe\", \"cscript.exe\"]);\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where ProcessCommandLine contains \"--dangerously-skip-permissions\"\n    or ProcessCommandLine contains \"--trust-all-tools\"\n    or ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\"\n    or ProcessCommandLine contains \"--yolo\"\n    or ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\"\n| extend Tool = case(\n    ProcessCommandLine contains \"--dangerously-skip-permissions\", \"Claude Code\",\n    ProcessCommandLine contains \"--trust-all-tools\", \"Amazon Q CLI\",\n    ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\", \"Codex CLI\",\n    ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\", \"Gemini CLI\",\n    \"Codex CLI or Gemini CLI (--yolo)\")\n| extend NonInteractive = ProcessCommandLine matches regex @\"(^|\\s)(-p|--print|--prompt|--no-interactive)(\\s|=|$)\"\n| extend ScriptedParent = InitiatingProcessFileName in~ (Runtimes) or InitiatingProcessParentFileName in~ (Runtimes)\n| project Timestamp, DeviceName, AccountName, Tool, ScriptedParent, NonInteractive, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessParentFileName\n| sort by ScriptedParent desc, NonInteractive desc, Timestamp desc",
-    "added": "2026-10-06"
-  }
+  "id": 167,
+  "name": "AI Coding Assistant CLI Launched With Permission-Bypass Flags",
+  "cat": "AI Security",
+  "sub": "Agent Governance",
+  "plat": "xdr",
+  "tables": [
+    "DeviceProcessEvents"
+  ],
+  "tags": [
+    "ai agent",
+    "coding assistant",
+    "permission bypass",
+    "agentic ai",
+    "hunting"
+  ],
+  "sev": "medium",
+  "desc": "Hunting query, not an alert. Detects AI coding assistant CLIs (Claude Code, Amazon Q CLI, Codex CLI, Gemini CLI) launched with flags that skip permission prompts, bypass approvals or disable the sandbox. Runs with a scripted parent or non-interactive mode are sorted first, since nobody is watching the agent in those cases. MITRE ATT&CK: no precise technique exists for this class, T1059 (Command and Scripting Interpreter) is the closest mapping. SOC action: read the command line and parent chain, then check what the agent was pointed at and whether the device holds production credentials or source. Known false positives: developers and CI jobs using these flags in disposable containers or VMs. Limitation: matching is on literal command-line text, so config-file or env-based modes and Claude Code's --permission-mode bypassPermissions form are not caught.",
+  "kql": "// AI coding assistant CLIs launched with permission-bypass flags. Hunting query, not an alert.\n// Developers use these flags legitimately. Review the parent chain and command line.\nlet Lookback = 14d;\nlet Runtimes = dynamic([\"node\", \"node.exe\", \"npm\", \"npm.exe\", \"npx\", \"npx.exe\", \"python\", \"python3\", \"python.exe\", \"wscript.exe\", \"cscript.exe\"]);\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where ProcessCommandLine contains \"--dangerously-skip-permissions\"\n    or ProcessCommandLine contains \"--trust-all-tools\"\n    or ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\"\n    or ProcessCommandLine contains \"--yolo\"\n    or ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\"\n| extend Tool = case(\n    ProcessCommandLine contains \"--dangerously-skip-permissions\", \"Claude Code\",\n    ProcessCommandLine contains \"--trust-all-tools\", \"Amazon Q CLI\",\n    ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\", \"Codex CLI\",\n    ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\", \"Gemini CLI\",\n    \"Codex CLI or Gemini CLI (--yolo)\")\n| extend NonInteractive = ProcessCommandLine matches regex @\"(^|\\s)(-p|--print|--prompt|--no-interactive)(\\s|=|$)\"\n| extend ScriptedParent = InitiatingProcessFileName in~ (Runtimes) or InitiatingProcessParentFileName in~ (Runtimes)\n| project Timestamp, DeviceName, AccountName, Tool, ScriptedParent, NonInteractive, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessParentFileName\n| sort by ScriptedParent desc, NonInteractive desc, Timestamp desc",
+  "added": "2026-10-06"
+}
 ]
