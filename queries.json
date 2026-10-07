@@ -2343,12 +2343,15 @@
       "mcp",
       "configuration drift",
       "privilege escalation",
-      "agent governance"
+      "agent governance",
+      "atlas",
+      "AML.T0081"
     ],
     "sev": "critical",
     "added": "2026-07-27",
-    "desc": "Compares each AI agent current state against its 14-day baseline to detect suspicious configuration drift: instructions changed, a new MCP server added, an owner added or sharing expanded to org-wide. Flags agents where 2 or more of these signals occurred together, since a single change might be routine maintenance but multiple simultaneous changes suggest deliberate tampering to escalate an agent privileges or reach.",
-    "kql": "let lookback = 14d;\nlet recent = 2d;\nlet CurrentMcpNames = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize CurrentMcpServers = make_set(McpName) by AgentId;\nlet BaselineMcpNames = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize BaselineMcpServers = make_set(McpName) by AgentId;\nlet CurrentState = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| project AgentId, Name, Platform, Timestamp,\n    CurrentInstructions = Instructions,\n    CurrentOwners = Owners,\n    CurrentSharedWith = SharedWith;\nlet BaselineState = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| project AgentId,\n    PreviousInstructions = Instructions,\n    PreviousOwners = Owners,\n    BaselineSharedWith = SharedWith;\nlet Joined = CurrentState\n| join kind=inner (BaselineState) on AgentId\n| join kind=leftouter (CurrentMcpNames) on AgentId\n| join kind=leftouter (BaselineMcpNames) on AgentId;\nlet InstructionsFlag = Joined\n| where CurrentInstructions != PreviousInstructions\n| project AgentId, Signal = \"InstructionsChanged\";\nlet McpFlag = Joined\n| where array_length(set_difference(coalesce(CurrentMcpServers, dynamic([])), coalesce(BaselineMcpServers, dynamic([])))) > 0\n| project AgentId, Signal = \"NewMcpServer\";\nlet OwnerFlag = Joined\n| where array_length(set_difference(CurrentOwners, PreviousOwners)) > 0\n| project AgentId, Signal = \"OwnerAdded\";\nlet SharingFlag = Joined\n| where set_has_element(coalesce(CurrentSharedWith, dynamic([])), \"*\")\n| where not(set_has_element(coalesce(BaselineSharedWith, dynamic([])), \"*\"))\n| project AgentId, Signal = \"SharingExpandedOrgWide\";\nunion InstructionsFlag, McpFlag, OwnerFlag, SharingFlag\n| summarize SignalCount = dcount(Signal), Signals = make_set(Signal) by AgentId\n| where SignalCount >= 2\n| join kind=inner (CurrentState) on AgentId\n| project AgentId, Name, Platform, SignalCount, Signals, Timestamp\n| sort by SignalCount desc"
+    "desc": "Compares each AI agent current state against its 14-day baseline to detect suspicious configuration drift: instructions changed, a new MCP server added, an owner added or sharing expanded to org-wide. Flags agents where 2 or more of these signals occurred together, since a single change might be routine maintenance but multiple simultaneous changes suggest deliberate tampering to escalate an agent privileges or reach. MITRE ATLAS: AML.T0081 (Modify AI Agent Configuration).",
+    "kql": "let lookback = 14d;\nlet recent = 2d;\nlet CurrentMcpNames = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize CurrentMcpServers = make_set(McpName) by AgentId;\nlet BaselineMcpNames = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize BaselineMcpServers = make_set(McpName) by AgentId;\nlet CurrentState = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| project AgentId, Name, Platform, Timestamp,\n    CurrentInstructions = Instructions,\n    CurrentOwners = Owners,\n    CurrentSharedWith = SharedWith;\nlet BaselineState = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| project AgentId,\n    PreviousInstructions = Instructions,\n    PreviousOwners = Owners,\n    BaselineSharedWith = SharedWith;\nlet Joined = CurrentState\n| join kind=inner (BaselineState) on AgentId\n| join kind=leftouter (CurrentMcpNames) on AgentId\n| join kind=leftouter (BaselineMcpNames) on AgentId;\nlet InstructionsFlag = Joined\n| where CurrentInstructions != PreviousInstructions\n| project AgentId, Signal = \"InstructionsChanged\";\nlet McpFlag = Joined\n| where array_length(set_difference(coalesce(CurrentMcpServers, dynamic([])), coalesce(BaselineMcpServers, dynamic([])))) > 0\n| project AgentId, Signal = \"NewMcpServer\";\nlet OwnerFlag = Joined\n| where array_length(set_difference(CurrentOwners, PreviousOwners)) > 0\n| project AgentId, Signal = \"OwnerAdded\";\nlet SharingFlag = Joined\n| where set_has_element(coalesce(CurrentSharedWith, dynamic([])), \"*\")\n| where not(set_has_element(coalesce(BaselineSharedWith, dynamic([])), \"*\"))\n| project AgentId, Signal = \"SharingExpandedOrgWide\";\nunion InstructionsFlag, McpFlag, OwnerFlag, SharingFlag\n| summarize SignalCount = dcount(Signal), Signals = make_set(Signal) by AgentId\n| where SignalCount >= 2\n| join kind=inner (CurrentState) on AgentId\n| project AgentId, Name, Platform, SignalCount, Signals, Timestamp\n| sort by SignalCount desc",
+    "updated": "2026-10-07"
   },
   {
     "id": 121,
@@ -3052,12 +3055,15 @@
       "skill file",
       "agentic ai",
       "supply chain",
-      "hunting"
+      "hunting",
+      "atlas",
+      "AML.T0110"
     ],
     "sev": "medium",
-    "desc": "Baseline hunting query, not an alert: surfaces every SKILL.md created or changed in OneDrive or SharePoint, the instruction files that tools like Claude Code and Copilot Cowork load and follow autonomously. A SKILL.md planted or edited by someone other than its known owner is a plausible instruction-injection vector into whatever agent reads it next, closer to a supply chain concern than a classic file-share alert, so the goal here is visibility into where these files exist and who is touching them, not a single confirmed-bad signal. The Tool column is a folder-path guess (cowork/skills vs .claude/skills) and the common-dependency exclusions (node_modules, .venv, vendor, build output) are plain substring matches, both can be renamed around, so treat this as a map of the agent skill footprint to review periodically rather than a precise detector. MITRE ATT&CK: T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain), closest available mapping for this class of agent-tooling abuse. SOC action: for a SKILL.md touched by an unexpected user or appearing in a shared/synced location outside an individual's own OneDrive, read its actual instructions before deciding anything, a line telling the agent to exfiltrate data, call an unfamiliar tool or ignore prior constraints is the real indicator, the file event itself is not.",
+    "desc": "Baseline hunting query, not an alert: surfaces every SKILL.md created or changed in OneDrive or SharePoint, the instruction files that tools like Claude Code and Copilot Cowork load and follow autonomously. A SKILL.md planted or edited by someone other than its known owner is a plausible instruction-injection vector into whatever agent reads it next, closer to a supply chain concern than a classic file-share alert, so the goal here is visibility into where these files exist and who is touching them, not a single confirmed-bad signal. The Tool column is a folder-path guess (cowork/skills vs .claude/skills) and the common-dependency exclusions (node_modules, .venv, vendor, build output) are plain substring matches, both can be renamed around, so treat this as a map of the agent skill footprint to review periodically rather than a precise detector. MITRE ATT&CK: T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain), closest available mapping for this class of agent-tooling abuse. MITRE ATLAS: AML.T0110 (AI Agent Tool Poisoning), the precise mapping where ATT&CK has only a supply chain approximation. SOC action: for a SKILL.md touched by an unexpected user or appearing in a shared/synced location outside an individual's own OneDrive, read its actual instructions before deciding anything, a line telling the agent to exfiltrate data, call an unfamiliar tool or ignore prior constraints is the real indicator, the file event itself is not.",
     "kql": "// Agent skill files (SKILL.md) created or changed in OneDrive and SharePoint. Hunting query, not an alert.\n// Requires the Sentinel Office 365 connector with SharePoint and OneDrive audit enabled.\n// Tool labels are folder-path heuristics. Noise exclusions are substring matches and can be evaded.\nlet Lookback = 14d;\nOfficeActivity\n| where TimeGenerated > ago(Lookback)\n| where OfficeWorkload in~ (\"OneDrive\", \"SharePoint\")\n| where Operation in~ (\"FileUploaded\", \"FileModified\", \"FileSyncUploadedFull\", \"FileRenamed\", \"FileMoved\", \"FileCopied\")\n| where SourceFileName =~ \"SKILL.md\" or DestinationFileName =~ \"SKILL.md\"\n| extend Path = tolower(strcat(tostring(SourceRelativeUrl), \" \", tostring(DestinationRelativeUrl), \" \", tostring(OfficeObjectId)))\n| where Path !contains \".venv\"\n    and Path !contains \"site-packages\"\n    and Path !contains \"node_modules\"\n    and Path !contains \"__pycache__\"\n    and Path !contains \".git/\"\n    and Path !contains \"/dist/\"\n    and Path !contains \"/build/\"\n    and Path !contains \"/vendor/\"\n| extend Tool = case(\n    Path contains \"cowork/skills\", \"Copilot Cowork\",\n    Path contains \".claude/skills\", \"Claude Code\",\n    \"Other\")\n| extend FolderRef = coalesce(SourceRelativeUrl, OfficeObjectId)\n| project TimeGenerated, OfficeWorkload, Operation, Tool, FolderRef, SourceFileName, DestinationFileName, UserId\n| order by TimeGenerated desc",
-    "added": "2026-10-01"
+    "added": "2026-10-01",
+    "updated": "2026-10-07"
   },
   {
     "id": 155,
@@ -3293,24 +3299,27 @@
     "added": "2026-10-01"
   },
   {
-  "id": 167,
-  "name": "AI Coding Assistant CLI Launched With Permission-Bypass Flags",
-  "cat": "AI Security",
-  "sub": "Agent Governance",
-  "plat": "xdr",
-  "tables": [
-    "DeviceProcessEvents"
-  ],
-  "tags": [
-    "ai agent",
-    "coding assistant",
-    "permission bypass",
-    "agentic ai",
-    "hunting"
-  ],
-  "sev": "medium",
-  "desc": "Hunting query, not an alert. Detects AI coding assistant CLIs (Claude Code, Amazon Q CLI, Codex CLI, Gemini CLI) launched with flags that skip permission prompts, bypass approvals or disable the sandbox. Runs with a scripted parent or non-interactive mode are sorted first, since nobody is watching the agent in those cases. MITRE ATT&CK: no precise technique exists for this class, T1059 (Command and Scripting Interpreter) is the closest mapping. SOC action: read the command line and parent chain, then check what the agent was pointed at and whether the device holds production credentials or source. Known false positives: developers and CI jobs using these flags in disposable containers or VMs. Limitation: matching is on literal command-line text, so config-file or env-based modes and Claude Code's --permission-mode bypassPermissions form are not caught.",
-  "kql": "// AI coding assistant CLIs launched with permission-bypass flags. Hunting query, not an alert.\n// Developers use these flags legitimately. Review the parent chain and command line.\nlet Lookback = 14d;\nlet Runtimes = dynamic([\"node\", \"node.exe\", \"npm\", \"npm.exe\", \"npx\", \"npx.exe\", \"python\", \"python3\", \"python.exe\", \"wscript.exe\", \"cscript.exe\"]);\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where ProcessCommandLine contains \"--dangerously-skip-permissions\"\n    or ProcessCommandLine contains \"--trust-all-tools\"\n    or ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\"\n    or ProcessCommandLine contains \"--yolo\"\n    or ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\"\n| extend Tool = case(\n    ProcessCommandLine contains \"--dangerously-skip-permissions\", \"Claude Code\",\n    ProcessCommandLine contains \"--trust-all-tools\", \"Amazon Q CLI\",\n    ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\", \"Codex CLI\",\n    ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\", \"Gemini CLI\",\n    \"Codex CLI or Gemini CLI (--yolo)\")\n| extend NonInteractive = ProcessCommandLine matches regex @\"(^|\\s)(-p|--print|--prompt|--no-interactive)(\\s|=|$)\"\n| extend ScriptedParent = InitiatingProcessFileName in~ (Runtimes) or InitiatingProcessParentFileName in~ (Runtimes)\n| project Timestamp, DeviceName, AccountName, Tool, ScriptedParent, NonInteractive, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessParentFileName\n| sort by ScriptedParent desc, NonInteractive desc, Timestamp desc",
-  "added": "2026-10-06"
-}
+    "id": 167,
+    "name": "AI Coding Assistant CLI Launched With Permission-Bypass Flags",
+    "cat": "AI Security",
+    "sub": "Agent Governance",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "ai agent",
+      "coding assistant",
+      "permission bypass",
+      "agentic ai",
+      "hunting",
+      "atlas",
+      "AML.T0103"
+    ],
+    "sev": "medium",
+    "desc": "Hunting query, not an alert. Detects AI coding assistant CLIs (Claude Code, Amazon Q CLI, Codex CLI, Gemini CLI) launched with flags that skip permission prompts, bypass approvals or disable the sandbox. Runs with a scripted parent or non-interactive mode are sorted first, since nobody is watching the agent in those cases. MITRE ATT&CK: no precise technique exists for this class, T1059 (Command and Scripting Interpreter) is the closest mapping. MITRE ATLAS: AML.T0103 (Deploy AI Agent), closest mapping. SOC action: read the command line and parent chain, then check what the agent was pointed at and whether the device holds production credentials or source. Known false positives: developers and CI jobs using these flags in disposable containers or VMs. Limitation: matching is on literal command-line text, so config-file or env-based modes and Claude Code's --permission-mode bypassPermissions form are not caught.",
+    "kql": "// AI coding assistant CLIs launched with permission-bypass flags. Hunting query, not an alert.\n// Developers use these flags legitimately. Review the parent chain and command line.\nlet Lookback = 14d;\nlet Runtimes = dynamic([\"node\", \"node.exe\", \"npm\", \"npm.exe\", \"npx\", \"npx.exe\", \"python\", \"python3\", \"python.exe\", \"wscript.exe\", \"cscript.exe\"]);\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where ProcessCommandLine contains \"--dangerously-skip-permissions\"\n    or ProcessCommandLine contains \"--trust-all-tools\"\n    or ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\"\n    or ProcessCommandLine contains \"--yolo\"\n    or ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\"\n| extend Tool = case(\n    ProcessCommandLine contains \"--dangerously-skip-permissions\", \"Claude Code\",\n    ProcessCommandLine contains \"--trust-all-tools\", \"Amazon Q CLI\",\n    ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\", \"Codex CLI\",\n    ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\", \"Gemini CLI\",\n    \"Codex CLI or Gemini CLI (--yolo)\")\n| extend NonInteractive = ProcessCommandLine matches regex @\"(^|\\s)(-p|--print|--prompt|--no-interactive)(\\s|=|$)\"\n| extend ScriptedParent = InitiatingProcessFileName in~ (Runtimes) or InitiatingProcessParentFileName in~ (Runtimes)\n| project Timestamp, DeviceName, AccountName, Tool, ScriptedParent, NonInteractive, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessParentFileName\n| sort by ScriptedParent desc, NonInteractive desc, Timestamp desc",
+    "added": "2026-10-06",
+    "updated": "2026-10-07"
+  }
 ]
