@@ -3321,5 +3321,28 @@
     "kql": "// AI coding assistant CLIs launched with permission-bypass flags. Hunting query, not an alert.\n// Developers use these flags legitimately. Review the parent chain and command line.\nlet Lookback = 14d;\nlet Runtimes = dynamic([\"node\", \"node.exe\", \"npm\", \"npm.exe\", \"npx\", \"npx.exe\", \"python\", \"python3\", \"python.exe\", \"wscript.exe\", \"cscript.exe\"]);\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where ProcessCommandLine contains \"--dangerously-skip-permissions\"\n    or ProcessCommandLine contains \"--trust-all-tools\"\n    or ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\"\n    or ProcessCommandLine contains \"--yolo\"\n    or ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\"\n| extend Tool = case(\n    ProcessCommandLine contains \"--dangerously-skip-permissions\", \"Claude Code\",\n    ProcessCommandLine contains \"--trust-all-tools\", \"Amazon Q CLI\",\n    ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\", \"Codex CLI\",\n    ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\", \"Gemini CLI\",\n    \"Codex CLI or Gemini CLI (--yolo)\")\n| extend NonInteractive = ProcessCommandLine matches regex @\"(^|\\s)(-p|--print|--prompt|--no-interactive)(\\s|=|$)\"\n| extend ScriptedParent = InitiatingProcessFileName in~ (Runtimes) or InitiatingProcessParentFileName in~ (Runtimes)\n| project Timestamp, DeviceName, AccountName, Tool, ScriptedParent, NonInteractive, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessParentFileName\n| sort by ScriptedParent desc, NonInteractive desc, Timestamp desc",
     "added": "2026-10-06",
     "updated": "2026-10-07"
+  },
+  {
+    "id": 168,
+    "name": "Accounts Still Signing In With Authenticated SMTP",
+    "cat": "Identity",
+    "sub": "Compliance",
+    "plat": "sentinel",
+    "tables": [
+      "SigninLogs",
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "smtp auth",
+      "basic auth",
+      "legacy auth",
+      "exchange online",
+      "deprecation",
+      "inventory"
+    ],
+    "sev": "low",
+    "desc": "Inventory query, not an alert. Lists accounts that still sign in successfully with Authenticated SMTP over the last 30 days. Microsoft plans to disable Basic auth for SMTP AUTH by default for existing tenants at the end of December 2026, and admins will still be able to turn it back on. Rows come from SigninLogs and AADNonInteractiveUserSignInLogs, grouped per account with successful sign-in count, source IP count, apps and first and last seen. MITRE ATT&CK: no technique applies directly to a readiness inventory, T1078.004 (Valid Accounts: Cloud Accounts) is the related risk since SMTP AUTH cannot prompt for MFA. SOC action: find the owner of each account, then move the sender to OAuth or a mail relay before the change. Limitations: covers only sign-ins that reach the logs, and the Protocols column shows the Entra grant type, not the Basic or Modern Auth split of the Exchange report. Cross check with the Exchange admin center SMTP AUTH Clients report, which supports a date range up to 90 days.",
+    "kql": "// Accounts still signing in with Authenticated SMTP. Inventory query, not an alert.\n// Run before SMTP AUTH is disabled. Find the owner, then move the sender to OAuth or a relay.\nlet Lookback = 30d;\nunion isfuzzy=true SigninLogs, AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(Lookback)\n| where ClientAppUsed =~ \"Authenticated SMTP\"\n| where ResultType == \"0\"\n| summarize Successes = count(), SourceIps = dcount(IPAddress), Apps = make_set(AppDisplayName, 5),\n    Protocols = make_set(tostring(column_ifexists(\"AuthenticationProtocol\", \"\")), 5),\n    FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated)\n    by UserPrincipalName\n| sort by Successes desc",
+    "added": "2026-10-12"
   }
 ]
