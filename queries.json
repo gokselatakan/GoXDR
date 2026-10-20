@@ -3344,5 +3344,51 @@
     "desc": "Inventory query, not an alert. Lists accounts that still sign in successfully with Authenticated SMTP over the last 30 days. Microsoft plans to disable Basic auth for SMTP AUTH by default for existing tenants at the end of December 2026. Admins will still be able to turn it back on. Rows come from SigninLogs and AADNonInteractiveUserSignInLogs, grouped per account with successful sign-in count, source IP count, apps and first and last seen. MITRE ATT&CK: T1078.004 (Valid Accounts: Cloud Accounts) is the related risk, since SMTP AUTH cannot prompt for MFA. SOC action: find the owner of each account, then move the sender to OAuth or a mail relay before the change. Limitations: covers only sign-ins that reach the logs. The Protocols column shows the Entra grant type, not the Basic or Modern Auth split of the Exchange report. Cross check with the Exchange admin center SMTP AUTH Clients report, which supports a date range up to 90 days.",
     "kql": "// Accounts still signing in with Authenticated SMTP. Inventory query, not an alert.\n// Run before SMTP AUTH is disabled. Find the owner, then move the sender to OAuth or a relay.\nlet Lookback = 30d;\nunion isfuzzy=true SigninLogs, AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(Lookback)\n| where ClientAppUsed =~ \"Authenticated SMTP\"\n| where ResultType == \"0\"\n| summarize Successes = count(), SourceIps = dcount(IPAddress), Apps = make_set(AppDisplayName, 5),\n    Protocols = make_set(tostring(column_ifexists(\"AuthenticationProtocol\", \"\")), 5),\n    FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated)\n    by UserPrincipalName\n| sort by Successes desc",
     "added": "2026-10-12"
+  },
+  {
+    "id": 169,
+    "name": "Guests Holding a Directory Role or Sensitive Group",
+    "cat": "Identity",
+    "sub": "B2B Guest",
+    "plat": "sentinel",
+    "tables": [
+      "IdentityInfo"
+    ],
+    "tags": [
+      "guest",
+      "b2b",
+      "directory role",
+      "privileged",
+      "sensitive group",
+      "hunting"
+    ],
+    "sev": "medium",
+    "desc": "Hunting query, not an alert. Lists guest accounts that hold an Entra directory role or sit in a group whose name looks sensitive, using the latest IdentityInfo row per account from the last 14 days. A guest with a directory role is the finding that matters most. Group matching is a name keyword heuristic (admin, finance, payroll, legal, exec, board, confiden, security, privileg), so expect some noise and tune the list to your naming. The query handles both IdentityInfo schemas (AccountUPN or AccountUpn, UserType or TenantMembershipType). GroupMembership needs Sentinel UEBA. MITRE ATT&CK: T1078.004 (Valid Accounts: Cloud Accounts) is the related risk. SOC action: confirm the business owner of each guest and the reason for the role, then remove the role or group membership if there is none. Prefer time bound access through PIM over a standing assignment. Known false positives: partner or MSP admins with a documented standing role. Groups that match a keyword without being sensitive are another source.",
+    "kql": "// Guests holding a directory role or sitting in a sensitive group. Hunting query, not an alert.\nlet IdentityLookback = 14d;\nIdentityInfo\n| where TimeGenerated > ago(IdentityLookback)\n| extend Upn = tolower(coalesce(column_ifexists(\"AccountUPN\", \"\"), column_ifexists(\"AccountUpn\", \"\")))\n| extend MemberType = coalesce(column_ifexists(\"UserType\", \"\"), column_ifexists(\"TenantMembershipType\", \"\"))\n| where MemberType =~ \"Guest\" and isnotempty(Upn)\n| summarize arg_max(TimeGenerated, Upn, IsAccountEnabled, AccountDisplayName, AssignedRoles, GroupMembership) by AccountObjectId\n| extend Roles = tostring(AssignedRoles), Groups = tostring(GroupMembership)\n| extend HasDirectoryRole = isnotempty(Roles) and Roles !in (\"[]\", \"null\", \"\")\n| extend SensitiveGroups = extract_all(@\"(?i)([^\"\"\\[\\],]*(?:admin|finance|payroll|legal|exec|board|confiden|security|privileg)[^\"\"\\[\\],]*)\", Groups)\n| where HasDirectoryRole or array_length(SensitiveGroups) > 0\n| extend HomeDomain = coalesce(extract(@\"_([^_]+)#EXT#\", 1, Upn), tostring(split(Upn, \"@\")[1]))\n| project Upn, AccountDisplayName, AccountObjectId, HomeDomain, IsAccountEnabled, HasDirectoryRole, AssignedRoles, SensitiveGroups\n| sort by HasDirectoryRole desc, array_length(SensitiveGroups) desc",
+    "added": "2026-10-20"
+  },
+  {
+    "id": 170,
+    "name": "Dormant Guest Accounts With No Recent Sign-In",
+    "cat": "Identity",
+    "sub": "B2B Guest",
+    "plat": "sentinel",
+    "tables": [
+      "IdentityInfo",
+      "SigninLogs",
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "guest",
+      "b2b",
+      "dormant",
+      "stale account",
+      "account hygiene",
+      "hunting"
+    ],
+    "sev": "low",
+    "desc": "Hunting query, not an alert. Lists guest accounts with no successful sign-in in the last 90 days or whose last one is at least 30 days old, privileged guests first. Sign-ins come from SigninLogs and AADNonInteractiveUserSignInLogs and are matched to IdentityInfo on the object ID, because the UPN of a guest can differ between sign-in logs and the user object. DaysSilent of 9999 means no successful sign-in at all in the window. Silent is not proof of abandonment. Guests who use resources a few times a year (auditors, partners, quarterly processes) will appear. A guest whose sign-ins keep failing is also listed as silent. MITRE ATT&CK: T1078.004 (Valid Accounts: Cloud Accounts) is the related risk, since an unused guest with access is an unmonitored entry point. SOC action: contact the sponsor or inviter of each guest, then block sign-in first and delete only after a waiting period. Deleted users can be restored for 30 days. Treat that as a safety net and not as a plan. Limitations: Lookback must not exceed the retention of both sign-in tables. The query fails if either table is missing, which is intended so that a data gap cannot pass as dormancy. GroupMembership needs Sentinel UEBA.",
+    "kql": "// Guests with no recent successful sign-in, privileged and most dormant first. Hunting query, not an alert.\n// Lookback must not exceed the retention of both sign-in tables.\nlet Lookback = 90d;\nlet MinSilentDays = 30;\nlet IdentityLookback = 14d;\nlet Guests = IdentityInfo\n    | where TimeGenerated > ago(IdentityLookback)\n    | extend Upn = tolower(coalesce(column_ifexists(\"AccountUPN\", \"\"), column_ifexists(\"AccountUpn\", \"\")))\n    | extend MemberType = coalesce(column_ifexists(\"UserType\", \"\"), column_ifexists(\"TenantMembershipType\", \"\"))\n    | where MemberType =~ \"Guest\" and isnotempty(Upn)\n    | summarize arg_max(TimeGenerated, Upn, IsAccountEnabled, AccountDisplayName, AssignedRoles, GroupMembership) by AccountObjectId\n    | extend ObjectId = tolower(AccountObjectId);\nlet GuestIds = toscalar(Guests | summarize make_set(ObjectId));\nlet Active = union\n      (SigninLogs | where TimeGenerated > ago(Lookback) | where ResultType == \"0\" | where tolower(UserId) in (GuestIds) | project ObjectId = tolower(UserId), TimeGenerated),\n      (AADNonInteractiveUserSignInLogs | where TimeGenerated > ago(Lookback) | where ResultType == \"0\" | where tolower(UserId) in (GuestIds) | project ObjectId = tolower(UserId), TimeGenerated)\n    | summarize LastSeen = max(TimeGenerated) by ObjectId;\nGuests\n| join kind=leftouter Active on ObjectId\n| extend DaysSilent = iff(isnull(LastSeen), 9999, datetime_diff(\"day\", now(), LastSeen))\n| where DaysSilent >= MinSilentDays\n| extend HasRole = isnotempty(tostring(AssignedRoles)) and tostring(AssignedRoles) !in (\"[]\", \"null\", \"\")\n| extend HomeDomain = coalesce(extract(@\"_([^_]+)#EXT#\", 1, Upn), tostring(split(Upn, \"@\")[1]))\n| project Upn, AccountDisplayName, AccountObjectId, HomeDomain, IsAccountEnabled, LastSeen, DaysSilent, HasRole, AssignedRoles, GroupMembership\n| sort by HasRole desc, DaysSilent desc",
+    "added": "2026-10-20"
   }
 ]
