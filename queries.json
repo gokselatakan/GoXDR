@@ -325,9 +325,10 @@
       "weekend"
     ],
     "sev": "medium",
-    "desc": "Flags sign-in activity outside business hours (before 7am/after 7pm) and on weekends. Unusual timing combined with other indicators can confirm compromise.",
-    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| extend Hour = datetime_part(\"Hour\", TimeGenerated)\n| extend DayOfWeek = dayofweek(TimeGenerated)\n| extend IsOffHours = case(\n    DayOfWeek >= 5d, \"Weekend\",\n    Hour < 7 or Hour > 19, \"After Hours\",\n    \"Business Hours\")\n| where IsOffHours != \"Business Hours\"\n| summarize\n    Events = count(),\n    IPs = make_set(IPAddress, 5),\n    Apps = make_set(AppDisplayName, 5)\n    by UserPrincipalName, IsOffHours\n| where Events > 5\n| order by Events desc",
-    "added": "2026-03-24"
+    "desc": "Flags successful sign-ins outside business hours (before 07:00 or after 19:00 UTC) and on weekends (Saturday and Sunday UTC). Unusual timing combined with other indicators can point to a compromised account. Adjust the hour range to your time zone and working pattern. Known false positives: shift workers, on-call staff and travelling users.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(7d)\n| where ResultType == \"0\"\n| extend Hour = datetime_part(\"Hour\", TimeGenerated)\n| extend DayOfWeek = dayofweek(TimeGenerated)\n| extend IsOffHours = case(\n    DayOfWeek in (0d, 6d), \"Weekend\",\n    Hour < 7 or Hour > 19, \"After Hours\",\n    \"Business Hours\")\n| where IsOffHours != \"Business Hours\"\n| summarize\n    Events = count(),\n    IPs = make_set(IPAddress, 5),\n    Apps = make_set(AppDisplayName, 5)\n    by UserPrincipalName, IsOffHours\n| where Events > 5\n| order by Events desc",
+    "added": "2026-03-24",
+    "updated": "2026-11-09"
   },
   {
     "id": 19,
@@ -470,10 +471,10 @@
       "ntlm"
     ],
     "sev": "critical",
-    "desc": "Detects accounts authenticating to 3+ devices or 2+ devices within 30 minutes using NTLM. Pass-the-Hash attacks use NTLM for lateral movement. Requires MDE.",
+    "desc": "Detects accounts that authenticate over NTLM to 3 or more devices within 7 days. Rows are labeled critical when 5 or more devices are reached or the activity spans under 30 minutes. NTLM network logons across many devices are a common lateral movement pattern, including pass the hash. Requires MDE. MITRE ATT&CK: T1550.002 (Use Alternate Authentication Material: Pass the Hash). Known false positives: admin and service accounts that legitimately touch many hosts.",
     "kql": "DeviceLogonEvents\n| where Timestamp > ago(7d)\n| where LogonType == \"Network\"\n| where Protocol == \"NTLM\"\n| summarize\n    DeviceCount = dcount(DeviceName),\n    Devices = make_set(DeviceName, 10),\n    FirstLogon = min(Timestamp),\n    LastLogon = max(Timestamp)\n    by AccountName, AccountDomain\n| where DeviceCount >= 3\n| extend TimeSpan = datetime_diff('minute', LastLogon, FirstLogon)\n| extend RiskLevel = case(\n    DeviceCount >= 5, \"CRITICAL - Wide Lateral Movement\",\n    TimeSpan < 30, \"CRITICAL - Rapid Movement\",\n    \"HIGH\")\n| order by DeviceCount desc",
     "added": "2026-03-25",
-    "updated": "2026-07-28"
+    "updated": "2026-11-09"
   },
   {
     "id": 27,
@@ -520,7 +521,7 @@
     "name": "NTLMv1 Compliance Check",
     "cat": "NTLM",
     "sub": "Compliance",
-    "plat": "xdr",
+    "plat": "sentinel",
     "tables": [
       "SecurityEvent"
     ],
@@ -531,14 +532,15 @@
     "sev": "high",
     "desc": "Identifies any NTLMv1 authentication. NTLMv1 is cryptographically broken and must be zero. Any detection requires immediate remediation.",
     "kql": "SecurityEvent\n| where TimeGenerated > ago(7d)\n| where EventID == 4624\n| where LmPackageName has \"NTLM V1\"\n| summarize\n    NTLMv1Count = count(),\n    Accounts = make_set(TargetUserName, 10),\n    Computers = make_set(Computer, 10),\n    SourceIPs = make_set(IpAddress, 5)\n    by WorkstationName\n| order by NTLMv1Count desc",
-    "added": "2026-03-25"
+    "added": "2026-03-25",
+    "updated": "2026-11-09"
   },
   {
     "id": 30,
     "name": "External IPs - Successful NTLM",
     "cat": "NTLM",
     "sub": "External Access",
-    "plat": "xdr",
+    "plat": "sentinel",
     "tables": [
       "SecurityEvent"
     ],
@@ -550,14 +552,15 @@
     "sev": "critical",
     "desc": "Detects successful NTLM authentication from public/external IPs. NTLM should never be exposed to the internet.",
     "kql": "SecurityEvent\n| where TimeGenerated > ago(7d)\n| where EventID == 4624\n| where LogonType == 3\n| where AuthenticationPackageName == \"NTLM\"\n| where isnotempty(IpAddress) and IpAddress != \"-\" and IpAddress != \"::1\" and IpAddress != \"127.0.0.1\"\n| where not(ipv4_is_private(IpAddress))\n| summarize\n    SuccessCount = count(),\n    Accounts = make_set(TargetUserName, 5),\n    Computers = make_set(Computer, 5)\n    by IpAddress\n| order by SuccessCount desc",
-    "added": "2026-03-25"
+    "added": "2026-03-25",
+    "updated": "2026-11-09"
   },
   {
     "id": 31,
     "name": "NTLM Deprecation Progress",
     "cat": "NTLM",
     "sub": "Compliance",
-    "plat": "xdr",
+    "plat": "sentinel",
     "tables": [
       "SecurityEvent"
     ],
@@ -568,7 +571,8 @@
     "sev": "medium",
     "desc": "Compares last 30 days NTLM usage against previous period to track deprecation progress and Kerberos migration effectiveness.",
     "kql": "let Current = SecurityEvent\n| where TimeGenerated > ago(30d)\n| where EventID == 4624\n| summarize NTLM_Current = countif(AuthenticationPackageName == \"NTLM\"), Kerberos_Current = countif(AuthenticationPackageName == \"Kerberos\");\nlet Previous = SecurityEvent\n| where TimeGenerated between (ago(60d) .. ago(30d))\n| where EventID == 4624\n| summarize NTLM_Previous = countif(AuthenticationPackageName == \"NTLM\"), Kerberos_Previous = countif(AuthenticationPackageName == \"Kerberos\");\nCurrent | extend p = 1 | join kind=leftouter (Previous | extend p = 1) on p\n| extend NTLM_Change = round((todouble(NTLM_Current) - NTLM_Previous) / max_of(NTLM_Previous, 1) * 100, 0)\n| project NTLM_Current, NTLM_Previous, NTLM_Change, Kerberos_Current, Kerberos_Previous",
-    "added": "2026-03-25"
+    "added": "2026-03-25",
+    "updated": "2026-11-09"
   },
   {
     "id": 32,
@@ -784,7 +788,7 @@
     "name": "LDAP Relay Attack Indicators",
     "cat": "LDAP",
     "sub": "Attack Detection",
-    "plat": "both",
+    "plat": "sentinel",
     "tables": [
       "SecurityEvent"
     ],
@@ -794,9 +798,10 @@
       "mitm"
     ],
     "sev": "critical",
-    "desc": "Correlates successful NTLM network logons to DCs with recent failed attempts. Pattern indicates NTLM relay attacks against domain controllers.",
+    "desc": "Correlates successful NTLM network logons with failed logons for the same account within 5 minutes. Run it against domain controller security events to look for NTLM relay attempts. Known false positives: users who mistype a password and then log on successfully.",
     "kql": "SecurityEvent\n| where TimeGenerated > ago(7d)\n| where EventID == 4624\n| where LogonType == 3\n| where AuthenticationPackageName == \"NTLM\"\n| join kind=inner (\n    SecurityEvent\n    | where TimeGenerated > ago(7d)\n    | where EventID == 4625\n    | project FailedTime = TimeGenerated, FailedAccount = Account, FailedIP = IpAddress\n) on $left.Account == $right.FailedAccount\n| where (TimeGenerated - FailedTime) between (-5m .. 5m)\n| summarize RelayIndicators = count(), SuccessAfterFailure = countif(TimeGenerated > FailedTime) by Account, IpAddress\n| where RelayIndicators > 2\n| order by RelayIndicators desc",
-    "added": "2026-03-26"
+    "added": "2026-03-26",
+    "updated": "2026-11-09"
   },
   {
     "id": 44,
@@ -868,8 +873,9 @@
     ],
     "sev": "high",
     "desc": "Tracks all service principal credential additions, removals and updates. Unauthorized credential changes indicate attacker adding persistence.",
-    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add service principal credentials\", \"Remove service principal credentials\", \"Update application – Certificates and secrets management\")\n| extend SPName = tostring(TargetResources[0].displayName)\n| extend ModifiedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| extend ModifiedByIP = tostring(InitiatedBy.user.ipAddress)\n| project TimeGenerated, OperationName, SPName, ModifiedBy, ModifiedByIP, Result\n| order by TimeGenerated desc",
-    "added": "2026-03-26"
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add service principal credentials\", \"Remove service principal credentials\", \"Certificates and secrets management\")\n| extend SPName = tostring(TargetResources[0].displayName)\n| extend ModifiedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| extend ModifiedByIP = tostring(InitiatedBy.user.ipAddress)\n| project TimeGenerated, OperationName, SPName, ModifiedBy, ModifiedByIP, Result\n| order by TimeGenerated desc",
+    "added": "2026-03-26",
+    "updated": "2026-11-09"
   },
   {
     "id": 48,
@@ -996,9 +1002,10 @@
       "external"
     ],
     "sev": "high",
-    "desc": "Detects apps configured as multi-tenant (AzureADMultipleOrgs). Multi-tenant apps can be accessed by any Azure AD tenant. Increases external attack surface.",
+    "desc": "Detects apps configured as multi-tenant (AzureADMultipleOrgs). A multi-tenant app can be used from any Microsoft Entra tenant, which widens the external attack surface. Review each app for a business need and restrict the sign-in audience where possible.",
     "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any (\"Add application\", \"Update application\")\n| extend ModifiedProps = parse_json(tostring(TargetResources[0].modifiedProperties))\n| mv-expand ModifiedProps\n| where tostring(ModifiedProps.displayName) has_any (\"AvailableToOtherTenants\", \"SignInAudience\")\n| where tostring(ModifiedProps.newValue) has_any (\"AzureADMultipleOrgs\", \"AzureADandPersonalMicrosoftAccount\", \"true\")\n| extend AppName = tostring(TargetResources[0].displayName)\n| extend ModifiedBy = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName))\n| project TimeGenerated, AppName, ModifiedBy\n| order by TimeGenerated desc",
-    "added": "2026-03-26"
+    "added": "2026-03-26",
+    "updated": "2026-11-09"
   },
   {
     "id": 55,
@@ -1035,8 +1042,9 @@
     ],
     "sev": "high",
     "desc": "Maps non-human identity events to MITRE ATT&CK: T1098.001 (Additional Cloud Credentials), T1098.003 (Additional Cloud Roles), T1136.003 (Cloud Account Creation).",
-    "kql": "union\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName has_any (\"Add service principal credentials\", \"Update application – Certificates\") | extend TTP = \"T1098.001\", Technique = \"Additional Cloud Credentials\"),\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName has_any (\"Add member to role\", \"Add app role assignment\") | where tostring(TargetResources[0].modifiedProperties) has_any (\"Global Administrator\", \"Exchange Administrator\") | extend TTP = \"T1098.003\", Technique = \"Additional Cloud Roles\"),\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName in (\"Add application\", \"Add service principal\") | extend TTP = \"T1136.003\", Technique = \"Cloud Account Creation\")\n| extend Details = tostring(TargetResources[0].displayName)\n| project TimeGenerated, TTP, Technique, OperationName, Details\n| order by TimeGenerated desc",
-    "added": "2026-03-26"
+    "kql": "union\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName has_any (\"Add service principal credentials\", \"Certificates and secrets management\") | extend TTP = \"T1098.001\", Technique = \"Additional Cloud Credentials\"),\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName has_any (\"Add member to role\", \"Add app role assignment\") | where tostring(TargetResources[0].modifiedProperties) has_any (\"Global Administrator\", \"Exchange Administrator\") | extend TTP = \"T1098.003\", Technique = \"Additional Cloud Roles\"),\n    (AuditLogs | where TimeGenerated > ago(7d) | where OperationName in (\"Add application\", \"Add service principal\") | extend TTP = \"T1136.003\", Technique = \"Cloud Account Creation\")\n| extend Details = tostring(TargetResources[0].displayName)\n| project TimeGenerated, TTP, Technique, OperationName, Details\n| order by TimeGenerated desc",
+    "added": "2026-03-26",
+    "updated": "2026-11-09"
   },
   {
     "id": 57,
@@ -1093,10 +1101,10 @@
       "cfo"
     ],
     "sev": "critical",
-    "desc": "Detects external senders using display names matching executive titles from non-internal domains. Classic CEO fraud technique.",
+    "desc": "Detects external senders whose display name matches an executive title, sent from domains outside your organization. Classic CEO fraud technique. Known false positives: vendors and recruiters that use titles like director or president in their display names.",
     "kql": "// NOTE: Replace domain.com with your actual domain\nlet InternalDomains = dynamic([\"domain.com\"]);\nEmailEvents\n| where Timestamp > ago(7d)\n| where EmailDirection == \"Inbound\"\n| where tolower(SenderDisplayName) has_any (\"ceo\", \"cfo\", \"cto\", \"ciso\", \"president\", \"director\", \"vp\", \"chief\", \"executive\")\n| where not(SenderFromDomain has_any (InternalDomains))\n| summarize Count = count(), DeliveredCount = countif(DeliveryAction == \"Delivered\"), Domains = make_set(SenderFromDomain, 5)\n    by SenderDisplayName\n| where Count > 1\n| order by DeliveredCount desc",
     "added": "2026-03-26",
-    "updated": "2026-07-28"
+    "updated": "2026-11-09"
   },
   {
     "id": 60,
@@ -1167,7 +1175,8 @@
     "sub": "AiTM",
     "plat": "xdr",
     "tables": [
-      "EmailUrlInfo"
+      "EmailUrlInfo",
+      "EmailEvents"
     ],
     "tags": [
       "evilginx",
@@ -1175,10 +1184,10 @@
       "proxy"
     ],
     "sev": "critical",
-    "desc": "Scans email URLs for known AiTM/phishing toolkit patterns: evilginx, modlishka, muraena, gophish and suspicious login-like patterns.",
+    "desc": "Scans email URLs for known AiTM/phishing toolkit patterns: evilginx, modlishka, muraena, gophish and suspicious login style patterns.",
     "kql": "let Patterns = dynamic([\"evilginx\", \"modlishka\", \"muraena\", \"gophish\", \"credsniper\", \"-login\", \"login-\", \"signin-\", \"auth-\", \"verify-\", \"secure-\"]);\nEmailUrlInfo\n| where Timestamp > ago(7d)\n| where tolower(Url) has_any (Patterns) or tolower(UrlDomain) has_any (Patterns)\n| join kind=inner (EmailEvents | where Timestamp > ago(7d) | project NetworkMessageId, RecipientEmailAddress, SenderFromAddress, Subject, DeliveryAction) on NetworkMessageId\n| summarize Count = count(), DeliveredCount = countif(DeliveryAction == \"Delivered\"), Recipients = make_set(RecipientEmailAddress, 10) by UrlDomain\n| order by DeliveredCount desc",
     "added": "2026-03-27",
-    "updated": "2026-07-28"
+    "updated": "2026-11-09"
   },
   {
     "id": 64,
@@ -1283,7 +1292,7 @@
     "name": "External Forwarding Rules",
     "cat": "Email",
     "sub": "Post-Compromise",
-    "plat": "xdr",
+    "plat": "sentinel",
     "tables": [
       "OfficeActivity"
     ],
@@ -1294,7 +1303,8 @@
     "sev": "critical",
     "desc": "Detects inbox rules forwarding to external addresses. Most common post-compromise persistence technique.",
     "kql": "OfficeActivity\n| where TimeGenerated > ago(7d)\n| where Operation in (\"New-InboxRule\", \"Set-InboxRule\", \"Set-Mailbox\")\n| where Parameters has_any (\"ForwardTo\", \"ForwardAsAttachmentTo\", \"RedirectTo\", \"ForwardingSmtpAddress\")\n| extend Target = extract(@\"(ForwardTo|RedirectTo|ForwardingSmtpAddress)[^@]*@([\\w.-]+)\", 2, tostring(Parameters))\n| where isnotempty(Target)\n| project TimeGenerated, UserId, Operation, Target\n| order by TimeGenerated desc",
-    "added": "2026-03-27"
+    "added": "2026-03-27",
+    "updated": "2026-11-09"
   },
   {
     "id": 70,
@@ -1320,7 +1330,7 @@
     "name": "Mass File Operations (Ransomware)",
     "cat": "Collaboration",
     "sub": "Data Protection",
-    "plat": "xdr",
+    "plat": "sentinel",
     "tables": [
       "OfficeActivity"
     ],
@@ -1331,14 +1341,15 @@
     "sev": "critical",
     "desc": "Detects mass file deletions/renames/downloads (>50/hour) in SharePoint/OneDrive. Combined delete+rename = strong ransomware indicator.",
     "kql": "OfficeActivity\n| where TimeGenerated > ago(7d)\n| where OfficeWorkload in (\"SharePoint\", \"OneDrive\")\n| where Operation has_any (\"FileDeleted\", \"FileRenamed\", \"FileDownloaded\")\n| summarize OpCount = count(), DeleteCount = countif(Operation has \"Deleted\"), RenameCount = countif(Operation has \"Renamed\"), DownloadCount = countif(Operation has \"Downloaded\")\n    by UserId, bin(TimeGenerated, 1h)\n| where OpCount > 50\n| extend Indicator = case(DeleteCount > 30 and RenameCount > 30, \"RANSOMWARE\", DownloadCount > 100, \"EXFILTRATION\", \"HIGH VOLUME\")\n| order by OpCount desc",
-    "added": "2026-03-27"
+    "added": "2026-03-27",
+    "updated": "2026-11-09"
   },
   {
     "id": 72,
     "name": "External/Guest User Activity",
     "cat": "Collaboration",
     "sub": "Data Protection",
-    "plat": "xdr",
+    "plat": "sentinel",
     "tables": [
       "OfficeActivity"
     ],
@@ -1350,14 +1361,15 @@
     "sev": "high",
     "desc": "Monitors external/guest user file operations across Teams, SharePoint and OneDrive. Risk scored by operation type.",
     "kql": "OfficeActivity\n| where TimeGenerated > ago(7d)\n| where OfficeWorkload in (\"SharePoint\", \"OneDrive\", \"MicrosoftTeams\")\n| where UserId contains \"#ext#\" or UserId contains \"urn:\" or ExternalAccess == true\n| summarize EventCount = count(), FileAccess = countif(Operation has_any (\"Accessed\", \"Downloaded\", \"Viewed\")), FileModify = countif(Operation has_any (\"Modified\", \"Uploaded\"))\n    by UserId\n| extend RiskScore = FileAccess + (FileModify * 2)\n| order by RiskScore desc\n| take 20",
-    "added": "2026-03-27"
+    "added": "2026-03-27",
+    "updated": "2026-11-09"
   },
   {
     "id": 73,
     "name": "Risky File Types Upload",
     "cat": "Collaboration",
     "sub": "Data Protection",
-    "plat": "xdr",
+    "plat": "sentinel",
     "tables": [
       "OfficeActivity"
     ],
@@ -1369,7 +1381,8 @@
     "sev": "high",
     "desc": "Detects uploads of executable/script file types to SharePoint, OneDrive and Teams. These files should not normally be in collaboration platforms.",
     "kql": "let Risky = dynamic([\".exe\", \".bat\", \".cmd\", \".ps1\", \".vbs\", \".js\", \".hta\", \".scr\", \".msi\", \".dll\", \".iso\", \".img\"]);\nOfficeActivity\n| where TimeGenerated > ago(7d)\n| where OfficeWorkload in (\"SharePoint\", \"OneDrive\", \"MicrosoftTeams\")\n| where Operation has_any (\"FileUploaded\", \"FileCreated\")\n| extend Ext = tolower(extract(@\"\\.[a-zA-Z0-9]+$\", 0, SourceFileName))\n| where Ext in (Risky)\n| summarize Count = count(), Users = make_set(UserId, 5) by Ext, SourceFileName\n| order by Count desc",
-    "added": "2026-03-27"
+    "added": "2026-03-27",
+    "updated": "2026-11-09"
   },
   {
     "id": 74,
@@ -1399,7 +1412,8 @@
     "plat": "both",
     "tables": [
       "EmailEvents",
-      "SigninLogs"
+      "SigninLogs",
+      "AADNonInteractiveUserSignInLogs"
     ],
     "tags": [
       "phishing",
@@ -1409,7 +1423,7 @@
     "desc": "Joins delivered phishing emails with risky sign-in events within 24 hours. Shows average time-to-compromise and source IPs.",
     "kql": "let SuspiciousEmails = EmailEvents\n| where Timestamp > ago(7d)\n| where ThreatTypes has \"Phish\" and DeliveryAction == \"Delivered\"\n| project RecipientEmailAddress, EmailTime = Timestamp;\nunion SigninLogs, AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(7d)\n| where RiskLevelDuringSignIn in (\"medium\", \"high\")\n| join kind=inner SuspiciousEmails on $left.UserPrincipalName == $right.RecipientEmailAddress\n| where TimeGenerated > EmailTime and TimeGenerated < EmailTime + 24h\n| extend MinutesToCompromise = datetime_diff('minute', TimeGenerated, EmailTime)\n| summarize RiskySignIns = count(), AvgMinutes = avg(MinutesToCompromise), IPs = make_set(IPAddress, 5)\n    by UserPrincipalName\n| order by RiskySignIns desc",
     "added": "2026-03-27",
-    "updated": "2026-07-28"
+    "updated": "2026-11-09"
   },
   {
     "id": 76,
@@ -1477,16 +1491,18 @@
     "sub": "Location",
     "plat": "both",
     "tables": [
-      "AADServicePrincipalSignInLogs"
+      "AADServicePrincipalSignInLogs",
+      "AADManagedIdentitySignInLogs"
     ],
     "tags": [
       "trusted",
       "untrusted"
     ],
     "sev": "medium",
-    "desc": "Compares sign-in IPs against trusted named locations and known Azure IP ranges. Activity from untrusted locations needs investigation.",
+    "desc": "Flags service principal and managed identity sign-ins from IP addresses that are not private and not in a trusted country list. Update TrustedCountries before use. Activity from untrusted locations needs investigation. Known false positives: cloud services that run from datacenters in other countries.",
     "kql": "// NOTE: Update TrustedCountries with your organization's trusted countries\nlet TrustedCountries = dynamic([\"United States\", \"Canada\", \"United Kingdom\", \"Germany\", \"France\", \"Netherlands\"]);\nunion\n    (AADServicePrincipalSignInLogs | where TimeGenerated > ago(7d) | extend IdentityType = \"Service Principal\", IdentityName = ServicePrincipalName),\n    (AADManagedIdentitySignInLogs | where TimeGenerated > ago(7d) | extend IdentityType = \"Managed Identity\", IdentityName = ServicePrincipalName)\n| extend Country = tostring(geo_info_from_ip_address(IPAddress).country)\n| extend IsTrusted = ipv4_is_private(IPAddress) or Country in (TrustedCountries)\n| where IsTrusted == false\n| summarize Events = count(), Identities = make_set(IdentityName, 5), SuccessCount = countif(ResultType == \"0\") by IPAddress, Country\n| order by SuccessCount desc",
-    "added": "2026-03-27"
+    "added": "2026-03-27",
+    "updated": "2026-11-09"
   },
   {
     "id": 80,
@@ -1568,8 +1584,9 @@
     ],
     "sev": "high",
     "added": "2026-03-29",
-    "desc": "Summarizes Entra ID Protection risk events over 90 days by risk level, activity type and detection type. Shows distinct user count and detection count per category, ranked by risk severity. Useful for understanding your risk landscape and identifying the most common attack patterns flagged by Identity Protection.",
-    "kql": "let RiskRanking = datatable (RiskLevel:string, RiskRank:int)[\n    \"low\", 1,\n    \"medium\", 2,\n    \"high\", 3\n];\nAADUserRiskEvents\n| where TimeGenerated > ago(90d)\n// CorrelationId ties together all related sign-in events for a single user sign-in attempt\n| summarize arg_max(TimeGenerated, *) by CorrelationId\n| summarize \n    DistinctUserCount = dcount(UserPrincipalName), \n    DetectionCount = count() \n    by \n    RiskLevel,\n    Activity, \n    RiskEventType\n| join kind=leftouter RiskRanking on RiskLevel\n| sort by RiskRank, Activity desc\n| project-away RiskRank, RiskLevel1"
+    "desc": "Summarizes Entra ID Protection risk events over 90 days by risk level, activity type and detection type. Shows distinct user count and detection count per category, ranked by risk severity. Useful for seeing which detections fire most often in your tenant.",
+    "kql": "let RiskRanking = datatable (RiskLevel:string, RiskRank:int)[\n    \"low\", 1,\n    \"medium\", 2,\n    \"high\", 3\n];\nAADUserRiskEvents\n| where TimeGenerated > ago(90d)\n// CorrelationId ties together all related sign-in events for a single user sign-in attempt\n| summarize arg_max(TimeGenerated, *) by CorrelationId\n| summarize \n    DistinctUserCount = dcount(UserPrincipalName), \n    DetectionCount = count() \n    by \n    RiskLevel,\n    Activity, \n    RiskEventType\n| join kind=leftouter RiskRanking on RiskLevel\n| sort by RiskRank, Activity desc\n| project-away RiskRank, RiskLevel1",
+    "updated": "2026-11-09"
   },
   {
     "id": 84,
@@ -1589,8 +1606,9 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Detects PowerShell processes executing clipboard-related commands (Get-Clipboard, Set-Clipboard). Attackers abuse these cmdlets to silently read sensitive data from clipboard (passwords, tokens) or inject malicious content (e.g. Replacing crypto wallet addresses). Often goes unnoticed in environments without endpoint monitoring. Can be configured as a Defender XDR custom detection rule.",
-    "kql": "DeviceProcessEvents\n| where ProcessCommandLine contains \"clipboard\"\n| where FileName has \"powershell.exe\"\n| summarize by Timestamp, ProcessCommandLine, DeviceId, DeviceName, AccountName, FileName, ReportId"
+    "desc": "Detects PowerShell processes whose command line references the clipboard (Get-Clipboard, Set-Clipboard). Attackers use these to read passwords or tokens copied by users, or to swap content such as crypto wallet addresses. Requires MDE. MITRE ATT&CK: T1115 (Clipboard Data). Known false positives: admin scripts and productivity tools that use clipboard cmdlets. Can be used as a Defender XDR custom detection rule.",
+    "kql": "DeviceProcessEvents\n| where Timestamp > ago(7d)\n| where FileName in~ (\"powershell.exe\", \"pwsh.exe\")\n| where ProcessCommandLine contains \"clipboard\"\n| summarize by Timestamp, ProcessCommandLine, DeviceId, DeviceName, AccountName, FileName, ReportId",
+    "updated": "2026-11-09"
   },
   {
     "id": 85,
@@ -1641,9 +1659,17 @@
       "EntraIdSignInEvents",
       "CloudAppEvents",
       "IdentityLogonEvents",
+      "CloudAuditEvents",
+      "UrlClickEvents",
+      "DeviceNetworkInfo",
+      "DeviceFileEvents",
+      "AlertEvidence",
+      "ExposureGraphNodes",
+      "BehaviorEntities",
+      "DeviceEvents",
+      "DeviceLogonEvents",
       "DeviceNetworkEvents",
       "EmailEvents",
-      "AlertEvidence",
       "DeviceInfo"
     ],
     "tags": [
@@ -1655,9 +1681,9 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Searches a specific IP address across all major Defender XDR tables in a single query. Covers sign-in logs, cloud app events, identity logon events, device network events, email events, alert evidence and device info. Essential for rapid IP-based threat investigation and IOC hunting.",
-    "kql": "// NOTE: Replace X.X.X.X with the IP address you want to investigate\nlet ip = \"X.X.X.X\";\nsearch in (EntraIdSignInEvents, EntraIdSignInEvents, CloudAppEvents, IdentityLogonEvents, CloudAuditEvents, UrlClickEvents, DeviceNetworkInfo, CloudAuditEvents, DeviceFileEvents, AlertEvidence, ExposureGraphNodes, BehaviorEntities, DeviceEvents, DeviceLogonEvents, DeviceNetworkEvents, EmailEvents, DeviceInfo)\nTimestamp between (ago(7d) .. now())\nand (\nIPAddress == ip\nor RequestSourceIP == ip\nor RemoteIP == ip\nor FileOriginIP == ip\nor SenderIPv4 == ip\nor DestinationIPAddress == ip\nor PublicIP == ip\nor LocalIP == ip\nor NodeProperties.rawData.publicIP == ip\n) \n| order by Timestamp desc",
-    "updated": "2026-07-14"
+    "desc": "Searches one IP address across the main Defender XDR tables in a single query. Covers sign-in, cloud app, identity logon, cloud audit, URL click, device network, device file, device logon, email, alert evidence, exposure graph and device info data. Hunting query, not an alert. Replace X.X.X.X first. The query looks back 7 days. Searching many tables is expensive, so keep the time range short.",
+    "kql": "// NOTE: Replace X.X.X.X with the IP address you want to investigate\nlet ip = \"X.X.X.X\";\nsearch in (EntraIdSignInEvents, CloudAppEvents, IdentityLogonEvents, CloudAuditEvents, UrlClickEvents, DeviceNetworkInfo, DeviceFileEvents, AlertEvidence, ExposureGraphNodes, BehaviorEntities, DeviceEvents, DeviceLogonEvents, DeviceNetworkEvents, EmailEvents, DeviceInfo)\nTimestamp between (ago(7d) .. now())\nand (\nIPAddress == ip\nor RequestSourceIP == ip\nor RemoteIP == ip\nor FileOriginIP == ip\nor SenderIPv4 == ip\nor DestinationIPAddress == ip\nor PublicIP == ip\nor LocalIP == ip\nor NodeProperties.rawData.publicIP == ip\n) \n| order by Timestamp desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 88,
@@ -1666,12 +1692,26 @@
     "sub": "Investigation",
     "plat": "xdr",
     "tables": [
-      "EntraIdSignInEvents",
-      "CloudAppEvents",
-      "DeviceProcessEvents",
-      "EmailEvents",
       "AlertEvidence",
-      "IdentityLogonEvents"
+      "BehaviorEntities",
+      "BehaviorInfo",
+      "EntraIdSignInEvents",
+      "IdentityInfo",
+      "IdentityLogonEvents",
+      "UrlClickEvents",
+      "DeviceEvents",
+      "DeviceFileEvents",
+      "DeviceImageLoadEvents",
+      "DeviceLogonEvents",
+      "DeviceNetworkEvents",
+      "DeviceProcessEvents",
+      "DeviceRegistryEvents",
+      "CloudAppEvents",
+      "EmailAttachmentInfo",
+      "EmailEvents",
+      "EmailPostDeliveryEvents",
+      "CloudAuditEvents",
+      "ExposureGraphNodes"
     ],
     "tags": [
       "upn search",
@@ -1682,9 +1722,9 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Searches a specific user (UPN) across all major Defender XDR tables in a single query. Covers sign-ins, cloud apps, device events, email events, alerts and identity events. Essential for rapid user-based incident investigation when you need the full picture of an account's activity.",
+    "desc": "Searches one user (UPN) across the main Defender XDR tables in a single query. Covers alerts, behaviors, sign-ins, identity, device, cloud app, email and cloud audit data. Hunting query, not an alert. Replace the UPN placeholder first. The query looks back 3 days.",
     "kql": "// NOTE: Replace account@domain.com with the UPN you want to investigate\nlet upn = \"account@domain.com\";\nsearch in (AlertEvidence, BehaviorEntities, BehaviorInfo, EntraIdSignInEvents,\nIdentityInfo, IdentityLogonEvents, UrlClickEvents, DeviceEvents, DeviceFileEvents,\nDeviceImageLoadEvents, DeviceLogonEvents, DeviceNetworkEvents, DeviceProcessEvents,\nDeviceRegistryEvents, CloudAppEvents, EmailAttachmentInfo, EmailEvents, \nEmailPostDeliveryEvents, CloudAuditEvents, ExposureGraphNodes)\nTimestamp between (ago(3d) .. now())\nand (\nAccountUpn == upn\nor InitiatingProcessAccountUpn == upn\nor tostring(RawEventData.UserId) == upn\nor SenderFromAddress == upn\nor RecipientEmailAddress == upn\nor RawEventData contains upn\nor NodeProperties.rawData contains upn\n)\n| order by Timestamp desc",
-    "updated": "2026-07-14"
+    "updated": "2026-11-09"
   },
   {
     "id": 89,
@@ -1725,8 +1765,8 @@
     "sev": "critical",
     "added": "2026-03-30",
     "desc": "Detects outbound emails from corporate accounts to personal email providers (Gmail, Yahoo, Outlook.com, Hotmail, iCloud). A key indicator of data exfiltration by insiders. Especially critical when emails contain attachments.",
-    "kql": "// NOTE: Replace domain1.com and domain2.com with your organization's email domains\nEmailEvents\n| where Timestamp > ago(1d)\n| where EmailDirection == \"Outbound\"\n| where SenderFromAddress matches regex @\"(domain.com)$\"\n| extend RecipientDomain = tolower(tostring(extract(@\"@(.+)\", 1, RecipientEmailAddress)))\n| where RecipientDomain matches regex @\"(gmail\\.com|yahoo\\.com|outlook\\.com|hotmail\\.com|icloud\\.com)\"\n| project\n    Timestamp,\n    SenderFromAddress,\n    RecipientEmailAddress,\n    RecipientDomain,\n    Subject,\n    AttachmentCount,\n    DeliveryAction,\n    DeliveryLocation\n| order by Timestamp desc",
-    "updated": "2026-07-28"
+    "kql": "// NOTE: Replace domain.com with your organization's email domains\nEmailEvents\n| where Timestamp > ago(1d)\n| where EmailDirection == \"Outbound\"\n| where SenderFromDomain in~ (\"domain.com\")\n| extend RecipientDomain = tolower(tostring(extract(@\"@(.+)\", 1, RecipientEmailAddress)))\n| where RecipientDomain in (\"gmail.com\", \"yahoo.com\", \"outlook.com\", \"hotmail.com\", \"icloud.com\")\n| project\n    Timestamp,\n    SenderFromAddress,\n    RecipientEmailAddress,\n    RecipientDomain,\n    Subject,\n    AttachmentCount,\n    DeliveryAction,\n    DeliveryLocation\n| order by Timestamp desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 91,
@@ -1787,8 +1827,9 @@
     ],
     "sev": "low",
     "added": "2026-03-30",
-    "desc": "Calculates Mean Time to Resolve (MTTR) per SOC responder with average, P50, P90 and max resolution times in human-readable format. Also shows alerts per incident average. Essential for SOC performance evaluation and identifying responders who may need additional support.",
-    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Responder = coalesce(tostring(Owner.assignedTo), tostring(Owner.userPrincipalName), tostring(Owner))\n| extend MTTR_min = tolong((ClosedTime - CreatedTime) / 1m)\n| extend AlertsPerIncident = toint(coalesce(array_length(todynamic(AlertIds)), 0))\n| summarize\n    TotalClosed = count(),\n    AlertsPerIncident_avg = round(avg(todouble(AlertsPerIncident)), 2),\n    MTTR_avg_min = tolong(avg(MTTR_min)),\n    MTTR_p50_min = tolong(percentile(MTTR_min, 50)),\n    MTTR_p90_min = tolong(percentile(MTTR_min, 90)),\n    MTTR_max_min = max(MTTR_min)\n  by Responder\n| extend\n    MTTR_avg_readable = strcat(tolong(MTTR_avg_min/60), \"h \", MTTR_avg_min % 60, \"m\"),\n    MTTR_p50_readable = strcat(tolong(MTTR_p50_min/60), \"h \", MTTR_p50_min % 60, \"m\"),\n    MTTR_p90_readable = strcat(tolong(MTTR_p90_min/60), \"h \", MTTR_p90_min % 60, \"m\"),\n    MTTR_max_readable = strcat(tolong(MTTR_max_min/60), \"h \", MTTR_max_min % 60, \"m\")\n| order by MTTR_avg_min asc"
+    "desc": "Calculates Mean Time to Resolve (MTTR) per SOC responder with average, P50, P90 and max resolution times in a readable format. Also shows the average number of alerts per incident. Useful for workload and coaching reviews.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Responder = coalesce(tostring(Owner.assignedTo), tostring(Owner.userPrincipalName), tostring(Owner))\n| extend MTTR_min = tolong((ClosedTime - CreatedTime) / 1m)\n| extend AlertsPerIncident = toint(coalesce(array_length(todynamic(AlertIds)), 0))\n| summarize\n    TotalClosed = count(),\n    AlertsPerIncident_avg = round(avg(todouble(AlertsPerIncident)), 2),\n    MTTR_avg_min = tolong(avg(MTTR_min)),\n    MTTR_p50_min = tolong(percentile(MTTR_min, 50)),\n    MTTR_p90_min = tolong(percentile(MTTR_min, 90)),\n    MTTR_max_min = max(MTTR_min)\n  by Responder\n| extend\n    MTTR_avg_readable = strcat(tolong(MTTR_avg_min/60), \"h \", MTTR_avg_min % 60, \"m\"),\n    MTTR_p50_readable = strcat(tolong(MTTR_p50_min/60), \"h \", MTTR_p50_min % 60, \"m\"),\n    MTTR_p90_readable = strcat(tolong(MTTR_p90_min/60), \"h \", MTTR_p90_min % 60, \"m\"),\n    MTTR_max_readable = strcat(tolong(MTTR_max_min/60), \"h \", MTTR_max_min % 60, \"m\")\n| order by MTTR_avg_min asc",
+    "updated": "2026-11-09"
   },
   {
     "id": 94,
@@ -1828,8 +1869,8 @@
     "sev": "high",
     "added": "2026-03-30",
     "desc": "Detects successful sign-ins that hit the CMSI (Conditional Access Session Control) endpoint from devices with no Entra ID device registration. CMSI:CMSI indicates a Continuous Access Evaluation or session reauthentication check. Unmanaged devices hitting this endpoint are suspicious. They passed initial auth but have no device trust.",
-    "kql": "EntraIdSignInEvents\n| where Timestamp > ago(30d)\n| where ErrorCode == 0\n| where EndpointCall == \"Cmsi:Cmsi\"\n| where isempty(EntraIdDeviceId)\n// Optionally filter only on sign-ins with a risk level associated with the sign-in\n//| where RiskLevelDuringSignIn in(10, 50, 100)\n| project-reorder Timestamp, AccountUpn, EndpointCall, IPAddress, ErrorCode, RiskLevelDuringSignIn, Application, ApplicationId, Country, IPAddress\n| order by Timestamp desc",
-    "updated": "2026-07-14"
+    "kql": "EntraIdSignInEvents\n| where Timestamp > ago(30d)\n| where ErrorCode == 0\n| where EndpointCall == \"Cmsi:Cmsi\"\n| where isempty(EntraIdDeviceId)\n// Optionally filter only on sign-ins with a risk level associated with the sign-in\n//| where RiskLevelDuringSignIn in(10, 50, 100)\n| project-reorder Timestamp, AccountUpn, EndpointCall, IPAddress, ErrorCode, RiskLevelDuringSignIn, Application, ApplicationId, Country\n| order by Timestamp desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 96,
@@ -1849,7 +1890,8 @@
     "sev": "critical",
     "added": "2026-03-30",
     "desc": "Detects inbox rules and mailbox forwarding configurations that send email to external addresses, using CloudAppEvents table. Filters out known internal domains. This is the most common post-compromise persistence technique. Attackers set up forwarding to maintain silent access to communications.",
-    "kql": "// NOTE: Replace domain.com with your organization's domains. Add more lines for additional internal domains.\nCloudAppEvents\n| where ActionType in~ (\"Set-Mailbox\", \"New-InboxRule\", \"Set-InboxRule\", \"UpdateInboxRules\")\n| extend ForwardingAddress = extract(@\"Forward.*?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})\", 1, tostring(ActivityObjects))\n| where isnotempty(ForwardingAddress)\n| where not(ForwardingAddress contains \"@domain.com\")\n| project Timestamp, ActionType, CountryCode, City, ISP, IPAddress, AccountDisplayName, ForwardingAddress, ActivityObjects, ReportId, AccountId \n| order by Timestamp desc"
+    "kql": "// NOTE: Replace domain.com with your organization's domains. Add more lines for additional internal domains.\nCloudAppEvents\n| where ActionType in~ (\"Set-Mailbox\", \"New-InboxRule\", \"Set-InboxRule\", \"UpdateInboxRules\")\n| extend ForwardingAddress = extract(@\"Forward.*?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})\", 1, tostring(ActivityObjects))\n| where isnotempty(ForwardingAddress)\n| where not(ForwardingAddress contains \"@domain.com\")\n| project Timestamp, ActionType, CountryCode, City, Isp, IPAddress, AccountDisplayName, ForwardingAddress, ActivityObjects, ReportId, AccountId \n| order by Timestamp desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 97,
@@ -1890,8 +1932,9 @@
     ],
     "sev": "low",
     "added": "2026-03-30",
-    "desc": "Establishes a 30-day usage baseline for all AI and Copilot applications in your environment. Shows sign-in count, unique users, unique IPs, success/failure rate and top users per application. Essential for understanding AI adoption and detecting anomalous AI usage patterns.",
-    "kql": "SigninLogs\n| where TimeGenerated > ago(30d)\n| where AppDisplayName has \"Copilot\" or AppDisplayName has \"AI\" or AppDisplayName has \"Agent\"\n| summarize \n    SignInCount = count(),\n    UniqueUsers = dcount(UserPrincipalName),\n    UniqueIPs = dcount(IPAddress),\n    FailedAttempts = countif(ResultType != \"0\"),\n    SuccessRate = round(100.0 * countif(ResultType == \"0\") / count(), 2),\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated),\n    IPList = make_set(IPAddress, 20),\n    TopUsers = make_set(UserPrincipalName, 10)\nby AppDisplayName\n| extend FailureRate = round(100.0 * FailedAttempts / SignInCount, 2)\n| order by SignInCount desc"
+    "desc": "Establishes a 30-day usage baseline for AI and Copilot applications. Shows sign-in count, unique users, unique IPs, success and failure rate and top users per application. Use it to understand AI adoption and to spot unusual usage later.",
+    "kql": "SigninLogs\n| where TimeGenerated > ago(30d)\n| where AppDisplayName has \"Copilot\" or AppDisplayName has \"AI\" or AppDisplayName has \"Agent\"\n| summarize \n    SignInCount = count(),\n    UniqueUsers = dcount(UserPrincipalName),\n    UniqueIPs = dcount(IPAddress),\n    FailedAttempts = countif(ResultType != \"0\"),\n    SuccessRate = round(100.0 * countif(ResultType == \"0\") / count(), 2),\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated),\n    IPList = make_set(IPAddress, 20),\n    TopUsers = make_set(UserPrincipalName, 10)\nby AppDisplayName\n| extend FailureRate = round(100.0 * FailedAttempts / SignInCount, 2)\n| order by SignInCount desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 99,
@@ -1911,8 +1954,9 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Pulls AI-related security findings from Microsoft Security Exposure Management. Uses the ExposureGraphEdges table to identify security risks associated with AI workloads, including finding dates and risk levels. Essential for tracking AI-specific security posture.",
-    "kql": "ExposureGraphEdges \n| where TargetNodeCategories[0] == \"AI\"\n| where SourceNodeCategories[1] == \"security_finding\"\n| extend FindingDateRaw = parse_json(EdgeProperties)[\"rawData\"][\"publishedDate\"]\n| extend FindingDate = todatetime(FindingDateRaw)\n| extend SecurityRiskLevel = parse_json(EdgeProperties)[\"rawData\"][\"risk\"][\"riskLevel\"]\n| project FindingDate, TargetNodeName, SourceNodeName\n| sort by FindingDate desc"
+    "desc": "Pulls AI security findings from Microsoft Security Exposure Management through the ExposureGraphEdges table. Shows finding dates and risk levels for AI workloads. Hunting query, not an alert.",
+    "kql": "ExposureGraphEdges \n| where TargetNodeCategories[0] == \"AI\"\n| where SourceNodeCategories[1] == \"security_finding\"\n| extend FindingDateRaw = parse_json(EdgeProperties)[\"rawData\"][\"publishedDate\"]\n| extend FindingDate = todatetime(FindingDateRaw)\n| extend SecurityRiskLevel = parse_json(EdgeProperties)[\"rawData\"][\"risk\"][\"riskLevel\"]\n| project FindingDate, TargetNodeName, SourceNodeName\n| sort by FindingDate desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 100,
@@ -1952,8 +1996,9 @@
     ],
     "sev": "low",
     "added": "2026-03-30",
-    "desc": "Single-row executive summary showing total created, total closed, close rate percentage, MTTR averages (P50/P90), open backlog count and average backlog age. Designed for SOC leadership reporting and board-level security metrics.",
-    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| extend IsClosed = iff(Status == \"Closed\" and isnotempty(ClosedTime), 1, 0)\n| extend MTTR_min = iif(IsClosed == 1 and isnotempty(CreatedTime),\n                        tolong((ClosedTime - CreatedTime) / 1m),\n                        long(null))\n| summarize\n    TotalCreated = dcount(IncidentNumber),\n    TotalClosed  = sum(IsClosed),\n    CloseRate_pct = iif(dcount(IncidentNumber) > 0,\n                        round(100.0 * todouble(sum(IsClosed)) / todouble(dcount(IncidentNumber)), 1),\n                        0.0),\n    MTTR_avg_min = tolong(avg(MTTR_min)),\n    MTTR_p50_min = tolong(percentile(MTTR_min, 50)),\n    MTTR_p90_min = tolong(percentile(MTTR_min, 90)),\n    BacklogOpen  = dcountif(IncidentNumber, IsClosed == 0),\n    Backlog_Age_avg_min = tolong(avgif(tolong((now() - CreatedTime) / 1m), IsClosed == 0))"
+    "desc": "Executive summary in one row: total created, total closed, close rate percentage, MTTR averages (P50 and P90), open backlog count and average backlog age. Designed for SOC leadership reporting.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| extend IsClosed = iff(Status == \"Closed\" and isnotempty(ClosedTime), 1, 0)\n| extend MTTR_min = iif(IsClosed == 1 and isnotempty(CreatedTime),\n                        tolong((ClosedTime - CreatedTime) / 1m),\n                        long(null))\n| summarize\n    TotalCreated = dcount(IncidentNumber),\n    TotalClosed  = sum(IsClosed),\n    CloseRate_pct = iif(dcount(IncidentNumber) > 0,\n                        round(100.0 * todouble(sum(IsClosed)) / todouble(dcount(IncidentNumber)), 1),\n                        0.0),\n    MTTR_avg_min = tolong(avg(MTTR_min)),\n    MTTR_p50_min = tolong(percentile(MTTR_min, 50)),\n    MTTR_p90_min = tolong(percentile(MTTR_min, 90)),\n    BacklogOpen  = dcountif(IncidentNumber, IsClosed == 0),\n    Backlog_Age_avg_min = tolong(avgif(tolong((now() - CreatedTime) / 1m), IsClosed == 0))",
+    "updated": "2026-11-09"
   },
   {
     "id": 102,
@@ -1992,8 +2037,9 @@
     ],
     "sev": "low",
     "added": "2026-03-30",
-    "desc": "Shows monthly MTTR trend with P50 and P90 percentiles. Tracks whether your SOC resolution time is improving or degrading month over month. Essential for continuous improvement tracking.",
-    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(CreatedTime) and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Month = format_datetime(ClosedTime, \"yyyy-MM\")\n| extend ResolveMinutes = (ClosedTime - CreatedTime) / 1m\n| summarize\n    ClosedUnique = count(),\n    MTTR_Min = avg(ResolveMinutes),\n    P50_Min = percentile(ResolveMinutes, 50),\n    P90_Min = percentile(ResolveMinutes, 90)\n  by Month\n| order by Month asc"
+    "desc": "Shows the monthly MTTR trend with P50 and P90 percentiles. Use it to see whether SOC resolution time is improving or getting worse month over month.",
+    "kql": "// NOTE: Adjust start and end dates to your reporting period\nlet start = datetime(2026-03-01);\nlet end   = datetime(2026-03-31);\nSecurityIncident\n| where TimeGenerated >= start and TimeGenerated < end\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Status == \"Closed\" and isnotempty(CreatedTime) and isnotempty(ClosedTime)\n| where ClosedTime >= start and ClosedTime < end\n| extend Month = format_datetime(ClosedTime, \"yyyy-MM\")\n| extend ResolveMinutes = (ClosedTime - CreatedTime) / 1m\n| summarize\n    ClosedUnique = count(),\n    MTTR_Min = avg(ResolveMinutes),\n    P50_Min = percentile(ResolveMinutes, 50),\n    P90_Min = percentile(ResolveMinutes, 90)\n  by Month\n| order by Month asc",
+    "updated": "2026-11-09"
   },
   {
     "id": 104,
@@ -2136,9 +2182,9 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Comprehensive password age report for all active (non-disabled) accounts combining MDI IdentityAccountInfo and IdentityInfo tables. Shows days/years since last password change, PasswordNeverExpires and PasswordNotRequired flags, sensitive account tagging and OU path. Requires MDI.",
-    "kql": "let accountinfo = IdentityAccountInfo\n| where Timestamp > ago(30d)\n| summarize arg_max(Timestamp,*) by IdentityId\n| extend DaysSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), int(null),\n        datetime_diff('day', now(), LastPasswordChangeTime))\n| extend YearsSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), int(null),\n        datetime_diff('year', now(), LastPasswordChangeTime))   \n| extend Sensitive = array_index_of(Tags, \"Sensitive\") != -1\n| extend SensitiveLabel = iff(Sensitive == 1, \"Sensitive\", \"Not Sensitive\")\n| project IdentityId, AccountUpn, AccountStatus, LastPasswordChangeTime, DaysSinceLastPasswordChange, YearsSinceLastPasswordChange, Sid, Sensitive, SensitiveLabel;\nlet IdInfo = IdentityInfo\n| where Timestamp > ago(30d)\n| summarize arg_max(Timestamp,*) by IdentityId\n| extend PasswordNeverExpires = array_index_of(UserAccountControl, \"PasswordNeverExpires\") != -1,\n         PasswordNotRequired = array_index_of(UserAccountControl, \"PasswordNotRequired\") != -1\n| extend OUPath = extract(@\"CN=[^,]+,(.*)\", 1, DistinguishedName)\n| project IdentityId, AccountName, AccountDomain, AccountDisplayName, OnPremSid, OnPremObjectId, AccountUpn, PasswordNeverExpires, PasswordNotRequired, Type, OUPath;\nIdInfo\n| join kind=leftouter (accountinfo) on .IdentityId == .IdentityId\n| project IdentityId, AccountName, AccountStatus, AccountDomain, AccountDisplayName, AccountUpn, Sensitive, SensitiveLabel, LastPasswordChangeTime, DaysSinceLastPasswordChange, YearsSinceLastPasswordChange, PasswordNeverExpires, PasswordNotRequired, Type, OUPath\n| sort by DaysSinceLastPasswordChange desc \n| where AccountStatus != \"Disabled\"",
-    "updated": "2026-07-28"
+    "desc": "Password age report for accounts that are not disabled, combining the IdentityAccountInfo and IdentityInfo tables. Shows days and years since last password change, PasswordNeverExpires and PasswordNotRequired flags, sensitive account tagging and OU path. The two tables are joined on AccountUpn, so accounts without a UPN are not listed. Hunting query, not an alert. Requires MDI. The join key was changed after a schema check and the query has not been run against live data.",
+    "kql": "let accountinfo = IdentityAccountInfo\n| where Timestamp > ago(30d)\n| where isnotempty(AccountUpn)\n| summarize arg_max(Timestamp, *) by IdentityId\n| extend DaysSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), long(null),\n        datetime_diff('day', now(), LastPasswordChangeTime))\n| extend YearsSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), long(null),\n        datetime_diff('year', now(), LastPasswordChangeTime))\n| extend Sensitive = array_index_of(Tags, \"Sensitive\") != -1\n| extend SensitiveLabel = iff(Sensitive, \"Sensitive\", \"Not Sensitive\")\n| project AccountUpn, AccountStatus, LastPasswordChangeTime, DaysSinceLastPasswordChange, YearsSinceLastPasswordChange, Sid, Sensitive, SensitiveLabel;\nlet IdInfo = IdentityInfo\n| where Timestamp > ago(30d)\n| where isnotempty(AccountUpn)\n| summarize arg_max(Timestamp, *) by AccountObjectId\n| extend PasswordNeverExpires = UserAccountControl has \"PasswordNeverExpires\",\n         PasswordNotRequired = UserAccountControl has \"PasswordNotRequired\"\n| extend OUPath = extract(@\"CN=[^,]+,(.*)\", 1, DistinguishedName)\n| project AccountObjectId, AccountName, AccountDomain, AccountDisplayName, OnPremSid, OnPremObjectId, AccountUpn, PasswordNeverExpires, PasswordNotRequired, Type, OUPath;\nIdInfo\n| join kind=leftouter (accountinfo) on AccountUpn\n| where AccountStatus != \"Disabled\"\n| project AccountObjectId, AccountName, AccountStatus, AccountDomain, AccountDisplayName, AccountUpn, Sensitive, SensitiveLabel, LastPasswordChangeTime, DaysSinceLastPasswordChange, YearsSinceLastPasswordChange, PasswordNeverExpires, PasswordNotRequired, Type, OUPath\n| sort by DaysSinceLastPasswordChange desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 111,
@@ -2159,9 +2205,9 @@
     ],
     "sev": "medium",
     "added": "2026-03-30",
-    "desc": "Groups active accounts into password age buckets (0-1 years, 1-2 years, 2-5 years, 5-10 years, 10+ years). Provides a clear view of password hygiene across the organization. Essential for compliance reporting and identifying accounts with dangerously old passwords. Requires MDI.",
-    "kql": "let accountinfo = IdentityAccountInfo\n| where Timestamp > ago(30d)\n| summarize arg_max(Timestamp,*) by IdentityId\n| extend DaysSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), int(null),\n        datetime_diff('day', now(), LastPasswordChangeTime))\n| project IdentityId, AccountUpn, AccountStatus, LastPasswordChangeTime, DaysSinceLastPasswordChange;\nlet IdInfo = IdentityInfo\n| where Timestamp > ago(30d)\n| summarize arg_max(Timestamp,*) by IdentityId\n| project IdentityId, AccountName;\nIdInfo\n| join kind=leftouter (accountinfo) on .IdentityId == .IdentityId\n| where AccountStatus != \"Disabled\"\n| where isnotnull(LastPasswordChangeTime)\n| extend PasswordAgeBucket =\n    case(\n        DaysSinceLastPasswordChange <= 365, \"0-1 years\",\n        DaysSinceLastPasswordChange <= 2*365, \"1-2 years\",\n        DaysSinceLastPasswordChange <= 5*365, \"2-5 years\",\n        DaysSinceLastPasswordChange <= 10*365, \"5-10 years\",\n        \"10+ years\")\n| summarize Accounts = dcount(IdentityId) by PasswordAgeBucket\n| sort by Accounts desc",
-    "updated": "2026-07-28"
+    "desc": "Groups accounts that are not disabled into password age buckets (0-1 years, 1-2 years, 2-5 years, 5-10 years, 10+ years). Gives a quick view of password hygiene across the organization. The IdentityAccountInfo and IdentityInfo tables are joined on AccountUpn, so accounts without a UPN are not counted. Hunting query, not an alert. Requires MDI. The join key was changed after a schema check and the query has not been run against live data.",
+    "kql": "let accountinfo = IdentityAccountInfo\n| where Timestamp > ago(30d)\n| where isnotempty(AccountUpn)\n| summarize arg_max(Timestamp, *) by IdentityId\n| extend DaysSinceLastPasswordChange =\n    iff(isnull(LastPasswordChangeTime), long(null),\n        datetime_diff('day', now(), LastPasswordChangeTime))\n| project AccountUpn, AccountStatus, LastPasswordChangeTime, DaysSinceLastPasswordChange;\nlet IdInfo = IdentityInfo\n| where Timestamp > ago(30d)\n| where isnotempty(AccountUpn)\n| summarize arg_max(Timestamp, *) by AccountObjectId\n| project AccountObjectId, AccountUpn;\nIdInfo\n| join kind=leftouter (accountinfo) on AccountUpn\n| where AccountStatus != \"Disabled\"\n| where isnotnull(LastPasswordChangeTime)\n| extend PasswordAgeBucket =\n    case(\n        DaysSinceLastPasswordChange <= 365, \"0-1 years\",\n        DaysSinceLastPasswordChange <= 2*365, \"1-2 years\",\n        DaysSinceLastPasswordChange <= 5*365, \"2-5 years\",\n        DaysSinceLastPasswordChange <= 10*365, \"5-10 years\",\n        \"10+ years\")\n| summarize Accounts = dcount(AccountObjectId) by PasswordAgeBucket\n| sort by Accounts desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 112,
@@ -2181,8 +2227,9 @@
     ],
     "sev": "medium",
     "added": "2026-03-30",
-    "desc": "Monitors all sign-in activity to the ChatGPT Enterprise application (AppID: e0476654-c1d5-430b-ab80-70cbd947616a) over 180 days. Shows which users accessed ChatGPT, from where, how Conditional Access evaluated the attempt and whether MFA was required. Essential for AI governance.",
-    "kql": "let ChatGPTAppId = \"e0476654-c1d5-430b-ab80-70cbd947616a\";\nSigninLogs\n| where TimeGenerated >= ago(180d)\n| where AppId == ChatGPTAppId\n| extend\n    Country = tostring(LocationDetails.countryOrRegion),\n    City    = tostring(LocationDetails.city)\n| project\n    TimeGenerated,\n    UserDisplayName,\n    UserPrincipalName,\n    IPAddress,\n    Country,\n    City,\n    ConditionalAccessStatus,\n    ClientAppUsed,\n    AuthenticationRequirement,\n    ResultType,\n    ResultDescription\n| order by TimeGenerated desc"
+    "desc": "Monitors sign-in activity to the ChatGPT Enterprise application (AppID: e0476654-c1d5-430b-ab80-70cbd947616a) over 180 days. Shows which users accessed it, from where, how Conditional Access evaluated the attempt and whether MFA was required. Useful for AI governance reviews.",
+    "kql": "let ChatGPTAppId = \"e0476654-c1d5-430b-ab80-70cbd947616a\";\nSigninLogs\n| where TimeGenerated >= ago(180d)\n| where AppId == ChatGPTAppId\n| extend\n    Country = tostring(LocationDetails.countryOrRegion),\n    City    = tostring(LocationDetails.city)\n| project\n    TimeGenerated,\n    UserDisplayName,\n    UserPrincipalName,\n    IPAddress,\n    Country,\n    City,\n    ConditionalAccessStatus,\n    ClientAppUsed,\n    AuthenticationRequirement,\n    ResultType,\n    ResultDescription\n| order by TimeGenerated desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 113,
@@ -2202,8 +2249,9 @@
     ],
     "sev": "high",
     "added": "2026-03-30",
-    "desc": "Lists all users with Entra ID admin role assignments from the last 30 days. Shows which accounts hold which administrative roles. Essential for privileged access reviews, least privilege enforcement and identifying over-privileged accounts.",
-    "kql": "IdentityInfo\n| where Timestamp > ago(30d)\n| where AssignedRoles != \"\"\n| mv-expand AssignedRoles\n| extend EntraAdminRole = tostring(AssignedRoles)\n| project Timestamp, EntraAdminRole, AccountDisplayName\n| where AccountDisplayName != \"\"\n| sort by EntraAdminRole asc, Timestamp desc"
+    "desc": "Lists users with Entra ID admin role assignments seen in the last 30 days. Shows which accounts hold which administrative roles. Useful for privileged access reviews and for finding over-privileged accounts.",
+    "kql": "IdentityInfo\n| where Timestamp > ago(30d)\n| where AssignedRoles != \"\"\n| mv-expand AssignedRoles\n| extend EntraAdminRole = tostring(AssignedRoles)\n| project Timestamp, EntraAdminRole, AccountDisplayName\n| where AccountDisplayName != \"\"\n| sort by EntraAdminRole asc, Timestamp desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 114,
@@ -2305,8 +2353,9 @@
     ],
     "sev": "medium",
     "added": "2026-07-20",
-    "desc": "Audits the authentication posture of highly privileged Entra ID accounts over 30 days using Defender XDR Advanced Hunting. Identifies privileged users across a full tiered admin role list (Tier 0/1/2) and assesses sign-in activity: total sign-ins, MFA vs single-factor sign-in counts, unique IPs, unique apps and inactive privileged accounts. Each account gets a risk indicator flagging single-factor sign-ins present, no sign-ins in 30 days, or OK. Note: unlike the Sentinel SigninLogs table, EntraIdSignInEvents does not expose a per-method authentication breakdown (no FIDO2/SMS/Password granularity), so this version relies on the AuthenticationRequirement field (MFA vs single-factor) as the primary signal.",
-    "kql": "let Lookback = 30d;\nlet PrivilegedRoles = dynamic([\n// ===== ENTRA TIER 0 (Critical - Tenant-Control) =====\n\t\"Global Administrator\",\n\t\"Privileged Role Administrator\",\n\t\"Privileged Authentication Administrator\",\n\t\"Security Administrator\",\n\t\"Conditional Access Administrator\",\n\t\"Application Administrator\",\n\t\"Cloud Application Administrator\",\n\t\"Hybrid Identity Administrator\",\n\t\"Partner Tier2 Support\",\n// ===== ENTRA TIER 1 (High - Service-Control/ Writepermission) =====\n\t\"Authentication Administrator\",\n\t\"Authentication Policy Administrator\",\n\t\"Authentication Extensibility Administrator\",\n\t\"User Administrator\",\n\t\"Helpdesk Administrator\",\n\t\"Password Administrator\",\n\t\"Directory Writers\",\n\t\"Directory Synchronization Accounts\",\n\t\"Domain Name Administrator\",\n\t\"External Identity Provider Administrator\",\n\t\"Lifecycle Workflows Administrator\",\n\t\"Groups Administrator\",\n\t\"Identity Governance Administrator\",\n\t\"Exchange Administrator\",\n\t\"SharePoint Administrator\",\n\t\"Teams Administrator\",\n\t\"Teams Telephony Administrator\",\n\t\"Skype for Business Administrator\",\n\t\"Intune Administrator\",\n\t\"Compliance Administrator\",\n\t\"Security Operator\",\n\t\"Power Platform Administrator\",\n\t\"Dynamics 365 Administrator\",\n\t\"AI Administrator\",\n\t\"Global Secure Access Administrator\",\n\t\"Attribute Assignment Administrator\",\n\t\"Attribute Provisioning Administrator\",\n\t\"B2C IEF Keyset Administrator\",\n\t\"Cloud App Security Administrator\",\n\t\"External ID User Flow Administrator\",\n\t\"Partner Tier1 Support\",\n\t\"Windows 365 Administrator\",\n\t\"Microsoft 365 Backup Administrator\",\n\t\"Microsoft 365 Migration Administrator\",\n\t\"Yammer Administrator\",\n\t\"Knowledge Administrator\",\n\t\"Billing Administrator\",\n// ===== ENTRA TIER 2 (Medium - Read-only / restricted) =====\n\t\"Global Reader\",\n\t\"Security Reader\",\n\t\"Attribute Provisioning Reader\",\n\t\"Application Developer\",\n\t\"Cloud Device Administrator\",\n\t\"Azure AD Joined Device Local Administrator\"\n]);\nlet PrivilegedUsers =\n\tIdentityInfo\n\t| where Timestamp >= ago(Lookback)\n\t| where AssignedRoles has_any (PrivilegedRoles)\n\t| summarize\n\t\tAssignedRoles  = make_set(AssignedRoles),\n\t\tDepartment\t = take_any(Department),\n\t\tJobTitle\t   = take_any(JobTitle),\n\t\tAccountEnabled = take_any(IsAccountEnabled)\n\t\tby AccountUpn;\nlet AuthEvents =\n\tEntraIdSignInEvents\n\t| where Timestamp >= ago(Lookback)\n\t| where ErrorCode == 0\n\t| summarize\n\t\tTotalSignins\t\t= count(),\n\t\tLastSignin\t\t\t= max(Timestamp),\n\t\tUniqueIPs\t\t\t= dcount(IPAddress),\n\t\tUniqueApps\t\t\t= dcount(Application),\n\t\tMFASignins\t\t\t= countif(AuthenticationRequirement == \"multiFactorAuthentication\"),\n\t\tSingleFactorSignins\t= countif(AuthenticationRequirement == \"singleFactorAuthentication\")\n\t\tby AccountUpn;\nPrivilegedUsers\n| join kind=leftouter AuthEvents\n\ton .AccountUpn == .AccountUpn\n| project\n\tUser\t\t\t\t= AccountUpn,\n\tRoles\t\t\t\t= AssignedRoles,\n\tAccountActive\t\t= AccountEnabled,\n\tSigninCount\t\t\t= coalesce(TotalSignins, 0),\n\tMFASignins\t\t\t= coalesce(MFASignins, 0),\n\tSingleFactorSignins\t= coalesce(SingleFactorSignins, 0),\n\tLastSignin\t\t\t= LastSignin,\n\tUniqueIPs\t\t\t= coalesce(UniqueIPs, 0),\n\tUniqueApps\t\t\t= coalesce(UniqueApps, 0),\n\tRiskIndicator\t\t= case(\n\t\tcoalesce(SingleFactorSignins, 0) > 0, \"Single-factor sign-ins present\",\n\t\tcoalesce(TotalSignins, 0) == 0,\t   \"No sign-ins in 30 days\",\n\t\t\t\t\t\t\t\t\t\t\t  \"OK\"\n\t)\n| where SigninCount > 0\n| sort by SigninCount desc"
+    "desc": "Audits the authentication posture of highly privileged Entra ID accounts over 30 days using Defender XDR Advanced Hunting. Identifies privileged users across a full tiered admin role list (Tier 0/1/2) and assesses sign-in activity: total sign-ins, MFA vs single-factor sign-in counts, unique IPs, unique apps and inactive privileged accounts. Each account gets a risk indicator flagging single-factor sign-ins present, no sign-ins in 30 days, or OK. Note: unlike the Sentinel SigninLogs table, EntraIdSignInEvents does not expose a breakdown by authentication method (no FIDO2, SMS or password breakdown), so this version relies on the AuthenticationRequirement field (MFA vs single-factor) as the primary signal.",
+    "kql": "let Lookback = 30d;\nlet PrivilegedRoles = dynamic([\n// ===== ENTRA TIER 0 (Critical - Tenant-Control) =====\n\t\"Global Administrator\",\n\t\"Privileged Role Administrator\",\n\t\"Privileged Authentication Administrator\",\n\t\"Security Administrator\",\n\t\"Conditional Access Administrator\",\n\t\"Application Administrator\",\n\t\"Cloud Application Administrator\",\n\t\"Hybrid Identity Administrator\",\n\t\"Partner Tier2 Support\",\n// ===== ENTRA TIER 1 (High - Service-Control/ Writepermission) =====\n\t\"Authentication Administrator\",\n\t\"Authentication Policy Administrator\",\n\t\"Authentication Extensibility Administrator\",\n\t\"User Administrator\",\n\t\"Helpdesk Administrator\",\n\t\"Password Administrator\",\n\t\"Directory Writers\",\n\t\"Directory Synchronization Accounts\",\n\t\"Domain Name Administrator\",\n\t\"External Identity Provider Administrator\",\n\t\"Lifecycle Workflows Administrator\",\n\t\"Groups Administrator\",\n\t\"Identity Governance Administrator\",\n\t\"Exchange Administrator\",\n\t\"SharePoint Administrator\",\n\t\"Teams Administrator\",\n\t\"Teams Telephony Administrator\",\n\t\"Skype for Business Administrator\",\n\t\"Intune Administrator\",\n\t\"Compliance Administrator\",\n\t\"Security Operator\",\n\t\"Power Platform Administrator\",\n\t\"Dynamics 365 Administrator\",\n\t\"AI Administrator\",\n\t\"Global Secure Access Administrator\",\n\t\"Attribute Assignment Administrator\",\n\t\"Attribute Provisioning Administrator\",\n\t\"B2C IEF Keyset Administrator\",\n\t\"Cloud App Security Administrator\",\n\t\"External ID User Flow Administrator\",\n\t\"Partner Tier1 Support\",\n\t\"Windows 365 Administrator\",\n\t\"Microsoft 365 Backup Administrator\",\n\t\"Microsoft 365 Migration Administrator\",\n\t\"Yammer Administrator\",\n\t\"Knowledge Administrator\",\n\t\"Billing Administrator\",\n// ===== ENTRA TIER 2 (Medium - Read-only / restricted) =====\n\t\"Global Reader\",\n\t\"Security Reader\",\n\t\"Attribute Provisioning Reader\",\n\t\"Application Developer\",\n\t\"Cloud Device Administrator\",\n\t\"Azure AD Joined Device Local Administrator\",\n\t\"Microsoft Entra Joined Device Local Administrator\"\n]);\nlet PrivilegedUsers =\n\tIdentityInfo\n\t| where Timestamp >= ago(Lookback)\n\t| where AssignedRoles has_any (PrivilegedRoles)\n\t| summarize\n\t\tAssignedRoles  = make_set(AssignedRoles),\n\t\tDepartment\t = take_any(Department),\n\t\tJobTitle\t   = take_any(JobTitle),\n\t\tAccountEnabled = take_any(IsAccountEnabled)\n\t\tby AccountUpn;\nlet AuthEvents =\n\tEntraIdSignInEvents\n\t| where Timestamp >= ago(Lookback)\n\t| where ErrorCode == 0\n\t| summarize\n\t\tTotalSignins\t\t= count(),\n\t\tLastSignin\t\t\t= max(Timestamp),\n\t\tUniqueIPs\t\t\t= dcount(IPAddress),\n\t\tUniqueApps\t\t\t= dcount(Application),\n\t\tMFASignins\t\t\t= countif(AuthenticationRequirement == \"multiFactorAuthentication\"),\n\t\tSingleFactorSignins\t= countif(AuthenticationRequirement == \"singleFactorAuthentication\")\n\t\tby AccountUpn;\nPrivilegedUsers\n| join kind=leftouter AuthEvents\n\ton $left.AccountUpn == $right.AccountUpn\n| project\n\tUser\t\t\t\t= AccountUpn,\n\tRoles\t\t\t\t= AssignedRoles,\n\tAccountActive\t\t= AccountEnabled,\n\tSigninCount\t\t\t= coalesce(TotalSignins, 0),\n\tMFASignins\t\t\t= coalesce(MFASignins, 0),\n\tSingleFactorSignins\t= coalesce(SingleFactorSignins, 0),\n\tLastSignin\t\t\t= LastSignin,\n\tUniqueIPs\t\t\t= coalesce(UniqueIPs, 0),\n\tUniqueApps\t\t\t= coalesce(UniqueApps, 0),\n\tRiskIndicator\t\t= case(\n\t\tcoalesce(SingleFactorSignins, 0) > 0, \"Single-factor sign-ins present\",\n\t\tcoalesce(TotalSignins, 0) == 0,\t   \"No sign-ins in 30 days\",\n\t\t\t\t\t\t\t\t\t\t\t  \"OK\"\n\t)\n| sort by SigninCount desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 119,
@@ -2327,7 +2376,8 @@
     "sev": "high",
     "added": "2026-07-27",
     "desc": "Detects newly created AI agents (within the last 2 days) that were configured with org-wide sharing (shared with everyone in the tenant) while also having MCP servers or declared tools attached. A brand new agent with both broad capabilities and org-wide visibility is a governance red flag, since it means anyone in the tenant can invoke an agent with tool access before it has been reviewed.",
-    "kql": "let lookback = 14d;\nlet recent = 2d;\nlet FirstSnapshot = AgentsInfo\n| where Timestamp > ago(lookback)\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_min(Timestamp, *) by AgentId;\nFirstSnapshot\n| where CreatedDateTime > ago(recent)\n| extend McpServerCount = array_length(coalesce(McpServers, dynamic([])))\n| extend DeclaredToolCount = array_length(coalesce(DeclaredTools, dynamic([])))\n| extend OwnerCount = array_length(coalesce(Owners, dynamic([])))\n| extend IsOrgWide = set_has_element(coalesce(SharedWith, dynamic([])), \"*\")\n| where (McpServerCount > 0 or DeclaredToolCount > 0) and IsOrgWide\n| project AgentId, Name, Platform, CreatedDateTime, McpServerCount, DeclaredToolCount, OwnerCount, IsOrgWide\n| sort by CreatedDateTime desc"
+    "kql": "let lookback = 14d;\nlet recent = 2d;\nlet FirstSnapshot = AgentsInfo\n| where Timestamp > ago(lookback)\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_min(Timestamp, *) by AgentId;\nFirstSnapshot\n| where CreatedDateTime > ago(recent)\n| extend McpServerCount = array_length(coalesce(McpServers, dynamic([])))\n| extend DeclaredToolCount = array_length(coalesce(DeclaredTools, dynamic([])))\n| extend OwnerCount = array_length(coalesce(Owners, dynamic([])))\n| extend IsOrgWide = set_has_element(coalesce(SharedWith, dynamic([])), \"*\")\n| where (McpServerCount > 0 or DeclaredToolCount > 0) and IsOrgWide\n| project AgentId, AgentName, Platform, CreatedDateTime, McpServerCount, DeclaredToolCount, OwnerCount, IsOrgWide\n| sort by CreatedDateTime desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 120,
@@ -2349,9 +2399,9 @@
     ],
     "sev": "critical",
     "added": "2026-07-27",
-    "desc": "Compares each AI agent current state against its 14-day baseline to detect suspicious configuration drift: instructions changed, a new MCP server added, an owner added or sharing expanded to org-wide. Flags agents where 2 or more of these signals occurred together, since a single change might be routine maintenance but multiple simultaneous changes suggest deliberate tampering to escalate an agent privileges or reach. MITRE ATLAS: AML.T0081 (Modify AI Agent Configuration).",
-    "kql": "let lookback = 14d;\nlet recent = 2d;\nlet CurrentMcpNames = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize CurrentMcpServers = make_set(McpName) by AgentId;\nlet BaselineMcpNames = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize BaselineMcpServers = make_set(McpName) by AgentId;\nlet CurrentState = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| project AgentId, Name, Platform, Timestamp,\n    CurrentInstructions = Instructions,\n    CurrentOwners = Owners,\n    CurrentSharedWith = SharedWith;\nlet BaselineState = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| project AgentId,\n    PreviousInstructions = Instructions,\n    PreviousOwners = Owners,\n    BaselineSharedWith = SharedWith;\nlet Joined = CurrentState\n| join kind=inner (BaselineState) on AgentId\n| join kind=leftouter (CurrentMcpNames) on AgentId\n| join kind=leftouter (BaselineMcpNames) on AgentId;\nlet InstructionsFlag = Joined\n| where CurrentInstructions != PreviousInstructions\n| project AgentId, Signal = \"InstructionsChanged\";\nlet McpFlag = Joined\n| where array_length(set_difference(coalesce(CurrentMcpServers, dynamic([])), coalesce(BaselineMcpServers, dynamic([])))) > 0\n| project AgentId, Signal = \"NewMcpServer\";\nlet OwnerFlag = Joined\n| where array_length(set_difference(CurrentOwners, PreviousOwners)) > 0\n| project AgentId, Signal = \"OwnerAdded\";\nlet SharingFlag = Joined\n| where set_has_element(coalesce(CurrentSharedWith, dynamic([])), \"*\")\n| where not(set_has_element(coalesce(BaselineSharedWith, dynamic([])), \"*\"))\n| project AgentId, Signal = \"SharingExpandedOrgWide\";\nunion InstructionsFlag, McpFlag, OwnerFlag, SharingFlag\n| summarize SignalCount = dcount(Signal), Signals = make_set(Signal) by AgentId\n| where SignalCount >= 2\n| join kind=inner (CurrentState) on AgentId\n| project AgentId, Name, Platform, SignalCount, Signals, Timestamp\n| sort by SignalCount desc",
-    "updated": "2026-10-07"
+    "desc": "Compares each AI agent's current state with its 14-day baseline to find configuration drift: instructions changed, a new MCP server added, an owner added or sharing expanded to org-wide. Flags agents where 2 or more of these signals occurred together, because a single change can be routine maintenance but several at once can point to deliberate tampering. MITRE ATLAS: AML.T0081 (Modify AI Agent Configuration).",
+    "kql": "let lookback = 14d;\nlet recent = 2d;\nlet CurrentMcpNames = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize CurrentMcpServers = make_set(McpName) by AgentId;\nlet BaselineMcpNames = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| mv-expand Mcp = McpServers\n| extend McpName = tostring(Mcp.name)\n| where isnotempty(McpName)\n| summarize BaselineMcpServers = make_set(McpName) by AgentId;\nlet CurrentState = AgentsInfo\n| where Timestamp > ago(recent)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| project AgentId, AgentName, Platform, Timestamp,\n    CurrentInstructions = Instructions,\n    CurrentOwners = Owners,\n    CurrentSharedWith = SharedWith;\nlet BaselineState = AgentsInfo\n| where Timestamp between (ago(lookback) .. ago(recent))\n| where LifecycleStatus != \"Deleted\"\n| summarize arg_max(Timestamp, *) by AgentId\n| project AgentId,\n    PreviousInstructions = Instructions,\n    PreviousOwners = Owners,\n    BaselineSharedWith = SharedWith;\nlet Joined = CurrentState\n| join kind=inner (BaselineState) on AgentId\n| join kind=leftouter (CurrentMcpNames) on AgentId\n| join kind=leftouter (BaselineMcpNames) on AgentId;\nlet InstructionsFlag = Joined\n| where CurrentInstructions != PreviousInstructions\n| project AgentId, Signal = \"InstructionsChanged\";\nlet McpFlag = Joined\n| where array_length(set_difference(coalesce(CurrentMcpServers, dynamic([])), coalesce(BaselineMcpServers, dynamic([])))) > 0\n| project AgentId, Signal = \"NewMcpServer\";\nlet OwnerFlag = Joined\n| where array_length(set_difference(CurrentOwners, PreviousOwners)) > 0\n| project AgentId, Signal = \"OwnerAdded\";\nlet SharingFlag = Joined\n| where set_has_element(coalesce(CurrentSharedWith, dynamic([])), \"*\")\n| where not(set_has_element(coalesce(BaselineSharedWith, dynamic([])), \"*\"))\n| project AgentId, Signal = \"SharingExpandedOrgWide\";\nunion InstructionsFlag, McpFlag, OwnerFlag, SharingFlag\n| summarize SignalCount = dcount(Signal), Signals = make_set(Signal) by AgentId\n| where SignalCount >= 2\n| join kind=inner (CurrentState) on AgentId\n| project AgentId, AgentName, Platform, SignalCount, Signals, Timestamp\n| sort by SignalCount desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 121,
@@ -2532,7 +2582,8 @@
     "sev": "high",
     "added": "2026-07-27",
     "desc": "Detects when a Federated Identity Credential (FIC) is added to an app registration or service principal. FIC abuse is a modern, high-impact persistence technique: attackers add a federated trust to an external identity provider (like GitHub Actions) they control, allowing token issuance without ever touching a client secret.",
-    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any ('Add federated identity credential', 'Update application - Certificates and secrets management')\n| where tostring(TargetResources) has 'federatedIdentityCredentials'\n| extend AppName = tostring(parse_json(tostring(TargetResources))[0].displayName)\n| extend ModifiedBy = coalesce(tostring(parse_json(tostring(InitiatedBy)).user.userPrincipalName), tostring(parse_json(tostring(InitiatedBy)).app.displayName))\n| project TimeGenerated, AppName, ModifiedBy, OperationName\n| order by TimeGenerated desc"
+    "kql": "AuditLogs\n| where TimeGenerated > ago(7d)\n| where OperationName has_any ('Add federated identity credential', 'Certificates and secrets management')\n| where tostring(TargetResources) has 'federatedIdentityCredentials'\n| extend AppName = tostring(parse_json(tostring(TargetResources))[0].displayName)\n| extend ModifiedBy = coalesce(tostring(parse_json(tostring(InitiatedBy)).user.userPrincipalName), tostring(parse_json(tostring(InitiatedBy)).app.displayName))\n| project TimeGenerated, AppName, ModifiedBy, OperationName\n| order by TimeGenerated desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 130,
@@ -2673,8 +2724,9 @@
     ],
     "sev": "medium",
     "added": "2026-07-27",
-    "desc": "Compares current-day Key Vault secret GET operations against a 30-day baseline of caller-to-vault access patterns. A caller retrieving a secret from a vault they have never accessed before is a strong signal of either lateral movement or a compromised identity exploring new resources.",
-    "kql": "let Baseline = AzureDiagnostics\n| where TimeGenerated between (ago(30d) .. ago(1d))\n| where ResourceProvider == 'MICROSOFT.KEYVAULT'\n| where OperationName == 'SecretGet'\n| distinct identity_claim_upn_s, Resource;\nAzureDiagnostics\n| where TimeGenerated > ago(1d)\n| where ResourceProvider == 'MICROSOFT.KEYVAULT'\n| where OperationName == 'SecretGet'\n| where isnotempty(identity_claim_upn_s)\n| join kind=leftanti (Baseline) on identity_claim_upn_s, Resource\n| project TimeGenerated, identity_claim_upn_s, Resource, CallerIPAddress, requestUri_s\n| order by TimeGenerated desc"
+    "desc": "Compares today's Key Vault secret GET operations against a 30-day baseline of access patterns per caller and vault. A caller retrieving a secret from a vault they have never accessed before is a strong signal of either lateral movement or a compromised identity exploring new resources.",
+    "kql": "let Baseline = AzureDiagnostics\n| where TimeGenerated between (ago(30d) .. ago(1d))\n| where ResourceProvider == 'MICROSOFT.KEYVAULT'\n| where OperationName == 'SecretGet'\n| distinct identity_claim_upn_s, Resource;\nAzureDiagnostics\n| where TimeGenerated > ago(1d)\n| where ResourceProvider == 'MICROSOFT.KEYVAULT'\n| where OperationName == 'SecretGet'\n| where isnotempty(identity_claim_upn_s)\n| join kind=leftanti (Baseline) on identity_claim_upn_s, Resource\n| project TimeGenerated, identity_claim_upn_s, Resource, CallerIPAddress, requestUri_s\n| order by TimeGenerated desc",
+    "updated": "2026-11-09"
   },
   {
     "id": 137,
@@ -2800,9 +2852,10 @@
       "T1552.001"
     ],
     "sev": "high",
-    "desc": "Cloud half of the credential file sweep. Finds files with credential-like names across SharePoint, OneDrive and Teams file operations. Groups by file rather than event so you get a remediation list, not an event log. DistinctUsers is the column that matters: nine people opening the same Service Accounts.xlsx is a finding.",
+    "desc": "Cloud half of the credential file sweep. Finds files whose names suggest credentials across SharePoint, OneDrive and Teams file operations. Groups by file rather than event so you get a remediation list, not an event log. DistinctUsers is the column that matters: nine people opening the same Service Accounts.xlsx is a finding.",
     "kql": "let Lookback = 30d;\nlet CredentialTerms = @\"(?i)(password|passwrd|passwd|pwd|passcode|credential|creds|logins|secret|apikey|api[_\\- ]key|privatekey|id_rsa)\";\nlet BenignTerms = @\"(?i)(compass|passport|passenger|passive|passage|bypass|encompass|surpass|secretar|secret santa|passwordless|password[_\\- ]?polic|password[_\\- ]?manager|password[_\\- ]?expir|(reset|change|forgot)[_\\- ]?password|password[_\\- ]?(reset|change)|credential[_\\- ]?guard)\";\nlet DocExtensions = dynamic([\"txt\",\"csv\",\"xls\",\"xlsx\",\"xlsm\",\"doc\",\"docx\",\"rtf\",\"one\",\"md\",\"json\",\"yaml\",\"yml\",\"xml\",\"ini\",\"cfg\",\"conf\",\"env\",\"ps1\",\"bat\",\"sql\",\"pdf\",\"pem\",\"ppk\",\"key\",\"rdp\",\"bak\"]);\nOfficeActivity\n| where TimeGenerated > ago(Lookback)\n| where RecordType == \"SharePointFileOperation\"\n| where UserId !~ \"app@sharepoint\"\n| where isnotempty(SourceFileName)\n| where SourceFileName matches regex CredentialTerms\n| where not(SourceFileName matches regex BenignTerms)\n| where SourceFileExtension in~ (DocExtensions)\n| extend Estate = iff(Site_Url has \"/personal/\", \"OneDrive\", \"SharePoint\")\n| extend TeamsChatFile = SourceRelativeUrl has \"Microsoft Teams Chat Files\"\n| extend OwnerPath = extract(@\"/personal/([^/]+)\", 1, tolower(Site_Url))\n| summarize\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated),\n    Touches = count(),\n    DistinctUsers = dcount(UserId),\n    TouchedBy = make_set(UserId, 25),\n    Operations = make_set(Operation, 10),\n    ClientIPs = make_set(ClientIP, 10)\n  by SourceFileName, SourceFileExtension, Estate, TeamsChatFile, OwnerPath, Site_Url, SourceRelativeUrl\n| extend FullPath = strcat(Site_Url, SourceRelativeUrl, \"/\", SourceFileName)\n| project FirstSeen, LastSeen, SourceFileName, SourceFileExtension, Estate, TeamsChatFile,\n          OwnerPath, DistinctUsers, TouchedBy, Touches, Operations, ClientIPs, FullPath\n| sort by DistinctUsers desc, LastSeen desc",
-    "added": "2026-08-04"
+    "added": "2026-08-04",
+    "updated": "2026-11-09"
   },
   {
     "id": 143,
@@ -2823,9 +2876,10 @@
       "hygiene"
     ],
     "sev": "critical",
-    "desc": "The sharpest end of the credential file problem. Surfaces share operations against files with credential-like names, ranked by share scope. Anonymous links come first because they need no authentication at all, then external recipients, then organisation-wide links, then named internal shares. A row showing AnonymousLinkUsed against Logins.xlsx is an incident.",
-    "kql": "let Lookback = 30d;\nlet CredentialTerms = @\"(?i)(password|passwrd|passwd|pwd|passcode|credential|creds|logins|secret|apikey|api[_\\- ]key|privatekey|id_rsa)\";\nlet BenignTerms = @\"(?i)(compass|passport|passenger|passive|passage|bypass|encompass|surpass|secretar|secret santa|passwordless|password[_\\- ]?polic|password[_\\- ]?manager|password[_\\- ]?expir|(reset|change|forgot)[_\\- ]?password|password[_\\- ]?(reset|change)|credential[_\\- ]?guard)\";\nlet ShareOperations = dynamic([\"AnonymousLinkCreated\",\"AnonymousLinkUsed\",\"SecureLinkCreated\",\"AddedToSecureLink\",\"SharingInvitationCreated\",\"SharingSet\",\"CompanyLinkCreated\",\"SharingLinkCreated\",\"SharingLinkUpdated\"]);\nOfficeActivity\n| where TimeGenerated > ago(Lookback)\n| where RecordType in (\"SharePointSharingOperation\", \"SharePointFileOperation\")\n| where Operation in (ShareOperations)\n| where isnotempty(SourceFileName)\n| where SourceFileName matches regex CredentialTerms\n| where not(SourceFileName matches regex BenignTerms)\n| extend ShareScope = case(\n      Operation startswith \"Anonymous\", \"Anyone with the link\",\n      TargetUserOrGroupType in (\"Guest\", \"Partner\"), \"External recipient\",\n      Operation startswith \"Company\", \"Anyone in the organisation\",\n      \"Named internal recipient\")\n| extend ScopeRank = case(\n      Operation startswith \"Anonymous\", 1,\n      TargetUserOrGroupType in (\"Guest\", \"Partner\"), 2,\n      Operation startswith \"Company\", 3,\n      4)\n| project TimeGenerated, ScopeRank, ShareScope, Sharer = UserId, Operation,\n          SourceFileName, SourceFileExtension, SharedWith = TargetUserOrGroupName,\n          TargetUserOrGroupType, SharingType, Site_Url, SourceRelativeUrl, ClientIP, UserAgent\n| sort by ScopeRank asc, TimeGenerated desc",
-    "added": "2026-08-06"
+    "desc": "The sharpest end of the credential file problem. Surfaces share operations against files whose names suggest credentials, ranked by share scope. Anonymous links come first because they need no authentication at all, then external recipients, then organization-wide links, then named internal shares. A row showing AnonymousLinkUsed against Logins.xlsx is an incident.",
+    "kql": "let Lookback = 30d;\nlet CredentialTerms = @\"(?i)(password|passwrd|passwd|pwd|passcode|credential|creds|logins|secret|apikey|api[_\\- ]key|privatekey|id_rsa)\";\nlet BenignTerms = @\"(?i)(compass|passport|passenger|passive|passage|bypass|encompass|surpass|secretar|secret santa|passwordless|password[_\\- ]?polic|password[_\\- ]?manager|password[_\\- ]?expir|(reset|change|forgot)[_\\- ]?password|password[_\\- ]?(reset|change)|credential[_\\- ]?guard)\";\nlet ShareOperations = dynamic([\"AnonymousLinkCreated\",\"AnonymousLinkUsed\",\"SecureLinkCreated\",\"AddedToSecureLink\",\"SharingInvitationCreated\",\"SharingSet\",\"CompanyLinkCreated\",\"SharingLinkCreated\",\"SharingLinkUpdated\"]);\nOfficeActivity\n| where TimeGenerated > ago(Lookback)\n| where RecordType in (\"SharePointSharingOperation\", \"SharePointFileOperation\")\n| where Operation in (ShareOperations)\n| where isnotempty(SourceFileName)\n// Regex is used because file names have no word boundaries to tokenize on\n| where SourceFileName matches regex CredentialTerms\n| where not(SourceFileName matches regex BenignTerms)\n| extend ShareScope = case(\n      Operation startswith \"Anonymous\", \"Anyone with the link\",\n      TargetUserOrGroupType in (\"Guest\", \"Partner\"), \"External recipient\",\n      Operation startswith \"Company\", \"Anyone in the organization\",\n      \"Named internal recipient\")\n| extend ScopeRank = case(\n      Operation startswith \"Anonymous\", 1,\n      TargetUserOrGroupType in (\"Guest\", \"Partner\"), 2,\n      Operation startswith \"Company\", 3,\n      4)\n| project TimeGenerated, ScopeRank, ShareScope, Sharer = UserId, Operation,\n          SourceFileName, SourceFileExtension, SharedWith = TargetUserOrGroupName,\n          TargetUserOrGroupType, SharingType, Site_Url, SourceRelativeUrl, ClientIP, UserAgent\n| sort by ScopeRank asc, TimeGenerated desc",
+    "added": "2026-08-06",
+    "updated": "2026-11-09"
   },
   {
     "id": 144,
@@ -2847,9 +2901,10 @@
       "exfiltration"
     ],
     "sev": "critical",
-    "desc": "Monitors for sensitive Azure AD app role grants to service principals, followed within 24 hours by an anomalous surge in sign-in activity. This behavior is a common indicator of an adversary using newly acquired permissions for large-scale data access or exfiltration.",
-    "kql": "// Title: Privileged App Role Grant Followed by Service Principal Sign-In Spike\n// Description: Detects sensitive Azure AD app role (API permission) grants to a service principal that are followed within 24 hours by an anomalous spike in that service principal's sign-in volume relative to its own trailing baseline. This pattern is consistent with an adversary escalating a service principal's privileges and then using it for large-scale data access or exfiltration.\n// Type: Scheduled Analytics Rule\n// Tables: AuditLogs, AADServicePrincipalSignInLogs\n// Connectors: Azure Active Directory (AuditLogs, AADServicePrincipalSignInLogs)\n// License: N/A\n// Tuning:\n//   - Adjust SensitivePermissions to match the app roles considered privileged in your tenant.\n//   - Adjust SpikeMultiplier and MinHourlySignIns based on observed sign-in volume noise.\n//   - Correlation between PrivilegedGrants and Spikes uses ServicePrincipalName, not AppId. Testing against real tenant audit log data showed TargetResources[0].id on this event does not reliably match ServicePrincipalId in AADServicePrincipalSignInLogs, so an AppId-based join produces zero results even when real activity exists. Name-based correlation is the validated working approach; the residual risk is two distinct service principals sharing a display name, which is rare and can be reviewed manually if it ever fires.\n//   - FirstPartyAppIdExclusions and FirstPartyNameExclusions now both cover the same six known first-party Microsoft service principals (Microsoft Graph, Office 365 Exchange Online, Office 365 SharePoint Online, Azure Active Directory, Skype for Business Online and Microsoft Office 365 Portal), each keyed by whichever identifier its respective source table reliably exposes: AppId for AADServicePrincipalSignInLogs, display name for AuditLogs. This removes the prior implicit reliance on inner-join semantics to fully protect all six first-party SPs, since each side now independently excludes all six.\n// Known FPs:\n//   - Legitimate administrative delegation of sensitive app roles combined with normal post-onboarding sign-in ramp-up.\n//   - Service principals with highly variable/bursty legitimate traffic patterns not represented during the baseline window.\n//   - Two distinct service principals sharing an identical display name would have their activity merged.\n// Known FNs:\n//   - Slow, low-and-slow privilege abuse that never produces a qualifying hourly sign-in spike will not be detected.\nlet LookbackWindow = 30d;\nlet BaselineWindowStart = bin(ago(9d), 1h);\nlet BaselineWindowEnd = bin(ago(2d), 1h);\nlet MinHourlySignIns = 10;\nlet SpikeMultiplier = 5;\nlet SensitivePermissions = dynamic([\n    \"RoleManagement.ReadWrite.Directory\",\n    \"Application.ReadWrite.All\",\n    \"Directory.ReadWrite.All\",\n    \"Mail.ReadWrite\",\n    \"Sites.FullControl.All\",\n    \"User.ReadWrite.All\"\n]);\nlet FirstPartyAppIdExclusions = dynamic([\n    \"00000003-0000-0000-c000-000000000000\",\n    \"00000002-0000-0ff1-ce00-000000000000\",\n    \"00000003-0000-0ff1-ce00-000000000000\",\n    \"00000002-0000-0000-c000-000000000000\",\n    \"00000004-0000-0ff1-ce00-000000000000\",\n    \"00000006-0000-0ff1-ce00-000000000000\"\n]);\nlet FirstPartyNameExclusions = dynamic([\n    \"Skype for Business Online\",\n    \"Microsoft Office 365 Portal\",\n    \"Microsoft Graph\",\n    \"Office 365 Exchange Online\",\n    \"Office 365 SharePoint Online\",\n    \"Azure Active Directory\"\n]);\nlet PrivilegedGrants = AuditLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where Category =~ \"ApplicationManagement\" and OperationName =~ \"Add app role assignment to service principal\"\n| mv-expand TargetResource = TargetResources\n| where TargetResource.type =~ \"ServicePrincipal\"\n| extend ServicePrincipalName = tostring(TargetResource.displayName)\n| where ServicePrincipalName !in~ (FirstPartyNameExclusions)\n| mv-expand modifiedProperty = TargetResource.modifiedProperties\n| where tostring(modifiedProperty.displayName) =~ \"AppRole.Value\"\n| extend GrantedPermission = trim(@'[\"\\s]+', tostring(modifiedProperty.newValue))\n| where GrantedPermission in (SensitivePermissions)\n| project GrantTime = TimeGenerated, ServicePrincipalName, GrantedPermission;\nlet HourlyBins = range TimeBin from BaselineWindowStart to BaselineWindowEnd step 1h;\nlet BaselineServicePrincipals = AADServicePrincipalSignInLogs\n| where TimeGenerated between (BaselineWindowStart .. BaselineWindowEnd)\n| where AppId !in (FirstPartyAppIdExclusions)\n| distinct ServicePrincipalName;\nlet BaselineActivity = AADServicePrincipalSignInLogs\n| where TimeGenerated between (BaselineWindowStart .. BaselineWindowEnd)\n| where AppId !in (FirstPartyAppIdExclusions)\n| summarize HourlySignIns = count() by ServicePrincipalName, TimeBin = bin(TimeGenerated, 1h);\nlet Baseline = BaselineServicePrincipals\n| extend dummy = 1\n| join kind=inner (HourlyBins | extend dummy = 1) on dummy\n| project ServicePrincipalName, TimeBin\n| join kind=leftouter BaselineActivity on ServicePrincipalName, TimeBin\n| extend HourlySignIns = coalesce(HourlySignIns, 0)\n| summarize AvgHourly = avg(HourlySignIns) by ServicePrincipalName;\nlet Spikes = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where AppId !in (FirstPartyAppIdExclusions)\n| summarize HourlySignIns = count() by ServicePrincipalName, bin(TimeGenerated, 1h)\n| join kind=inner Baseline on ServicePrincipalName\n| where HourlySignIns > AvgHourly * SpikeMultiplier and HourlySignIns >= MinHourlySignIns\n| project VelocityTime = TimeGenerated, ServicePrincipalName, HourlySignIns, AvgHourly;\nPrivilegedGrants\n| join kind=inner Spikes on ServicePrincipalName\n| where VelocityTime between (GrantTime .. datetime_add('day', 1, GrantTime))\n| summarize arg_min(VelocityTime, *) by ServicePrincipalName, GrantTime\n| project GrantTime, ServicePrincipalName, GrantedPermission, VelocityTime, HourlySignIns, AvgHourly\n| order by GrantTime desc",
-    "added": "2026-08-06"
+    "desc": "Monitors for sensitive Entra ID app role grants to service principals, followed within 24 hours by an anomalous surge in sign-in activity. This behavior is a common indicator of an adversary using newly acquired permissions for large scale data access or exfiltration.",
+    "kql": "// Privileged app role grant followed by a service principal sign-in spike.\n// Tune SensitivePermissions, SpikeMultiplier and MinHourlySignIns.\n// Correlation uses ServicePrincipalName, not AppId. Two service principals with the same display name are merged.\nlet LookbackWindow = 30d;\nlet BaselineWindowStart = bin(ago(9d), 1h);\nlet BaselineWindowEnd = bin(ago(2d), 1h);\nlet MinHourlySignIns = 10;\nlet SpikeMultiplier = 5;\nlet SensitivePermissions = dynamic([\n    \"RoleManagement.ReadWrite.Directory\",\n    \"Application.ReadWrite.All\",\n    \"Directory.ReadWrite.All\",\n    \"Mail.ReadWrite\",\n    \"Sites.FullControl.All\",\n    \"User.ReadWrite.All\"\n]);\nlet FirstPartyAppIdExclusions = dynamic([\n    \"00000003-0000-0000-c000-000000000000\",\n    \"00000002-0000-0ff1-ce00-000000000000\",\n    \"00000003-0000-0ff1-ce00-000000000000\",\n    \"00000002-0000-0000-c000-000000000000\",\n    \"00000004-0000-0ff1-ce00-000000000000\",\n    \"00000006-0000-0ff1-ce00-000000000000\"\n]);\nlet FirstPartyNameExclusions = dynamic([\n    \"Skype for Business Online\",\n    \"Microsoft Office 365 Portal\",\n    \"Microsoft Graph\",\n    \"Office 365 Exchange Online\",\n    \"Office 365 SharePoint Online\",\n    \"Azure Active Directory\"\n]);\nlet PrivilegedGrants = AuditLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where Category =~ \"ApplicationManagement\" and OperationName =~ \"Add app role assignment to service principal\"\n| mv-expand TargetResource = TargetResources\n| where TargetResource.type =~ \"ServicePrincipal\"\n| extend ServicePrincipalName = tostring(TargetResource.displayName)\n| where ServicePrincipalName !in~ (FirstPartyNameExclusions)\n| mv-expand modifiedProperty = TargetResource.modifiedProperties\n| where tostring(modifiedProperty.displayName) =~ \"AppRole.Value\"\n| extend GrantedPermission = trim(@'[\"\\s]+', tostring(modifiedProperty.newValue))\n| where GrantedPermission in (SensitivePermissions)\n| project GrantTime = TimeGenerated, ServicePrincipalName, GrantedPermission;\nlet HourlyBins = range TimeBin from BaselineWindowStart to BaselineWindowEnd step 1h;\nlet BaselineServicePrincipals = AADServicePrincipalSignInLogs\n| where TimeGenerated between (BaselineWindowStart .. BaselineWindowEnd)\n| where AppId !in (FirstPartyAppIdExclusions)\n| distinct ServicePrincipalName;\nlet BaselineActivity = AADServicePrincipalSignInLogs\n| where TimeGenerated between (BaselineWindowStart .. BaselineWindowEnd)\n| where AppId !in (FirstPartyAppIdExclusions)\n| summarize HourlySignIns = count() by ServicePrincipalName, TimeBin = bin(TimeGenerated, 1h);\nlet Baseline = BaselineServicePrincipals\n| extend dummy = 1\n| join kind=inner (HourlyBins | extend dummy = 1) on dummy\n| project ServicePrincipalName, TimeBin\n| join kind=leftouter BaselineActivity on ServicePrincipalName, TimeBin\n| extend HourlySignIns = coalesce(HourlySignIns, 0)\n| summarize AvgHourly = avg(HourlySignIns) by ServicePrincipalName;\nlet Spikes = AADServicePrincipalSignInLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where AppId !in (FirstPartyAppIdExclusions)\n| summarize HourlySignIns = count() by ServicePrincipalName, bin(TimeGenerated, 1h)\n| join kind=inner Baseline on ServicePrincipalName\n| where HourlySignIns > AvgHourly * SpikeMultiplier and HourlySignIns >= MinHourlySignIns\n| project VelocityTime = TimeGenerated, ServicePrincipalName, HourlySignIns, AvgHourly;\nPrivilegedGrants\n| join kind=inner Spikes on ServicePrincipalName\n| where VelocityTime between (GrantTime .. datetime_add('day', 1, GrantTime))\n| summarize arg_min(VelocityTime, *) by ServicePrincipalName, GrantTime\n| project GrantTime, ServicePrincipalName, GrantedPermission, VelocityTime, HourlySignIns, AvgHourly\n| order by GrantTime desc",
+    "added": "2026-08-06",
+    "updated": "2026-11-09"
   },
   {
     "id": 145,
@@ -2869,9 +2924,10 @@
       "discovery"
     ],
     "sev": "low",
-    "desc": "Builds a current-state inventory of local AI agents (CLI tools, desktop apps, agentic IDEs, editor extensions) discovered on onboarded endpoints. AgentsInfo stores periodic snapshots rather than one-time events, so this dedupes to the latest snapshot per agent. Only vendor-supported local agent types are discovered, so an empty result does not guarantee no local agents are running, only that none of the supported types were detected.",
-    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend\n    Vendor = tostring(ParsedAgentData.localAgentMetadata.vendor),\n    DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName),\n    AccountName = tostring(ParsedAgentData.localAgentMetadata.accountName),\n    AccountDomain = tostring(ParsedAgentData.localAgentMetadata.accountDomain),\n    RelatedProcess = tostring(ParsedAgentData.localAgentMetadata.relatedProcess),\n    TrustedProcess = tostring(ParsedAgentData.localAgentMetadata.trustedProcess),\n    OSPlatform = tostring(ParsedAgentData.localAgentMetadata.osPlatform)\n| project Timestamp, Name, PublishedStatus, AccountName, AccountDomain, Vendor, DeviceName, OSPlatform, RelatedProcess, TrustedProcess, LifecycleStatus, AgentId\n| sort by Vendor asc, Name asc",
-    "added": "2026-08-09"
+    "desc": "Builds an inventory of the current state of local AI agents (CLI tools, desktop apps, agentic IDEs, editor extensions) discovered on onboarded endpoints. AgentsInfo stores periodic snapshots rather than one-time events, so this dedupes to the latest snapshot per agent. Only vendor-supported local agent types are discovered, so an empty result does not guarantee no local agents are running, only that none of the supported types were detected.",
+    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend\n    Vendor = tostring(ParsedAgentData.localAgentMetadata.vendor),\n    DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName),\n    AccountName = tostring(ParsedAgentData.localAgentMetadata.accountName),\n    AccountDomain = tostring(ParsedAgentData.localAgentMetadata.accountDomain),\n    RelatedProcess = tostring(ParsedAgentData.localAgentMetadata.relatedProcess),\n    TrustedProcess = tostring(ParsedAgentData.localAgentMetadata.trustedProcess),\n    OSPlatform = tostring(ParsedAgentData.localAgentMetadata.osPlatform)\n| project Timestamp, AgentName, PublishedStatus, AccountName, AccountDomain, Vendor, DeviceName, OSPlatform, RelatedProcess, TrustedProcess, LifecycleStatus, AgentId\n| sort by Vendor asc, AgentName asc",
+    "added": "2026-08-09",
+    "updated": "2026-11-09"
   },
   {
     "id": 146,
@@ -2912,8 +2968,9 @@
     ],
     "sev": "medium",
     "desc": "Lists endpoints hosting local AI agents ranked by agent count, with a configurable threshold to surface devices with an unusually high concentration. A single device running many different agents is worth reviewing for shadow AI sprawl or an unmanaged developer workstation accumulating tools outside policy.",
-    "kql": "let Lookback = 30d;\nlet MinAgentsPerDevice = 5;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName)\n| summarize\n    TotalAgentsOnDevice = count(),\n    Agents = make_list(bag_pack(\"Name\", Name, \"PublishedStatus\", PublishedStatus, \"AgentId\", AgentId))\n    by DeviceName\n| where TotalAgentsOnDevice >= MinAgentsPerDevice\n| sort by TotalAgentsOnDevice desc",
-    "added": "2026-08-09"
+    "kql": "let Lookback = 30d;\nlet MinAgentsPerDevice = 5;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName)\n| summarize\n    TotalAgentsOnDevice = count(),\n    Agents = make_list(bag_pack(\"Name\", AgentName, \"PublishedStatus\", PublishedStatus, \"AgentId\", AgentId))\n    by DeviceName\n| where TotalAgentsOnDevice >= MinAgentsPerDevice\n| sort by TotalAgentsOnDevice desc",
+    "added": "2026-08-09",
+    "updated": "2026-11-09"
   },
   {
     "id": 148,
@@ -2932,9 +2989,10 @@
       "user activity"
     ],
     "sev": "medium",
-    "desc": "Groups local AI agent usage by account SID rather than account name, since account name is sometimes not populated in agent telemetry while the SID almost always is. Useful during incident response: given a compromised device or user, quickly pull every local AI agent tied to that account, including any a name-based lookup would miss.",
-    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend\n    DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName),\n    AccountName = tostring(ParsedAgentData.localAgentMetadata.accountName),\n    AccountSid = tostring(ParsedAgentData.localAgentMetadata.accountSid)\n| summarize\n    TotalAgents = count(),\n    Agents = make_list(bag_pack(\"Name\", Name, \"DeviceName\", DeviceName, \"AgentId\", AgentId))\n    by AccountSid, AccountName\n| sort by TotalAgents desc",
-    "added": "2026-08-09"
+    "desc": "Groups local AI agent usage by account SID rather than account name, since account name is sometimes not populated in agent telemetry while the SID almost always is. Useful during incident response: given a compromised device or user, quickly pull every local AI agent tied to that account, including any that a lookup by name would miss.",
+    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| summarize arg_max(Timestamp, *) by AgentId\n| extend ParsedAgentData = parse_json(RawAgentInfo)\n| extend\n    DeviceName = tostring(ParsedAgentData.localAgentMetadata.deviceName),\n    AccountName = tostring(ParsedAgentData.localAgentMetadata.accountName),\n    AccountSid = tostring(ParsedAgentData.localAgentMetadata.accountSid)\n| summarize\n    TotalAgents = count(),\n    Agents = make_list(bag_pack(\"Name\", AgentName, \"DeviceName\", DeviceName, \"AgentId\", AgentId))\n    by AccountSid, AccountName\n| sort by TotalAgents desc",
+    "added": "2026-08-09",
+    "updated": "2026-11-09"
   },
   {
     "id": 149,
@@ -2954,8 +3012,9 @@
     ],
     "sev": "medium",
     "desc": "Flags published agents with missing or placeholder instructions. An agent without clear system-prompt boundaries is more exposed to prompt injection, since there is no defined behavior for it to deviate from. Known false positives include agents still in development that have not had instructions configured yet, agents intentionally built for broad or undefined use cases and internal testing or experimental agents that do not need specific behavioral instructions.",
-    "kql": "// Known FPs:\n//   - New agents created by developers that are still in the drafting/development phase and haven't had instructions configured yet.\n//   - Agents intended for broad or undefined use cases where explicit instructions were intentionally omitted.\n//   - Internal testing or experimental agents that do not require specific behavioral instructions.\nlet Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| where PublishedStatus == \"Published\"\n| where isempty(Instructions) or Instructions == \"N/A\"\n| project Timestamp, AgentId, Name, Platform, Owners, SharedWith, CreatedDateTime, LastPublishedDateTime",
-    "added": "2026-08-10"
+    "kql": "let Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| summarize arg_max(Timestamp, *) by AgentId\n| where LifecycleStatus != \"Deleted\"\n| where PublishedStatus == \"Published\"\n| where isempty(Instructions) or Instructions == \"N/A\"\n| project Timestamp, AgentId, AgentName, Platform, Owners, SharedWith, CreatedDateTime, LastPublishedDateTime",
+    "added": "2026-08-10",
+    "updated": "2026-11-09"
   },
   {
     "id": 150,
@@ -2995,9 +3054,10 @@
       "aitm"
     ],
     "sev": "high",
-    "desc": "Correlates a successful device code sign-in with a device registration by the same user within a few hours, the pattern behind device code phishing campaigns where the victim approves a code on an attacker-controlled session and the attacker then registers a device to keep persistent access that already satisfies MFA. Two independent anomaly signals ride along on the same row rather than gating the detection: an IP mismatch between the sign-in and the registration, plus a device name whose shape does not match any naming pattern seen at least 5 times in the prior 90 days, so a corporate asset-tag convention self-baselines out and only unfamiliar shapes surface. MITRE ATT&CK: T1528 (Steal Application Access Token), T1098.005 (Device Registration). SOC action: treat IpMismatch plus UnfamiliarDeviceName together as the strongest signal; check SignInApp against what device code flow the user should actually be running (CLI tools, IoT/headless devices, Teams Rooms) and if it does not match, revoke the device and the session, then force reauthentication. Known false positives: legitimate BYOD or contractor onboarding with unfamiliar naming. A new but expected device code integration (CI/CD runners, smart TVs, shared kiosks) is another source until the naming baseline has 5 samples of that shape.",
+    "desc": "Correlates a successful device code sign-in with a device registration by the same user within a few hours, the pattern behind device code phishing campaigns where the victim approves a code on an attacker-controlled session and the attacker then registers a device to keep persistent access that already satisfies MFA. Two independent anomaly signals ride along on the same row rather than gating the detection: an IP mismatch between the sign-in and the registration, plus a device name whose shape does not match any naming pattern seen at least 5 times in the prior 90 days, so a corporate asset tag convention drops out of the results and only unfamiliar shapes surface. MITRE ATT&CK: T1528 (Steal Application Access Token), T1098.005 (Device Registration). SOC action: treat IpMismatch plus UnfamiliarDeviceName together as the strongest signal; check SignInApp against what device code flow the user should actually be running (CLI tools, IoT/headless devices, Teams Rooms) and if it does not match, revoke the device and the session, then force reauthentication. Known false positives: legitimate BYOD or contractor onboarding with unfamiliar naming. A new but expected device code integration (CI/CD runners, smart TVs, shared kiosks) is another source until the naming baseline has 5 samples of that shape.",
     "kql": "let Lookback = 14d;\nlet CorrelationWindow = 4h;\nlet BaselineWindow = 90d;\nlet MinDevicesPerPattern = 5;\nlet NameShape = (s: string) {\n    replace_regex(replace_regex(tolower(s), @\"[a-z]+\", \"A\"), @\"[0-9]+\", \"9\")\n};\nlet KnownShapes = SigninLogs\n| where TimeGenerated between (ago(BaselineWindow) .. ago(Lookback))\n| extend DeviceName = tostring(DeviceDetail.displayName)\n| where isnotempty(DeviceName)\n| extend Shape = NameShape(DeviceName)\n| summarize DeviceCount = dcount(tostring(DeviceDetail.deviceId)) by Shape\n| where DeviceCount >= MinDevicesPerPattern\n| distinct Shape;\nlet DeviceCodeSignIns = SigninLogs\n| where TimeGenerated > ago(Lookback)\n| where ResultType == 0\n| where AuthenticationProtocol =~ \"deviceCode\" or OriginalTransferMethod =~ \"deviceCodeFlow\"\n| extend SignInCountry = tostring(LocationDetails.countryOrRegion)\n| extend SignInWindowEnd = TimeGenerated + CorrelationWindow\n| project SignInTime = TimeGenerated, SignInWindowEnd, UserPrincipalName = tolower(UserPrincipalName),\n          SignInIP = IPAddress, SignInCountry, SignInUserAgent = UserAgent, SignInApp = AppDisplayName;\nlet DeviceRegistrations = AuditLogs\n| where TimeGenerated > ago(Lookback)\n| where OperationName =~ \"Add device\"\n| where Result =~ \"success\"\n| extend Actor = tolower(tostring(InitiatedBy.user.userPrincipalName))\n| extend RegIP = tostring(InitiatedBy.user.ipAddress)\n| mv-expand TargetResource = TargetResources\n| where tostring(TargetResource.type) =~ \"Device\"\n| extend DeviceName = tostring(TargetResource.displayName)\n| where isnotempty(Actor)\n| project RegTime = TimeGenerated, UserPrincipalName = Actor, DeviceName, RegIP;\nDeviceCodeSignIns\n| join kind=inner DeviceRegistrations on UserPrincipalName\n| where RegTime between (SignInTime .. SignInWindowEnd)\n| extend IpMismatch = isnotempty(RegIP) and RegIP != SignInIP\n| extend Shape = NameShape(DeviceName)\n| extend UnfamiliarDeviceName = Shape !in (KnownShapes)\n| summarize arg_min(RegTime, *) by UserPrincipalName, DeviceName\n| project SignInTime, RegTime, UserPrincipalName, DeviceName, SignInIP, RegIP,\n          IpMismatch, UnfamiliarDeviceName, SignInCountry, SignInUserAgent, SignInApp\n| order by RegTime desc",
-    "added": "2026-09-16"
+    "added": "2026-09-16",
+    "updated": "2026-11-09"
   },
   {
     "id": 152,
@@ -3016,9 +3076,10 @@
       "closedquorum"
     ],
     "sev": "critical",
-    "desc": "Flags a non-browser process on a device calling at least two different commercial LLM provider APIs (DeepSeek, Qwen/DashScope, Mistral, Gemini) and then reaching a Discord domain within a 15-minute window. This is the network signature behind CLOSEDQUORUM, a Windows implant Talos reported in September 2026 that polls four LLM providers for a plurality vote on its next action (steal, inject, persist or move) then reports the decision and exfiltrates stolen credentials over an operator-controlled Discord webhook, AES-256-GCM encrypted and base64 chunked. MITRE ATT&CK: T1071.001 (Application Layer Protocol: Web Protocols) for the LLM decision channel pattern, T1567 (Exfiltration Over Web Service) for the Discord leg. SOC action: on a hit, isolate the device and dump the flagged process before touching it further, then check for the payload's actual objective alongside it: LSASS access (T1003.001), browser credential file reads (T1555.003), APC injection or process hollowing (T1055.004/.012) and new Run keys, scheduled tasks or WMI subscriptions (T1547.001/T1053.005/T1546.003). Known false positives: internal multi-model AI orchestration tools and agent frameworks (LangChain-style routers, LLM gateway/proxy services) that legitimately call several providers and post status updates to a Discord bot channel. Keep AiProviderDomains current as new providers are added to the rotation and as the threat evolves.",
-    "kql": "// Maps to the CLOSEDQUORUM technique pattern (Talos, Sep 2026): malware that polls\n// multiple LLM providers for a plurality-vote decision, then reports and exfiltrates\n// over a Discord webhook. Tune AiProviderDomains/BrowserProcesses to current threat intel.\nlet Lookback = 7d;\nlet CorrelationWindow = 15m;\nlet AiProviderDomains = dynamic([\n    \"api.deepseek.com\",\n    \"dashscope.aliyuncs.com\",\n    \"api.mistral.ai\",\n    \"generativelanguage.googleapis.com\"\n]);\nlet DiscordDomains = dynamic([\"discord.com\", \"discordapp.com\", \"cdn.discordapp.com\"]);\nlet BrowserProcesses = dynamic([\"chrome.exe\", \"msedge.exe\", \"firefox.exe\", \"brave.exe\", \"opera.exe\"]);\nlet AiCalls = DeviceNetworkEvents\n| where Timestamp > ago(Lookback)\n| where ActionType == \"ConnectionSuccess\"\n| where RemoteUrl in~ (AiProviderDomains)\n| where InitiatingProcessFileName !in~ (BrowserProcesses)\n| summarize AiProviders = make_set(RemoteUrl), AiCallCount = count(), FirstAiCall = min(Timestamp), LastAiCall = max(Timestamp)\n    by DeviceId, DeviceName, InitiatingProcessFileName, InitiatingProcessId\n| where array_length(AiProviders) >= 2;\nlet DiscordCalls = DeviceNetworkEvents\n| where Timestamp > ago(Lookback)\n| where ActionType == \"ConnectionSuccess\"\n| where RemoteUrl has_any (DiscordDomains)\n| where InitiatingProcessFileName !in~ (BrowserProcesses)\n| project DeviceId, InitiatingProcessId, DiscordTime = Timestamp, DiscordUrl = RemoteUrl;\nAiCalls\n| join kind=inner DiscordCalls on DeviceId, InitiatingProcessId\n| where DiscordTime between (FirstAiCall .. LastAiCall + CorrelationWindow)\n| project DeviceName, InitiatingProcessFileName, AiProviders, AiCallCount, FirstAiCall, LastAiCall, DiscordTime, DiscordUrl\n| order by LastAiCall desc",
-    "added": "2026-09-24"
+    "desc": "Flags a non-browser process on a device calling at least two different commercial LLM provider APIs (DeepSeek, Qwen/DashScope, Mistral, Gemini) and then reaching a Discord domain within a 15-minute window. This is the network signature behind CLOSEDQUORUM, a Windows implant reported in September 2026 that polls four LLM providers for a plurality vote on its next action (steal, inject, persist or move) then reports the decision and exfiltrates stolen credentials over a Discord webhook controlled by the operator, AES-256-GCM encrypted and base64 chunked. MITRE ATT&CK: T1071.001 (Application Layer Protocol: Web Protocols) for the LLM decision channel pattern, T1567 (Exfiltration Over Web Service) for the Discord leg. SOC action: on a hit, isolate the device and dump the flagged process before touching it further, then check for the payload's actual objective alongside it: LSASS access (T1003.001), browser credential file reads (T1555.003), APC injection or process hollowing (T1055.004/.012) and new Run keys, scheduled tasks or WMI subscriptions (T1547.001/T1053.005/T1546.003). Known false positives: internal AI orchestration tools and agent frameworks (for example LangChain routers or LLM gateway and proxy services) that legitimately call several providers and post status updates to a Discord bot channel. Keep AiProviderDomains current as new providers are added to the rotation and as the threat evolves.",
+    "kql": "// Pattern: malware polls several LLM providers for a vote on its next action,\n// then reports and exfiltrates over a Discord webhook.\n// Keep AiProviderDomains and BrowserProcesses current.\nlet Lookback = 7d;\nlet CorrelationWindow = 15m;\nlet AiProviderDomains = dynamic([\n    \"api.deepseek.com\",\n    \"dashscope.aliyuncs.com\",\n    \"api.mistral.ai\",\n    \"generativelanguage.googleapis.com\"\n]);\nlet DiscordDomains = dynamic([\"discord.com\", \"discordapp.com\", \"cdn.discordapp.com\"]);\nlet BrowserProcesses = dynamic([\"chrome.exe\", \"msedge.exe\", \"firefox.exe\", \"brave.exe\", \"opera.exe\"]);\nlet AiCalls = DeviceNetworkEvents\n| where Timestamp > ago(Lookback)\n| where ActionType == \"ConnectionSuccess\"\n| where RemoteUrl in~ (AiProviderDomains)\n| where InitiatingProcessFileName !in~ (BrowserProcesses)\n| summarize AiProviders = make_set(RemoteUrl), AiCallCount = count(), FirstAiCall = min(Timestamp), LastAiCall = max(Timestamp)\n    by DeviceId, DeviceName, InitiatingProcessFileName, InitiatingProcessId\n| where array_length(AiProviders) >= 2;\nlet DiscordCalls = DeviceNetworkEvents\n| where Timestamp > ago(Lookback)\n| where ActionType == \"ConnectionSuccess\"\n| where RemoteUrl has_any (DiscordDomains)\n| where InitiatingProcessFileName !in~ (BrowserProcesses)\n| project DeviceId, InitiatingProcessId, DiscordTime = Timestamp, DiscordUrl = RemoteUrl;\nAiCalls\n| join kind=inner DiscordCalls on DeviceId, InitiatingProcessId\n| where DiscordTime between (FirstAiCall .. LastAiCall + CorrelationWindow)\n| project DeviceName, InitiatingProcessFileName, AiProviders, AiCallCount, FirstAiCall, LastAiCall, DiscordTime, DiscordUrl\n| order by LastAiCall desc",
+    "added": "2026-09-24",
+    "updated": "2026-11-09"
   },
   {
     "id": 153,
@@ -3037,9 +3098,10 @@
       "storm-2949"
     ],
     "sev": "critical",
-    "desc": "Correlates a successful self-service password reset with an authentication method change on the same account within 60 minutes. This is the persistence step Microsoft documented for Storm-2949: the actor social-engineers a helpdesk call or the user themselves into an SSPR, strips existing authentication methods (phone, email, Authenticator) and registers their own Microsoft Authenticator so the legitimate owner is locked out while the attacker keeps access. Storm-3068 chained the same account takeover pattern into Kubernetes/Azure DevOps credential theft. DeletedExistingMethod on the output row is the strongest signal. An attacker removing the owner's existing method before adding their own is not something a normal self-service reset does. MITRE ATT&CK: T1556.006 (Modify Authentication Process: Multi-Factor Authentication), T1098 (Account Manipulation). SOC action: for any DeletedExistingMethod hit, contact the user through a channel independent of the reset (phone call, in person, not email or Teams which the attacker may also control) to confirm the reset was theirs; if not, disable the account, revoke sessions and re-enroll MFA under helpdesk verification. Known false positives: legitimate helpdesk assisted resets paired with a genuine device replacement. A new hire onboarding flow can also trigger it, since a temporary password reset and MFA registration happen back to back inside the same hour by design.",
-    "kql": "// Detects a successful self-service password reset followed shortly by an\n// authentication method change on the same account -- the SSPR-then-MFA-\n// reregistration pattern used by Storm-3068 and Storm-2949 for persistence.\nlet Window = 60m;\nlet Lookback = 1d;\nlet Resets = AuditLogs\n    | where TimeGenerated > ago(Lookback)\n    | where OperationName in (\"Reset password (self-service)\", \"Change password (self-service)\")\n    | where Result == \"success\"\n    | mv-expand TargetResources\n    | where tostring(TargetResources.type) == \"User\"\n    | extend User = tolower(tostring(TargetResources.userPrincipalName))\n    | project ResetTime = TimeGenerated, ResetOperation = OperationName, User;\nlet MethodChanges = AuditLogs\n    | where TimeGenerated > ago(Lookback)\n    | where OperationName in (\"User registered security info\", \"User registered all required security info\", \"User changed default security info\", \"User deleted security info\", \"Admin registered security info\")\n    | mv-expand TargetResources\n    | where tostring(TargetResources.type) == \"User\"\n    | extend User = tolower(tostring(TargetResources.userPrincipalName))\n    | project ChangeTime = TimeGenerated, OperationName, User;\nResets\n| join kind=inner MethodChanges on User\n| where ChangeTime between (ResetTime .. (ResetTime + Window))\n| summarize Changes = make_set(OperationName), FirstChange = min(ChangeTime) by User, ResetTime, ResetOperation\n| extend DeletedExistingMethod = set_has_element(Changes, \"User deleted security info\")\n| sort by DeletedExistingMethod desc, ResetTime desc",
-    "added": "2026-09-30"
+    "desc": "Correlates a successful self-service password reset with an authentication method change on the same account within 60 minutes. This is the persistence step seen with Storm-2949: the actor social-engineers a helpdesk call or the user themselves into an SSPR, strips existing authentication methods (phone, email, Authenticator) and registers their own Microsoft Authenticator so the legitimate owner is locked out while the attacker keeps access. Storm-3068 chained the same account takeover pattern into Kubernetes/Azure DevOps credential theft. DeletedExistingMethod on the output row is the strongest signal. An attacker removing the owner's existing method before adding their own is not something a normal self-service reset does. MITRE ATT&CK: T1556.006 (Modify Authentication Process: Multi-Factor Authentication), T1098 (Account Manipulation). SOC action: for any DeletedExistingMethod hit, contact the user through a channel independent of the reset (phone call, in person, not email or Teams which the attacker may also control) to confirm the reset was theirs; if not, disable the account, revoke sessions and re-enroll MFA under helpdesk verification. Known false positives: legitimate helpdesk assisted resets paired with a genuine device replacement. A new hire onboarding flow can also trigger it, since a temporary password reset and MFA registration happen back to back inside the same hour by design.",
+    "kql": "// Successful self-service password reset followed by an authentication method change\n// on the same account (Storm-3068 and Storm-2949 pattern).\nlet Window = 60m;\nlet Lookback = 1d;\nlet Resets = AuditLogs\n    | where TimeGenerated > ago(Lookback)\n    | where OperationName in (\"Reset password (self-service)\", \"Change password (self-service)\")\n    | where Result == \"success\"\n    | mv-expand TargetResources\n    | where tostring(TargetResources.type) == \"User\"\n    | extend User = tolower(tostring(TargetResources.userPrincipalName))\n    | project ResetTime = TimeGenerated, ResetOperation = OperationName, User;\nlet MethodChanges = AuditLogs\n    | where TimeGenerated > ago(Lookback)\n    | where OperationName in (\"User registered security info\", \"User registered all required security info\", \"User changed default security info\", \"User deleted security info\", \"Admin registered security info\")\n    | mv-expand TargetResources\n    | where tostring(TargetResources.type) == \"User\"\n    | extend User = tolower(tostring(TargetResources.userPrincipalName))\n    | project ChangeTime = TimeGenerated, OperationName, User;\nResets\n| join kind=inner MethodChanges on User\n| where ChangeTime between (ResetTime .. (ResetTime + Window))\n| summarize Changes = make_set(OperationName), FirstChange = min(ChangeTime) by User, ResetTime, ResetOperation\n| extend DeletedExistingMethod = set_has_element(Changes, \"User deleted security info\")\n| sort by DeletedExistingMethod desc, ResetTime desc",
+    "added": "2026-09-30",
+    "updated": "2026-11-09"
   },
   {
     "id": 154,
@@ -3060,10 +3122,10 @@
       "AML.T0110"
     ],
     "sev": "medium",
-    "desc": "Baseline hunting query, not an alert: surfaces every SKILL.md created or changed in OneDrive or SharePoint, the instruction files that tools like Claude Code and Copilot Cowork load and follow autonomously. A SKILL.md planted or edited by someone other than its known owner is a plausible instruction injection vector into whatever agent reads it next, closer to a supply chain concern than a classic file share alert, so the goal here is visibility into where these files exist and who is touching them, not a single confirmed-bad signal. The Tool column is a folder path guess (cowork/skills vs .claude/skills) and the common-dependency exclusions (node_modules, .venv, vendor, build output) are plain substring matches. Both can be renamed around, so treat this as a map of the agent skill footprint to review periodically rather than a precise detector. MITRE ATT&CK: T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain), closest available mapping for this class of agent tooling abuse. MITRE ATLAS: AML.T0110 (AI Agent Tool Poisoning), the precise mapping where ATT&CK has only a supply chain approximation. SOC action: for a SKILL.md touched by an unexpected user or appearing in a shared/synced location outside an individual's own OneDrive, read its actual instructions before deciding anything. A line telling the agent to exfiltrate data, call an unfamiliar tool or ignore prior constraints is the real indicator. The file event itself is not.",
+    "desc": "Baseline hunting query, not an alert: surfaces every SKILL.md created or changed in OneDrive or SharePoint, the instruction files that tools like Claude Code and Copilot Cowork load and follow autonomously. A SKILL.md planted or edited by someone other than its known owner is a plausible instruction injection vector into whatever agent reads it next, closer to a supply chain concern than a classic file share alert, so the goal here is visibility into where these files exist and who is touching them, not a single confirmed malicious signal. The Tool column is a folder path guess (cowork/skills vs .claude/skills) and the exclusions for common dependency folders (node_modules, .venv, vendor, build output) are plain substring matches. Both can be renamed around, so treat this as a map of the agent skill footprint to review periodically rather than a precise detector. MITRE ATT&CK: T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain), closest available mapping for this class of agent tooling abuse. MITRE ATLAS: AML.T0110 (AI Agent Tool Poisoning), the precise mapping where ATT&CK has only a supply chain approximation. SOC action: for a SKILL.md touched by an unexpected user or appearing in a shared/synced location outside an individual's own OneDrive, read its actual instructions before deciding anything. A line telling the agent to exfiltrate data, call an unfamiliar tool or ignore prior constraints is the real indicator. The file event itself is not.",
     "kql": "// Agent skill files (SKILL.md) created or changed in OneDrive and SharePoint. Hunting query, not an alert.\n// Requires the Sentinel Office 365 connector with SharePoint and OneDrive audit enabled.\n// Tool labels are folder-path heuristics. Noise exclusions are substring matches and can be evaded.\nlet Lookback = 14d;\nOfficeActivity\n| where TimeGenerated > ago(Lookback)\n| where OfficeWorkload in~ (\"OneDrive\", \"SharePoint\")\n| where Operation in~ (\"FileUploaded\", \"FileModified\", \"FileSyncUploadedFull\", \"FileRenamed\", \"FileMoved\", \"FileCopied\")\n| where SourceFileName =~ \"SKILL.md\" or DestinationFileName =~ \"SKILL.md\"\n| extend Path = tolower(strcat(tostring(SourceRelativeUrl), \" \", tostring(DestinationRelativeUrl), \" \", tostring(OfficeObjectId)))\n| where Path !contains \".venv\"\n    and Path !contains \"site-packages\"\n    and Path !contains \"node_modules\"\n    and Path !contains \"__pycache__\"\n    and Path !contains \".git/\"\n    and Path !contains \"/dist/\"\n    and Path !contains \"/build/\"\n    and Path !contains \"/vendor/\"\n| extend Tool = case(\n    Path contains \"cowork/skills\", \"Copilot Cowork\",\n    Path contains \".claude/skills\", \"Claude Code\",\n    \"Other\")\n| extend FolderRef = coalesce(SourceRelativeUrl, OfficeObjectId)\n| project TimeGenerated, OfficeWorkload, Operation, Tool, FolderRef, SourceFileName, DestinationFileName, UserId\n| order by TimeGenerated desc",
     "added": "2026-10-01",
-    "updated": "2026-10-07"
+    "updated": "2026-11-09"
   },
   {
     "id": 155,
@@ -3119,9 +3181,10 @@
       "mfa re-registration"
     ],
     "sev": "critical",
-    "desc": "Correlates 3 or more failed sign-ins with a successful security info or authentication method registration on the same account within the following hour. Documented by Google TIG/Mandiant for UNC6671's passkey vishing: the actor phones the victim claiming to be IT, walks them through 'verifying' their account during a string of failed attempts, then has them approve or register a new authentication method that survives a later password reset. MITRE ATT&CK: T1556.006 (Modify Authentication Process: Multi-Factor Authentication). SOC action: call the user on a channel you control to confirm they registered the method themselves; if not, remove it immediately and check whether a passkey was added, since that persists through password resets that would normally contain a compromise. Known false positives: a user who genuinely mistypes their password a few times before successfully resetting and re-registering MFA through legitimate self-service flows.",
+    "desc": "Correlates 3 or more failed sign-ins with a successful security info or authentication method registration on the same account within the following hour. Seen in UNC6671 passkey vishing: the actor phones the victim claiming to be IT, walks them through 'verifying' their account during a string of failed attempts, then has them approve or register a new authentication method that survives a later password reset. MITRE ATT&CK: T1556.006 (Modify Authentication Process: Multi-Factor Authentication). SOC action: call the user on a channel you control to confirm they registered the method themselves; if not, remove it immediately and check whether a passkey was added, since that persists through password resets that would normally contain a compromise. Known false positives: a user who genuinely mistypes their password a few times before successfully resetting and re-registering MFA through legitimate self-service flows.",
     "kql": "let lookback = 14d;\nlet failed_signins =\n    SigninLogs\n    | where TimeGenerated > ago(lookback)\n    | where ResultType != \"0\"\n    | project UserPrincipalName, FailureTime = TimeGenerated, FailureIP = IPAddress;\nAuditLogs\n| where TimeGenerated > ago(lookback)\n| where Result =~ \"success\"\n| where OperationName contains \"security info\" or OperationName contains \"authentication method\"\n| extend TargetUpn = tolower(tostring(TargetResources[0].userPrincipalName))\n| extend Initiator = tolower(tostring(InitiatedBy.user.userPrincipalName))\n| where isnotempty(TargetUpn)\n| join kind=inner failed_signins on $left.TargetUpn == $right.UserPrincipalName\n| where FailureTime between (TimeGenerated - 1h .. TimeGenerated)\n| summarize FailedAttempts = count(), FirstFailure = min(FailureTime), DistinctFailureIPs = dcount(FailureIP), FailureIPs = make_set(FailureIP, 10) by TargetUpn, Initiator, OperationName, RegistrationTime = TimeGenerated\n| where FailedAttempts >= 3\n| order by RegistrationTime desc",
-    "added": "2026-10-01"
+    "added": "2026-10-01",
+    "updated": "2026-11-09"
   },
   {
     "id": 158,
@@ -3176,9 +3239,10 @@
       "persistence"
     ],
     "sev": "critical",
-    "desc": "Flags accounts that look unprivileged creating computer accounts in the domain, exploiting the default MachineAccountQuota of 10 that lets any authenticated user join machines to AD unless explicitly hardened. CISA's joint red team assessment of two SOCs used this exact gap for persistence and relay setup. MITRE ATT&CK: T1136.002 (Create Account: Domain Account). SOC action: verify the creator against your actual provisioning accounts list. If it is a standard user account the finding is real, so check what the new computer object was used for next (relay, Kerberos delegation abuse) and consider setting MachineAccountQuota to 0 tenant-wide. Known false positives: legitimate SCCM/MDT imaging or domain join automation accounts not yet in your provisioning allowlist. Add them to provisioning_accounts rather than ignoring the finding.",
+    "desc": "Flags accounts that look unprivileged creating computer accounts in the domain, exploiting the default MachineAccountQuota of 10 that lets any authenticated user join machines to AD unless explicitly hardened. CISA's joint red team assessment of two SOCs used this exact gap for persistence and relay setup. MITRE ATT&CK: T1136.002 (Create Account: Domain Account). SOC action: verify the creator against your actual provisioning accounts list. If it is a standard user account the finding is real, so check what the new computer object was used for next (relay, Kerberos delegation abuse) and consider setting MachineAccountQuota to 0 domain-wide. Known false positives: legitimate SCCM/MDT imaging or domain join automation accounts not yet in your provisioning allowlist. Add them to provisioning_accounts rather than ignoring the finding.",
     "kql": "let lookback = 30d;\nlet provisioning_accounts = dynamic([\"SCCM-JOIN$\", \"svc-imaging\", \"MDT-DEPLOY$\"]);\nSecurityEvent\n| where TimeGenerated > ago(lookback)\n| where EventID == 4741\n| extend Creator = tolower(SubjectAccount), CreatedAccount = tolower(TargetAccount)\n| where SubjectUserName !in~ (provisioning_accounts)\n| summarize\n    AccountsCreated = dcount(CreatedAccount),\n    Created         = make_set(CreatedAccount, 25),\n    Controllers     = make_set(Computer, 5),\n    FirstSeen       = min(TimeGenerated),\n    LastSeen        = max(TimeGenerated)\n    by Creator\n| sort by AccountsCreated desc",
-    "added": "2026-10-01"
+    "added": "2026-10-01",
+    "updated": "2026-11-09"
   },
   {
     "id": 161,
@@ -3215,15 +3279,16 @@
     ],
     "sev": "critical",
     "desc": "Flags a directory replication request (DS-Replication-Get-Changes / DS-Replication-Get-Changes-All) made by an account that is not a domain controller or a known Entra Connect/sync service account, the DCSync technique for pulling password hashes straight from AD without touching lsass. CISA's red team used this to harvest an AES256 hash and exchange it for a Kerberos TGT. MITRE ATT&CK: T1003.006 (OS Credential Dumping: DCSync). SOC action: treat any hit as a near-certain domain compromise. The requesting account's permissions were abused to grant replication rights it should never have had. Reset krbtgt (twice) and every credential the account could reach. Known false positives: legitimate accounts that sync AD to Entra (Azure AD Connect, Entra Cloud Sync) not yet in the exclusion list. Add them by name once confirmed rather than widening the GUID filter.",
-    "kql": "let lookback = 30d;\nlet replication_guids = dynamic([\n    \"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2\",\n    \"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2\",\n    \"89e95b76-444d-4c62-991a-0facbeda640c\"]);\nlet sync_accounts = dynamic([\"msol_\", \"aad_\", \"svc-adsync\"]);\nSecurityEvent\n| where TimeGenerated > ago(lookback)\n| where EventID == 4662\n| where ObjectType has \"domainDNS\"\n| where Properties has_any (replication_guids)\n| extend Requester = tolower(SubjectAccount)\n| where not(Requester endswith \"$\")\n| where not(Requester has_any (sync_accounts))\n| summarize\n    Requests    = count(),\n    Controllers = make_set(Computer, 5),\n    FirstSeen   = min(TimeGenerated),\n    LastSeen    = max(TimeGenerated)\n    by Requester\n| sort by Requests desc",
-    "added": "2026-10-01"
+    "kql": "let lookback = 30d;\nlet replication_guids = dynamic([\n    \"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2\",\n    \"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2\",\n    \"89e95b76-444d-4c62-991a-0facbeda640c\"]);\n// Regex used for prefix matching of sync service accounts\nlet sync_pattern = @\"(^|\\\\)(msol_|aad_|svc-adsync)\";\nSecurityEvent\n| where TimeGenerated > ago(lookback)\n| where EventID == 4662\n| where ObjectType has_any (\"domainDNS\", \"19195a5b-6da0-11d0-afd3-00c04fd930c9\")\n| where Properties has_any (replication_guids)\n| extend Requester = tolower(SubjectAccount)\n| where not(Requester endswith \"$\")\n| where not(Requester matches regex sync_pattern)\n| summarize\n    Requests    = count(),\n    Controllers = make_set(Computer, 5),\n    FirstSeen   = min(TimeGenerated),\n    LastSeen    = max(TimeGenerated)\n    by Requester\n| sort by Requests desc",
+    "added": "2026-10-01",
+    "updated": "2026-11-09"
   },
   {
     "id": 163,
     "name": "Application Secret Added Then Used for Mailbox Access",
     "cat": "App Identity",
     "sub": "Credential Mgmt",
-    "plat": "sentinel",
+    "plat": "both",
     "tables": [
       "AuditLogs",
       "CloudAppEvents"
@@ -3236,7 +3301,8 @@
     "sev": "critical",
     "desc": "Correlates a new client secret added to an application with that application's OAuth token being used for mailbox actions (read, send, bind) within the following week. CISA's red team identified an app owner with Mail.ReadWrite, obtained their refresh token, added a new client secret and read mailbox data with the resulting token, all without ever touching the owner's own credentials. MITRE ATT&CK: T1550.001 (Use Alternate Authentication Material: Application Access Token). SOC action: confirm with the app owner whether they added the secret; if not, remove it immediately, audit every mailbox the app can reach for what was actually accessed and review the app's permission grant. Mail.ReadWrite on an app most owners added for a narrower purpose is itself worth tightening. Known false positives: legitimate CI/CD or integration pipelines that rotate app secrets on a schedule and immediately resume normal mailbox automation. Exclude those app IDs once confirmed.",
     "kql": "let lookback = 30d;\nlet secret_additions =\n    AuditLogs\n    | where TimeGenerated > ago(lookback)\n    | where OperationName has_any (\"Add service principal credentials\", \"Update application\", \"Certificates and secrets management\")\n    | where Result == \"success\"\n    | mv-expand TargetResources\n    | extend AppId   = tolower(tostring(TargetResources.id)),\n             AppName = tostring(TargetResources.displayName),\n             Actor   = tolower(tostring(InitiatedBy.user.userPrincipalName)),\n             ActorIp = tostring(InitiatedBy.user.ipAddress)\n    | where isnotempty(AppId)\n    | project AppId, AppName, Actor, ActorIp, SecretAddedAt = TimeGenerated;\nCloudAppEvents\n| where Timestamp > ago(lookback)\n| where ActionType has_any (\"MailItemsAccessed\", \"Send\", \"MessageBind\")\n| extend AppId = tolower(OAuthAppId)\n| where isnotempty(AppId)\n| join kind=inner secret_additions on AppId\n| where Timestamp > SecretAddedAt\n| summarize\n    MailboxActions = count(),\n    Mailboxes      = dcount(AccountObjectId),\n    Addresses      = make_set(IPAddress, 10),\n    Actions        = make_set(ActionType, 5),\n    FirstUse       = min(Timestamp),\n    LastUse        = max(Timestamp)\n    by AppId, AppName, Actor, ActorIp, SecretAddedAt\n| where FirstUse between (SecretAddedAt .. SecretAddedAt + 7d)\n| sort by SecretAddedAt desc",
-    "added": "2026-10-01"
+    "added": "2026-10-01",
+    "updated": "2026-11-09"
   },
   {
     "id": 164,
@@ -3254,8 +3320,9 @@
     ],
     "sev": "medium",
     "desc": "Baseline hunting query, not an alert: lists every account that successfully completed a device code sign-in in the last 30 days. Device code grant is a flow for devices with limited input, so in most tenants it is unused or limited to a small known set of clients and people, which is what makes any new appearance worth reading. Part of the device code phishing-as-a-service surge reported mid-2026. Complements the GoXDR query that ties device code to a subsequent device registration. This one has no correlation gate and is a rarity census. MITRE ATT&CK: T1528 (Steal Application Access Token). SOC action: for each hit, confirm the user and app against your known legitimate device code use cases (CLI tools, IoT, conference room devices). Anything outside that list warrants a direct check with the user. Known limitation: the sign-in record itself shows nothing deceptive because the victim genuinely authenticated, so this only narrows where to look. It does not confirm compromise.",
-    "kql": "SigninLogs\n| where TimeGenerated > ago(30d)\n| where AuthenticationProtocol =~ \"deviceCode\"\n    or ResultType == \"70016\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| extend City    = tostring(LocationDetails.city)\n| summarize    Attempts    = count(),\n    Successes   = countif(ResultType == \"0\"),\n    Apps        = make_set(AppDisplayName, 10),\n    Resources   = make_set(ResourceDisplayName, 10),\n    Addresses   = make_set(IPAddress, 10),\n    Countries   = make_set(Country, 5),\n    UserAgents  = make_set(UserAgent, 5),\n    FirstSeen   = min(TimeGenerated),\n    LastSeen    = max(TimeGenerated)\n    by UserPrincipalName\n| where Successes > 0\n| sort by FirstSeen desc",
-    "added": "2026-10-01"
+    "kql": "SigninLogs\n| where TimeGenerated > ago(30d)\n| where AuthenticationProtocol =~ \"deviceCode\"\n    or ResultType == \"70016\"\n| extend Country = tostring(LocationDetails.countryOrRegion)\n| extend City    = tostring(LocationDetails.city)\n| summarize\n    Attempts    = count(),\n    Successes   = countif(ResultType == \"0\"),\n    Apps        = make_set(AppDisplayName, 10),\n    Resources   = make_set(ResourceDisplayName, 10),\n    Addresses   = make_set(IPAddress, 10),\n    Countries   = make_set(Country, 5),\n    UserAgents  = make_set(UserAgent, 5),\n    FirstSeen   = min(TimeGenerated),\n    LastSeen    = max(TimeGenerated)\n    by UserPrincipalName\n| where Successes > 0\n| sort by FirstSeen desc",
+    "added": "2026-10-01",
+    "updated": "2026-11-09"
   },
   {
     "id": 165,
@@ -3317,10 +3384,10 @@
       "AML.T0103"
     ],
     "sev": "medium",
-    "desc": "Hunting query, not an alert. Detects AI coding assistant CLIs (Claude Code, Amazon Q CLI, Codex CLI, Gemini CLI) launched with flags that skip permission prompts, bypass approvals or disable the sandbox. Runs with a scripted parent or non-interactive mode are sorted first, since nobody is watching the agent in those cases. MITRE ATT&CK: no precise technique exists for this class. T1059 (Command and Scripting Interpreter) is the closest mapping. MITRE ATLAS: AML.T0103 (Deploy AI Agent), closest mapping. SOC action: read the command line and parent chain, then check what the agent was pointed at and whether the device holds production credentials or source. Known false positives: developers and CI jobs using these flags in disposable containers or VMs. Limitation: matching is on literal command-line text, so config-file or env-based modes and Claude Code's --permission-mode bypassPermissions form are not caught.",
+    "desc": "Hunting query, not an alert. Detects AI coding assistant CLIs (Claude Code, Amazon Q CLI, Codex CLI, Gemini CLI) launched with flags that skip permission prompts, bypass approvals or disable the sandbox. Runs with a scripted parent or non-interactive mode are sorted first, since nobody is watching the agent in those cases. MITRE ATT&CK: no precise technique exists for this class. T1059 (Command and Scripting Interpreter) is the closest mapping. MITRE ATLAS: AML.T0103 (Deploy AI Agent), closest mapping. SOC action: read the command line and parent chain, then check what the agent was pointed at and whether the device holds production credentials or source. Known false positives: developers and CI jobs using these flags in disposable containers or VMs. Limitation: matching is on literal command-line text, so modes set through a config file or an environment variable are not caught, and neither is the permission mode bypassPermissions form of Claude Code.",
     "kql": "// AI coding assistant CLIs launched with permission-bypass flags. Hunting query, not an alert.\n// Developers use these flags legitimately. Review the parent chain and command line.\nlet Lookback = 14d;\nlet Runtimes = dynamic([\"node\", \"node.exe\", \"npm\", \"npm.exe\", \"npx\", \"npx.exe\", \"python\", \"python3\", \"python.exe\", \"wscript.exe\", \"cscript.exe\"]);\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where ProcessCommandLine contains \"--dangerously-skip-permissions\"\n    or ProcessCommandLine contains \"--trust-all-tools\"\n    or ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\"\n    or ProcessCommandLine contains \"--yolo\"\n    or ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\"\n| extend Tool = case(\n    ProcessCommandLine contains \"--dangerously-skip-permissions\", \"Claude Code\",\n    ProcessCommandLine contains \"--trust-all-tools\", \"Amazon Q CLI\",\n    ProcessCommandLine contains \"--dangerously-bypass-approvals-and-sandbox\", \"Codex CLI\",\n    ProcessCommandLine matches regex @\"--approval-mode[ =]yolo\", \"Gemini CLI\",\n    \"Codex CLI or Gemini CLI (--yolo)\")\n| extend NonInteractive = ProcessCommandLine matches regex @\"(^|\\s)(-p|--print|--prompt|--no-interactive)(\\s|=|$)\"\n| extend ScriptedParent = InitiatingProcessFileName in~ (Runtimes) or InitiatingProcessParentFileName in~ (Runtimes)\n| project Timestamp, DeviceName, AccountName, Tool, ScriptedParent, NonInteractive, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessParentFileName\n| sort by ScriptedParent desc, NonInteractive desc, Timestamp desc",
     "added": "2026-10-06",
-    "updated": "2026-10-07"
+    "updated": "2026-11-09"
   },
   {
     "id": 168,
