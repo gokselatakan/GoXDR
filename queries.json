@@ -3413,5 +3413,119 @@
     "desc": "Flags Privileged Identity Management (PIM) role activations and assignments (eligible or active) where the actor or the target is an Entra Agent ID identity. An agent is matched by the agentType field, by a blueprintId value or by a UPN you add to the AgentUpns list. Agent users look like normal Member accounts. A PIM role on one is easy to miss in a standard PIM review. MITRE ATT&CK: T1098.003 (Additional Cloud Roles), T1078.004 (Cloud Accounts). SOC action: confirm with the agent owner whether the role is intended, check who made the assignment (SelfInitiated shows an agent activating its own role) and review what the role can reach. If it is not intended, remove the assignment and review the agent's recent sign-ins. Known limitations: agentType in TargetResources is the documented field used by the Agent User Added to Group query, but agentType in InitiatedBy and blueprintId are not confirmed in Microsoft documentation and population is inconsistent while Entra Agent ID is in preview. The UPN list is the reliable signal, so an empty result is not proof that no agent holds a role. Validate the PIM OperationName strings in your tenant before relying on this. Hunting query, not an alert. Use a 1d lookback to run it as a scheduled rule.",
     "kql": "// Hunting query, not an alert. Use 1d for a scheduled rule\n// NOTE: Replace domain.com with your agent user UPNs\nlet AgentUpns = dynamic([\"agent-user@domain.com\"]);\nlet Lookback = 90d;\nlet PimOps = dynamic([\n    \"Add member to role completed (PIM activation)\",\n    \"Add eligible member to role in PIM completed (permanent)\",\n    \"Add eligible member to role in PIM completed (timebound)\",\n    \"Add member to role in PIM completed (permanent)\",\n    \"Add member to role in PIM completed (timebound)\"\n]);\nAuditLogs\n| where TimeGenerated > ago(Lookback)\n| where OperationName in (PimOps)\n| extend Init = tostring(InitiatedBy), Tgt = tostring(TargetResources)\n| extend AgentTypes = array_concat(\n    coalesce(extract_all(@'\"agentType\":\\s*\"([^\"]+)\"', Init), dynamic([])),\n    coalesce(extract_all(@'\"agentType\":\\s*\"([^\"]+)\"', Tgt), dynamic([])))\n| extend AgentTypesFound = set_difference(AgentTypes, dynamic([\"notAgentic\"]))\n| extend ByType = array_length(AgentTypesFound) > 0\n| extend ByBlueprint = Init matches regex @'\"blueprintId\":\\s*\"[0-9a-fA-F-]{36}\"'\n    or Tgt matches regex @'\"blueprintId\":\\s*\"[0-9a-fA-F-]{36}\"'\n| extend ByList = Init has_any (AgentUpns) or Tgt has_any (AgentUpns)\n| where ByType or ByBlueprint or ByList\n| mv-apply t = parse_json(Tgt) on (\n    summarize\n        TargetUser = take_anyif(tostring(t.userPrincipalName), tostring(t.type) == \"User\"),\n        RoleName = take_anyif(tostring(t.displayName), tostring(t.type) == \"Role\"))\n| extend ActorUpn = tostring(parse_json(Init).user.userPrincipalName)\n| extend Actor = coalesce(ActorUpn, tostring(parse_json(Init).app.displayName))\n| extend Activity = iff(OperationName has \"PIM activation\", \"Role activation\", iff(OperationName has \"eligible\", \"Eligible assignment\", \"Active assignment\"))\n| extend SelfInitiated = isnotempty(Actor) and tolower(Actor) == tolower(TargetUser)\n| project TimeGenerated, Activity, RoleName, Actor, ActorUpn, TargetUser, SelfInitiated, AgentTypesFound, ByType, ByBlueprint, ByList, Result, CorrelationId\n| sort by TimeGenerated desc",
     "added": "2026-11-09"
+  },
+  {
+    "id": 172,
+    "name": "Entra Service Principal Sign-Ins From Stolen App Credentials Hunt",
+    "cat": "App Identity",
+    "sub": "Anomaly",
+    "plat": "xdr",
+    "tables": [
+      "EntraIdSpnSignInEvents"
+    ],
+    "tags": [
+      "service principal",
+      "stolen credentials",
+      "client secret",
+      "workload identity",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for service principals signing in with valid but stolen application credentials, based on the November 2026 campaign where an actor used harvested client secrets to sign in as workload identities. Three signals come back in one result set. The first matches the reported operator IP and two client strings. The second finds an invalid or expired client secret error (7000215 or 7000222) followed by a successful sign-in for the same app from the same IP within 15 minutes, which fits an actor working through harvested secrets. The third lists apps whose first successful sign-in falls inside the lookback with none earlier in the 30 day window. MITRE ATT&CK: T1078.004 (Valid Accounts: Cloud Accounts). SOC action: for any hit, rotate the app's secrets and federated credentials, review its role assignments and Graph application permissions and check what the app accessed after the sign-in. Known false positives: a new or dormant app signing in for the first time and a developer retrying from one IP after fixing an expired secret. Known limitation: the IP and client strings are a snapshot that the actor can change, so the failure then success pattern is the durable signal. Requires the EntraIdSpnSignInEvents table in Defender advanced hunting, which needs a Microsoft Entra ID P2 license. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 7d;\nlet FailWindow = 15m;\nlet IocIps = dynamic([\"199.19.77.84\"]);\nlet IocUserAgents = dynamic([\"task177-f2267/1.0\", \"sait-tenant-deep/37346\"]);\nlet SecretErrors = dynamic([7000215, 7000222]);\nlet Recent = EntraIdSpnSignInEvents\n    | where Timestamp > ago(Lookback)\n    | where IsManagedIdentity == false;\nlet IocHits = Recent\n    | where IPAddress in (IocIps) or UserAgent in~ (IocUserAgents)\n    | project Timestamp, ReportId, Signal = \"Known operator IP or client string\", ServicePrincipalName, ServicePrincipalId, IPAddress, UserAgent, Detail = strcat(\"ErrorCode \", ErrorCode);\nlet FailPairs = Recent\n    | where ErrorCode in (SecretErrors)\n    | distinct ServicePrincipalId, IPAddress;\nlet FailThenSuccess = Recent\n    | where ErrorCode == 0 or ErrorCode in (SecretErrors)\n    | join hint.strategy=broadcast kind=leftsemi FailPairs on ServicePrincipalId, IPAddress\n    | summarize Failures = countif(ErrorCode != 0), Successes = countif(ErrorCode == 0), FirstFail = minif(Timestamp, ErrorCode != 0), LastSuccess = maxif(Timestamp, ErrorCode == 0), ReportId = take_anyif(ReportId, ErrorCode == 0), ServicePrincipalName = take_any(ServicePrincipalName), UserAgent = take_anyif(UserAgent, ErrorCode == 0) by ServicePrincipalId, IPAddress, Window = bin(Timestamp, FailWindow)\n    | where Failures > 0 and Successes > 0 and LastSuccess > FirstFail\n    | summarize Windows = count(), FirstSeen = min(FirstFail), Timestamp = max(LastSuccess), ReportId = take_any(ReportId), ServicePrincipalName = take_any(ServicePrincipalName), UserAgent = take_any(UserAgent) by ServicePrincipalId, IPAddress\n    | project Timestamp, ReportId, Signal = \"Invalid secret then successful sign-in from the same IP\", ServicePrincipalName, ServicePrincipalId, IPAddress, UserAgent, Detail = strcat(Windows, \" windows since \", format_datetime(FirstSeen, \"yyyy-MM-dd HH:mm\"));\nlet FirstActivity = EntraIdSpnSignInEvents\n    | where Timestamp > ago(30d)\n    | where ErrorCode == 0 and IsManagedIdentity == false\n    | summarize FirstSuccess = min(Timestamp), Events = count(), IPs = make_set(IPAddress, 5), UserAgents = make_set(UserAgent, 3), Resources = make_set(ResourceDisplayName, 3) by ServicePrincipalId, ServicePrincipalName\n    | where FirstSuccess > ago(Lookback)\n    | project Timestamp = FirstSuccess, Signal = \"App with no successful sign-in earlier in the 30 day window\", ServicePrincipalName, ServicePrincipalId, IPAddress = strcat_array(IPs, \", \"), UserAgent = strcat_array(UserAgents, \", \"), Detail = strcat(Events, \" sign-ins, resources: \", strcat_array(Resources, \", \"));\nunion IocHits, FailThenSuccess, FirstActivity\n| order by Timestamp desc",
+    "added": "2026-11-09"
+  },
+  {
+    "id": 173,
+    "name": "Telegram Bot API Connections Outside the Telegram Client Hunt",
+    "cat": "XDR",
+    "sub": "Data Exfiltration",
+    "plat": "xdr",
+    "tables": [
+      "DeviceNetworkEvents"
+    ],
+    "tags": [
+      "telegram",
+      "c2",
+      "exfiltration",
+      "bot api",
+      "web service",
+      "hunting"
+    ],
+    "sev": "medium",
+    "desc": "Hunts for processes that connect to the Telegram Bot API (api.telegram.org) other than the Telegram desktop client. Malware and scripts use the Bot API as a command and control or data exfiltration channel because the traffic is HTTPS to a widely allowed host. Results are grouped by device, process and account with the URLs, remote IPs and command lines seen. MITRE ATT&CK: T1102 (Web Service), T1567 (Exfiltration Over Web Service). SOC action: review the initiating process path, signer and command line, look for a bot token in the command line or script and check which files the process touched before the connections. Known false positives: IT automation, alerting scripts, monitoring tools and developer tooling that post to Telegram bots. Known limitation: the client exclusion relies on the file name and the version info company name, which an attacker can copy, so also review telegram.exe running outside its expected install path. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 7d;\nDeviceNetworkEvents\n| where Timestamp > ago(Lookback)\n| where RemoteUrl has \"api.telegram.org\"\n// Regex confirms the host boundary after the has prefilter\n| where RemoteUrl matches regex @\"(?i)(^|//|\\.)api\\.telegram\\.org(:\\d+)?(/|$)\"\n| where not(InitiatingProcessFileName =~ \"telegram.exe\" and InitiatingProcessVersionInfoCompanyName has \"Telegram\")\n| summarize Events = count(), FirstSeen = min(Timestamp), Urls = make_set(RemoteUrl, 5), RemoteIPs = make_set(RemoteIP, 5), CommandLines = make_set(InitiatingProcessCommandLine, 3), arg_max(Timestamp, ReportId, DeviceId) by DeviceName, InitiatingProcessFileName, InitiatingProcessFolderPath, InitiatingProcessAccountName\n| project Timestamp, ReportId, DeviceId, DeviceName, InitiatingProcessFileName, InitiatingProcessFolderPath, InitiatingProcessAccountName, Events, FirstSeen, Urls, RemoteIPs, CommandLines\n| order by Timestamp desc",
+    "added": "2026-11-09"
+  },
+  {
+    "id": 174,
+    "name": "Trojanized Claude Code Extension SSH Backdoor Hunt",
+    "cat": "AI Security",
+    "sub": "Supply Chain",
+    "plat": "xdr",
+    "tables": [
+      "DeviceNetworkEvents",
+      "DeviceProcessEvents",
+      "DeviceFileEvents"
+    ],
+    "tags": [
+      "supply chain",
+      "claude code",
+      "cursor",
+      "ssh backdoor",
+      "reverse tunnel",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for indicators of the trojanized Claude Code extension that was served through the Cursor Marketplace and disclosed on 30 October 2026 (reported versions 2.1.312 and 2.1.313). The malicious build planted an SSH backdoor with a reverse tunnel to a fixed host, an added authorized key and persistence files on macOS, Linux and Windows. Three checks run over 30 days. The first looks for connections to the tunnel host. The second looks for ssh or autossh with a reverse forward to local port 22 or the tunnel user and host. The third looks for the hash of the injected extension.js and the dropped persistence files. Results are grouped per device and signal. MITRE ATT&CK: T1195.002 (Compromise Software Supply Chain), T1572 (Protocol Tunneling), T1098.004 (SSH Authorized Keys). SOC action: isolate the device, remove the extension and the persistence files, delete the injected key from authorized_keys, rotate credentials and keys reachable from the host and review inbound SSH logs for sessions from the tunnel host. Known false positives: administrators using a reverse SSH forward to port 22 for legitimate remote support. Known limitation: the hunt covers published indicators only and file events depend on Defender sensor coverage. Other distribution channels of the extension were reported unaffected. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 30d;\nlet TunnelHost = \"134.209.82.225\";\nlet ExtensionHash = \"ecb58cb29078d9646ad1dcdbe51526f2d9cfea06be5fb2ab183e8ecc3ab6bf15\";\nlet NetHits = (T: (Timestamp: datetime, DeviceName: string, RemoteIP: string, RemotePort: int, RemoteUrl: string, InitiatingProcessFileName: string)) {\n  T\n  | where Timestamp > ago(Lookback)\n  | where RemoteIP == TunnelHost or RemoteUrl contains TunnelHost\n  | project Timestamp, DeviceName, Signal = \"Connection to tunnel host\", Detail = strcat(InitiatingProcessFileName, \" to \", RemoteIP, \":\", RemotePort)\n};\nlet ProcHits = (T: (Timestamp: datetime, DeviceName: string, FileName: string, ProcessCommandLine: string)) {\n  T\n  | where Timestamp > ago(Lookback)\n  | where FileName in~ (\"ssh\", \"ssh.exe\", \"autossh\")\n  | where (ProcessCommandLine contains_cs \"-R\" and ProcessCommandLine contains \"localhost:22\") or ProcessCommandLine contains strcat(\"tunnel@\", TunnelHost)\n  | project Timestamp, DeviceName, Signal = \"Reverse SSH tunnel to local port 22\", Detail = substring(ProcessCommandLine, 0, 200)\n};\nlet FileHits = (T: (Timestamp: datetime, DeviceName: string, FileName: string, FolderPath: string, SHA256: string)) {\n  T\n  | where Timestamp > ago(Lookback)\n  | where SHA256 =~ ExtensionHash\n    or (FileName in~ (\".smt\", \".smtk\", \"smt.cmd\", \"smtk\") and FolderPath contains \".config\")\n    or FileName =~ \"com.apple.sysmond.plist\"\n    or FileName startswith \".stk_\"\n    or (FileName =~ \"sysmon.cmd\" and FolderPath contains \"Startup\")\n  | project Timestamp, DeviceName, Signal = \"Backdoor file artifact\", Detail = FolderPath\n};\nlet Combine = (N: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string), P: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string), F: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string)) {\n  union N, P, F\n  | summarize Events = count(), FirstSeen = min(Timestamp), LastSeen = max(Timestamp), Samples = make_set(Detail, 5) by DeviceName, Signal\n  | project Timestamp = LastSeen, DeviceName, Signal, Events, FirstSeen, Samples\n  | order by Timestamp desc\n};\nCombine(NetHits(DeviceNetworkEvents), ProcHits(DeviceProcessEvents), FileHits(DeviceFileEvents))",
+    "added": "2026-11-09"
+  },
+  {
+    "id": 175,
+    "name": "Teams External Chat Hunt: Fake IT Support Senders and Known Campaign Tenants",
+    "cat": "Collaboration",
+    "sub": "Teams",
+    "plat": "xdr",
+    "tables": [
+      "MessageEvents"
+    ],
+    "tags": [
+      "teams",
+      "external chat",
+      "help desk impersonation",
+      "social engineering",
+      "quick assist",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for external Teams chats where the sender looks like IT support or comes from a throwaway tenant used in the fake help desk campaigns. The pattern is a mailbox flood, then a chat from an attacker tenant posing as IT support and a follow up call that gets the user to start Quick Assist or another remote tool. The query flags external threads where the sender display name matches help desk lure wording or the sender domain is on the reported tenant list, then groups per sender with recipient count, thread count, threat verdicts and a KnownIndicatorTenant flag. MITRE ATT&CK: T1566.003 (Phishing: Spearphishing via Service), T1656 (Impersonation). SOC action: contact the targeted users, ask whether they accepted the chat or started a remote session, check endpoint logs for Quick Assist or unsanctioned remote tools after the chat and block the sender domain in Teams external access. Known false positives: real vendor help desks, managed service providers you chat with and partner display names ending in (Internal). Known limitation: the tenant list is a snapshot because the actors rotate tenants, so the display name match carries most of the weight over time. MessageEvents is populated by Microsoft Defender for Office 365. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 7d;\nlet IocTenantDomains = dynamic([\"supportedge33.onmicrosoft.com\", \"supportedge39.onmicrosoft.com\", \"helpdeskteam365.onmicrosoft.com\", \"itendpoint365.onmicrosoft.com\", \"itcoreportal.onmicrosoft.com\", \"networkadmin797.onmicrosoft.com\", \"networkadmin916.onmicrosoft.com\", \"itadmin922.onmicrosoft.com\", \"supportagentonline.onmicrosoft.com\", \"threatpro.onmicrosoft.com\", \"ithelpplus42.onmicrosoft.com\", \"corporateitservicellc.onmicrosoft.com\", \"techsupport2337.onmicrosoft.com\"]);\nMessageEvents\n| where Timestamp > ago(Lookback)\n| where IsExternalThread == true\n| extend SenderDomain = tolower(tostring(split(SenderEmailAddress, \"@\")[1]))\n| mv-expand Recipient = RecipientDetails\n| extend RecipientAddress = tolower(tostring(Recipient.RecipientSmtpAddress))\n| extend RecipientDomain = tostring(split(RecipientAddress, \"@\")[1])\n| where isnotempty(SenderDomain) and SenderDomain != RecipientDomain\n| extend LureName = SenderDisplayName matches regex @\"(?i)(help ?desk|\\bit (service|support|tech|helpdesk)|service desk|supporte ti|it-representative|maintenance service|\\(internal\\))\"\n| extend IocTenant = SenderDomain in (IocTenantDomains)\n| where LureName or IocTenant\n| summarize Messages = dcount(TeamsMessageId), Recipients = dcount(RecipientAddress), Threads = dcount(ThreadId), DisplayNames = make_set(SenderDisplayName, 5), ThreatVerdicts = make_set(ThreatTypes, 5), IocTenantMessages = countif(IocTenant), FirstSeen = min(Timestamp), LastSeen = max(Timestamp) by SenderEmailAddress, SenderDomain\n| extend KnownIndicatorTenant = IocTenantMessages > 0\n| project Timestamp = LastSeen, FirstSeen, SenderEmailAddress, SenderDomain, DisplayNames, Messages, Recipients, Threads, KnownIndicatorTenant, ThreatVerdicts\n| order by KnownIndicatorTenant desc, Recipients desc, Messages desc",
+    "added": "2026-11-09"
+  },
+  {
+    "id": 176,
+    "name": "M365 Token Replay Hunt: Campaign Addresses, Scripted Office Clients, Device Registration and Session Changes",
+    "cat": "Identity",
+    "sub": "Token Attacks",
+    "plat": "xdr",
+    "tables": [
+      "EntraIdSignInEvents"
+    ],
+    "tags": [
+      "token replay",
+      "aitm",
+      "device registration",
+      "session hijack",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for the Microsoft 365 token replay campaign reported between July and September 2026, where tokens stolen through AiTM relays and device code phishing were replayed instead of guessing passwords. Three signals are combined. The first is a sign-in from the reported replay addresses, including the 193.26.115.0/24 range. The second is a scripted client (node or a bare Mozilla/5.0 user agent) using an Office client app ID, or any access to the Device Registration Service, from an IP the account has not used in the previous 14 days. The third is one session ID seen from more than one OS platform and more than one IP inside the lookback. Error codes 50133 and 53003 are included so that failed replays show up. MITRE ATT&CK: T1550.001 (Application Access Token), T1078.004 (Cloud Accounts), T1098.005 (Device Registration). SOC action: revoke sessions and reset the password, review registered devices and authentication methods because a reset alone leaves attacker devices and MFA methods in place, then check for new hidden inbox rules. Known false positives: users on VPN or roaming between networks and scripts that legitimately use Office clients. Known limitation: IOC addresses age quickly and the Office app IDs and the Device Registration Service ID are Microsoft first party IDs that normal traffic also uses, so treat hits as leads. Requires the EntraIdSignInEvents table in Defender advanced hunting, which needs a Microsoft Entra ID P2 license. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 1d;\nlet Baseline = 14d;\nlet IocIps = dynamic([\"193.26.115.221\", \"193.26.115.199\", \"193.26.115.16\", \"193.26.115.21\", \"193.26.115.72\", \"193.26.115.210\", \"124.198.132.33\", \"45.83.31.44\", \"192.159.99.172\", \"185.238.2.195\", \"167.148.41.96\", \"2400:8d60:2::1:841d:5dd\"]);\nlet OfficeClients = dynamic([\"d3590ed6-52b3-4102-aeff-aad2292ab01c\", \"29d9ed98-a469-4536-ade2-f981bc1d605e\", \"4765445b-32c6-49b0-83e6-1d93765276ca\"]);\nlet DeviceRegistrationService = \"01cb2876-7ebd-4aa4-9cc9-d28bd4d359a9\";\nlet KnownAccountIps = EntraIdSignInEvents\n| where Timestamp between (ago(Baseline) .. ago(Lookback))\n| where ErrorCode == 0\n| distinct AccountObjectId, IPAddress\n| extend SeenBefore = true;\nlet ClientSignals = EntraIdSignInEvents\n| where Timestamp > ago(Lookback)\n| where ErrorCode in (0, 50133, 53003)\n| extend KnownIndicatorIp = IPAddress in (IocIps) or IPAddress startswith \"193.26.115.\"\n| extend ScriptedOfficeClient = tolower(UserAgent) in (\"node\", \"mozilla/5.0\") and tolower(ApplicationId) in (OfficeClients)\n| extend DeviceRegistrationAccess = ResourceId =~ DeviceRegistrationService\n| where KnownIndicatorIp or ScriptedOfficeClient or DeviceRegistrationAccess\n| join kind=leftouter KnownAccountIps on AccountObjectId, IPAddress\n| where KnownIndicatorIp or isnull(SeenBefore)\n| extend Signal = case(KnownIndicatorIp, \"SignInFromCampaignInfrastructure\", ScriptedOfficeClient, \"ScriptedClientUsingOfficeApp\", \"DeviceRegistrationServiceFromNewIp\")\n| project Timestamp, Signal, AccountUpn, AccountObjectId, IPAddress, Country, UserAgent, Application, ResourceDisplayName, ErrorCode, Detail = strcat(EndpointCall, \" | \", ClientAppUsed);\nlet SessionHops = EntraIdSignInEvents\n| where Timestamp > ago(Lookback)\n| where ErrorCode == 0 and isnotempty(SessionId) and isnotempty(OSPlatform)\n| summarize LastSeen = max(Timestamp), Ips = make_set(IPAddress, 5), OsPlatforms = make_set(OSPlatform, 5), Countries = make_set(Country, 5), UserAgents = make_set(UserAgent, 5) by AccountUpn, AccountObjectId, SessionId\n| where array_length(OsPlatforms) > 1 and array_length(Ips) > 1\n| project Timestamp = LastSeen, Signal = \"SessionSeenFromDifferentOsAndIp\", AccountUpn, AccountObjectId, IPAddress = tostring(Ips), Country = tostring(Countries), UserAgent = tostring(UserAgents), Application = \"\", ResourceDisplayName = \"\", ErrorCode = 0, Detail = strcat(\"OS=\", tostring(OsPlatforms));\nunion ClientSignals, SessionHops\n| order by Timestamp desc",
+    "added": "2026-11-09"
   }
 ]
