@@ -130,6 +130,11 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .counter.med .n{color:var(--med)} .counter.low .n{color:var(--low)}
 .counter.crit .l .d{background:var(--crit)} .counter.high .l .d{background:var(--high)}
 .counter.med .l .d{background:var(--med)} .counter.low .l .d{background:var(--low)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.decode{font-family:"IBM Plex Mono",monospace;font-size:.94em;letter-spacing:.01em;color:var(--blue);cursor:default;display:inline-block;max-width:100%;overflow-wrap:anywhere;transition:color .25s;outline:none;border-bottom:1px dashed transparent}
+.decode.is-scrambled{opacity:.9}
+.decode.is-clear{color:var(--text)}
+.decode:focus-visible{border-bottom-color:var(--blue)}
 .counter.total .l{color:var(--blue)} .counter.total .sub{color:var(--blue);opacity:.85}
 .counter.crit .l{color:var(--crit)} .counter.high .l{color:var(--high)} .counter.med .l{color:var(--med)} .counter.low .l{color:var(--low)}
 .counter .sub{font-size:11px;color:var(--dim);margin-top:2px;font-family:"IBM Plex Mono",monospace}
@@ -742,7 +747,7 @@ html[data-theme="light"] .cview{background-image:none}
       <div class="masthead">
         <div class="eyebrow"><span class="pulse"></span><span id="schemaLine">Live catalog</span></div>
         <h1>Detection Queries for<br><span class="b">Sentinel</span> and <span class="o">Defender XDR</span></h1>
-        <p class="lede">Tested and proven useful in real security operations.</p>
+        <p class="lede"><span class="sr-only">Tested and proven useful in real security operations.</span><span class="decode" id="decode" data-text="Tested and proven useful in real security operations." aria-hidden="true" tabindex="0">Tested and proven useful in real security operations.</span></p>
       </div>
 
       <div class="counter-bar" id="counters"></div>
@@ -1736,6 +1741,67 @@ window.addEventListener("popstate", (e)=>{
   catch(err){ (window.__goxdrReportError||console.error)("popstate failed: " + (err && err.stack || err)); }
 });
 
+/* ---------------- decode effect on the tagline ---------------- */
+function initDecode(){
+  const el = $("#decode"); if(!el) return;
+  const text = el.dataset.text;
+  if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches){ el.classList.add("is-clear"); return; }
+  const GL = "01#$%&@<>/\\|{}[]=+*?~^";
+  const rnd = () => GL[Math.floor(Math.random()*GL.length)];
+  const scrambled = () => text.replace(/\S/g, rnd);
+  let mode = "scrambled", raf = 0, amb = 0, leave = 0;
+  const show = t => { el.textContent = t; };
+  const setMode = m => { mode = m; el.classList.toggle("is-clear", m==="clear"); el.classList.toggle("is-scrambled", m!=="clear"); };
+  function ambient(){
+    clearInterval(amb);
+    amb = setInterval(()=>{
+      if(mode!=="scrambled" || document.hidden) return;
+      const a = el.textContent.split("");
+      for(let i=0;i<a.length;i++){ if(a[i]!==" " && Math.random()<0.12) a[i] = rnd(); }
+      show(a.join(""));
+    }, 110);
+  }
+  function run(toClear){
+    cancelAnimationFrame(raf); clearInterval(amb);
+    mode = "anim";
+    const start = performance.now(), dur = toClear ? 900 : 600;
+    const step = now => {
+      const k = Math.min(1, (now-start)/dur);
+      let out = "";
+      for(let i=0;i<text.length;i++){
+        const c = text[i];
+        if(c===" "){ out += c; continue; }
+        const at = i/text.length;
+        const done = toClear ? (k > at*0.85+0.1) : (k < 1 - (at*0.85+0.1));
+        out += done ? c : rnd();
+      }
+      show(k>=1 ? (toClear ? text : scrambled()) : out);
+      if(k<1) raf = requestAnimationFrame(step);
+      else if(toClear){ setMode("clear"); } else { setMode("scrambled"); ambient(); }
+    };
+    setMode(toClear ? "clear" : "scrambled");
+    el.classList.add(toClear ? "is-clear" : "is-scrambled");
+    raf = requestAnimationFrame(step);
+  }
+  const reveal = () => { clearTimeout(leave); if(mode!=="clear") run(true); };
+  const hide = () => { clearTimeout(leave); leave = setTimeout(()=>{ if(mode==="clear") run(false); }, 1400); };
+  show(scrambled()); setMode("scrambled"); ambient();
+  const fine = window.matchMedia && matchMedia("(hover:hover)").matches;
+  if(fine){
+    el.addEventListener("pointerenter", reveal);
+    el.addEventListener("pointerleave", hide);
+  } else {
+    el.addEventListener("click", ()=>{ mode==="clear" ? run(false) : reveal(); });
+    /* touch devices have no hover: decode once when the tagline scrolls into view */
+    if("IntersectionObserver" in window){
+      const io = new IntersectionObserver(es=>{ if(es.some(e=>e.isIntersecting)){ setTimeout(reveal, 900); io.disconnect(); } }, {threshold:.8});
+      io.observe(el);
+    } else reveal();
+  }
+  el.addEventListener("focus", reveal);
+  el.addEventListener("blur", hide);
+}
+
 /* ---------------- bootstrap ---------------- */
 async function boot(){
   try{
@@ -1753,6 +1819,7 @@ async function boot(){
     renderFavs();
     renderAdvPanel();
     wireup();
+    initDecode();
     const rc = recentCount();
     const newCardTitle = $("#newCardTitle");
     if(newCardTitle) newCardTitle.textContent = `${rc} New This Cycle`;
