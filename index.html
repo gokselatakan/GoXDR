@@ -599,11 +599,15 @@ html[data-theme="light"] .cview{background-image:none}
 @media (max-width:960px) and (min-width:561px){.modes>:last-child:nth-child(odd){grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){.hf{transition:none}}
 .mode-card{display:flex;flex-direction:column;justify-content:flex-start;align-items:flex-start}
-.favs{margin-top:22px;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:16px 18px}
-.favs-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
-.favs-head h4{font-size:12px;font-family:"IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
-.favs-head .heart{color:var(--crit)}
-.favs-all{font-size:12px;color:var(--blue);font-weight:600;padding:4px 2px}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:34px}
+@media (max-width:860px){.duo{grid-template-columns:1fr}}
+.panel{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:16px 18px;min-width:0;display:flex;flex-direction:column}
+#advPanel{background:linear-gradient(90deg, rgba(255,140,66,.07) 0%, transparent 45%), var(--surface)}
+.atag-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--orange);margin-right:6px;vertical-align:1px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.panel-head h4{font-size:12px;font-family:"IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.panel-head .heart{color:var(--crit)}
+.panel-link{font-size:12px;color:var(--blue);font-weight:600;padding:4px 2px}
 .fav{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line-soft);cursor:pointer;touch-action:manipulation}
 .fav:first-child{border-top:0}
 .fav .rk{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--dim);width:18px;flex:none}
@@ -613,6 +617,14 @@ html[data-theme="light"] .cview{background-image:none}
 .fav[data-sev="critical"] .ft span i{color:var(--crit)}.fav[data-sev="high"] .ft span i{color:var(--high)}.fav[data-sev="medium"] .ft span i{color:var(--med)}.fav[data-sev="low"] .ft span i{color:var(--low)}
 .fav .ft span i{font-style:normal;font-family:"IBM Plex Sans Condensed";font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-right:8px}
 @media (hover:hover){.fav:hover .ft b{color:var(--blue)}}
+.panel-list{display:flex;flex-direction:column;flex:1;justify-content:center}
+.adv-row{display:block;width:100%;text-align:left;padding:10px 0;border-top:1px solid var(--line-soft);cursor:pointer;touch-action:manipulation}
+.adv-row:first-child{border-top:0}
+.adv-row .am{display:flex;gap:10px;align-items:center;font-size:11px;color:var(--dim);margin-bottom:4px;flex-wrap:wrap}
+.adv-row .am i{font-style:normal;font-family:"IBM Plex Sans Condensed";font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 6px;font-size:10px}
+.adv-row b{display:block;font-weight:500;font-size:13.5px;line-height:1.3;letter-spacing:-.01em}
+.adv-row span.s{display:block;font-size:12px;color:var(--muted);margin-top:3px;line-height:1.45}
+@media (hover:hover){.adv-row:hover b{color:var(--blue)}}
 .favs-empty{font-size:12.5px;color:var(--muted);padding:6px 0 2px}
 
 </style>
@@ -721,10 +733,15 @@ html[data-theme="light"] .cview{background-image:none}
 
       <div class="counter-bar" id="counters"></div>
 
-      <div class="advisory">
-        <span class="atag">Schema update</span>
-        <span class="txt"><code>AADSignInEventsBeta</code> retired. Affected queries migrated to <code>EntraIdSignInEvents</code> and <code>EntraIdDeviceId</code>. Marked <b>updated</b> in the list.</span>
-        <a href="#" id="advLink">Read the advisory →</a>
+      <div class="duo">
+        <section class="panel" id="advPanel" aria-label="Schema updates">
+          <div class="panel-head"><h4><span class="atag-dot"></span> Schema updates</h4><button class="panel-link" id="advLink" type="button">All advisories →</button></div>
+          <div class="panel-list" id="advList"></div>
+        </section>
+        <section class="panel" id="favs" aria-label="Community favorites">
+          <div class="panel-head"><h4><span class="heart">♥</span> Community favorites</h4><button class="panel-link" id="favAll" type="button">See all liked →</button></div>
+          <div class="panel-list" id="favList"></div>
+        </section>
       </div>
 
       <button class="featured-new new-glow" id="modeNew">
@@ -736,41 +753,8 @@ html[data-theme="light"] .cview{background-image:none}
         <span class="fn-arr">Explore →</span>
       </button>
 
-      <div class="section-label"><span class="num">01</span> Browse by category</div>
+      <div class="section-label">Browse by category</div>
       <div class="grid" id="grid"></div>
-
-      <div class="section-label" style="margin-top:44px"><span class="num">02</span> Explore differently</div>
-      <div class="modes">
-        <button class="mode-card" id="modeAttack">
-          <span class="glyph glyph-blue">⊞</span>
-          <div class="k">ATT&amp;CK Matrix</div>
-          <h4>Coverage by tactic and technique</h4>
-          <p>See which MITRE tactics the library covers and where gaps sit. Click any cell to filter to that tactic.</p>
-        </button>
-        <button class="mode-card" id="modeWork">
-          <span class="glyph glyph-orange">≡</span>
-          <div class="k">Hunt</div>
-          <h4>Filter by the tables you have</h4>
-          <p>Faceted filters, triage cards and a hunt pack. Pick your tables and see what you can run today.</p>
-        </button>
-        <button class="mode-card" id="modeCamp">
-          <span class="glyph glyph-high">◇</span>
-          <div class="k">Campaigns</div>
-          <h4>Detections grouped by attack story</h4>
-          <p>Follow a campaign from first contact to impact and open each query in order.</p>
-        </button>
-        <button class="mode-card" id="modeAdv">
-          <span class="glyph glyph-med">△</span>
-          <div class="k">Advisories</div>
-          <h4>Schema changes and deprecations</h4>
-          <p>Microsoft schema deprecations tracked over time. See what changed and which queries were updated.</p>
-        </button>
-      </div>
-
-      <section class="favs" id="favs" aria-label="Community favorites">
-        <div class="favs-head"><h4><span class="heart">♥</span> Community favorites</h4><button class="favs-all" id="favAll" type="button">See all liked →</button></div>
-        <div class="favs-list" id="favList"></div>
-      </section>
 
       <div class="site-footer">
         <div class="footer-links">
@@ -1069,6 +1053,14 @@ function renderCounters(){
     <div class="counter med"><div class="l"><span class="d"></span>Medium</div><div class="n">${med}</div></div>
     <div class="counter low"><div class="l"><span class="d"></span>Low</div><div class="n">${low}</div></div>
   `;
+}
+function renderAdvPanel(){
+  const box = $("#advList"); if(!box) return;
+  box.innerHTML = ADVISORIES.slice(0,2).map(a=>{
+    let t = a.body.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+    if(t.length>150){ t = t.slice(0,150); t = t.slice(0, t.lastIndexOf(" ")) + "…"; }
+    return `<button class="adv-row" type="button"><span class="am"><i>${esc(a.kind)}</i><span>${esc(a.date)}</span></span><b>${esc(a.title)}</b><span class="s">${esc(t)}</span></button>`;
+  }).join("");
 }
 function renderFavs(){
   const box = $("#favList"); if(!box) return;
@@ -1741,6 +1733,7 @@ async function boot(){
     renderCounters();
     renderGrid();
     renderFavs();
+    renderAdvPanel();
     wireup();
     const rc = recentCount();
     const newCardTitle = $("#newCardTitle");
@@ -1773,10 +1766,6 @@ function wireup(){
   $("#viewAdv").onclick = ()=>{ goAdv(); pushHistory(); };
   $("#brand").onclick = ()=>{ goGrid(); pushHistory(); };
   $("#brand").onkeydown = e => { if(e.key==="Enter"){ goGrid(); pushHistory(); } };
-  $("#modeAttack").onclick = ()=>{ goAttack(); pushHistory(); };
-  $("#modeWork").onclick = ()=>{ resetWorkspaceFilters(); state.cat="all"; state.sub=null; state.tactic=null; goWorkspace(); pushHistory(); };
-  $("#modeCamp").onclick = ()=>{ goCampaigns(); pushHistory(); };
-  $("#modeAdv").onclick = ()=>{ goAdv(); pushHistory(); };
   const goLiked = ()=>{
     resetWorkspaceFilters();
     state.sortByLikes = true;
@@ -1785,6 +1774,7 @@ function wireup(){
     pushHistory();
   };
   $("#favAll").onclick = goLiked;
+  $("#advList").addEventListener("click", e=>{ if(e.target.closest(".adv-row")){ goAdv(); pushHistory(); } });
   const favOpen = e=>{
     const row = e.target.closest(".fav"); if(!row) return;
     const h = e.target.closest(".heart-mini");
@@ -1801,7 +1791,7 @@ function wireup(){
     goWorkspace();
     pushHistory();
   };
-  $("#advLink").onclick = e => { e.preventDefault(); goAdv(); pushHistory(); };
+  $("#advLink").onclick = ()=>{ goAdv(); pushHistory(); };
   $("#mobileBack").onclick = ()=>{
     try{
       if(state.sel !== null){
