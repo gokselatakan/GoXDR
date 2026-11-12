@@ -440,6 +440,167 @@ html[data-theme="light"] .landing{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
 ::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 ::-webkit-scrollbar-track{background:transparent}
+
+/* ===== Hunt workspace (replaces the three pane workspace) ===== */
+.hunt{flex:1;display:grid;grid-template-columns:236px minmax(0,1fr) minmax(0,45%);min-height:0;position:relative}
+.hunt>*{min-height:0;min-width:0}
+.hf{overflow-y:auto;border-right:1px solid var(--line);background:var(--surface);padding:14px 12px 16px}
+.hf .fhead{display:none}
+.fg{margin-bottom:16px}
+.fg h4{display:flex;justify-content:space-between;align-items:center;margin:0 0 6px 4px;font-family:"IBM Plex Sans Condensed";font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.fg h4 button{font-size:10.5px;letter-spacing:0;text-transform:none;color:var(--blue);font-weight:600}
+.fo{width:100%;display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;color:var(--muted);font-size:13px;text-align:left;touch-action:manipulation}
+@media (hover:hover){.fo:hover{background:var(--surface-2);color:var(--text)}}
+.fo[aria-pressed="true"]{background:var(--surface-2);color:var(--text);font-weight:500}
+.fo .n{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--dim)}
+.fo[aria-pressed="true"] .n{color:var(--blue)}
+.fo .bx{width:12px;height:12px;border:1px solid var(--dim);border-radius:3px;flex:none}
+.fo[aria-pressed="true"] .bx{background:var(--blue);border-color:var(--blue);box-shadow:inset 0 0 0 2px var(--surface-2)}
+.fo .lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fo.mono .lbl{font-family:"IBM Plex Mono",monospace;font-size:12px}
+.fo .sd{width:8px;height:8px;border-radius:50%;flex:none}
+.fo[data-sev="critical"] .sd{background:var(--crit)}
+.fo[data-sev="high"] .sd{background:var(--high)}
+.fo[data-sev="medium"] .sd{background:var(--med)}
+.fo[data-sev="low"] .sd{background:var(--low)}
+.fo.more{color:var(--blue);font-weight:600}
+.fnote{font-size:11.5px;color:var(--dim);margin:4px 8px 0;line-height:1.4}
+.ffoot{border-top:1px solid var(--line-soft);padding:12px 4px 0;margin-top:6px}
+.ffoot .row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim);margin-bottom:5px}
+.ffoot .row b{font-family:"IBM Plex Mono",monospace;color:var(--muted);font-weight:500}
+.ffoot .row .ok{color:var(--low)}
+
+.hl{display:flex;flex-direction:column;border-right:1px solid var(--line);background-color:var(--bg)}
+.hl-head{padding:10px 14px;border-bottom:1px solid var(--line-soft);background:var(--bg-2);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.hl-head .cnt{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.hl-head .cnt b{color:var(--text);font-family:"IBM Plex Mono",monospace}
+.hl-chips{display:flex;gap:6px;flex-wrap:wrap}
+.hl-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto}
+.hl-scroll{overflow-y:auto;flex:1}
+.fchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:5px;padding:1px 4px 1px 8px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted)}
+.fchip button{color:var(--dim);font-size:14px;line-height:1;padding:0 4px}
+#fBtn,#packBtn{display:none}
+#packBtn{display:inline-flex}
+.hrow{width:100%;text-align:left;display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:0 8px;position:relative;padding:10px 14px 10px 18px;border-bottom:1px solid var(--line-soft);touch-action:manipulation}
+.hrow::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--sc);opacity:.4}
+.hrow[aria-current="true"]::before{opacity:1}
+.hrow[aria-current="true"]{background:var(--surface-2)}
+@media (hover:hover){.hrow:hover{background:var(--surface)}}
+.hrow[data-sev="critical"]{--sc:var(--crit)}.hrow[data-sev="high"]{--sc:var(--high)}.hrow[data-sev="medium"]{--sc:var(--med)}.hrow[data-sev="low"]{--sc:var(--low)}
+.hrow .rid{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--dim);padding-top:2px}
+.hrow .t{font-size:13.5px;font-weight:500;letter-spacing:-.01em;line-height:1.3}
+.hrow .m{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--dim);margin-top:3px}
+.hrow .m .sev{font-family:"IBM Plex Sans Condensed";font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--sc)}
+.hrow .m .tbl{font-family:"IBM Plex Mono",monospace;color:var(--muted);font-size:10.5px}
+.hrow .sd2{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px}
+.hrow .heart-mini{margin-left:0}
+.mini{font-family:"IBM Plex Sans Condensed";font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border:1px solid var(--line);border-radius:4px;padding:0 6px;line-height:17px;color:var(--muted);white-space:nowrap}
+.mini.new{border-color:var(--blue);color:var(--blue)}
+.mini.upd{border-color:var(--orange-dim);color:var(--orange)}
+.mini.pk{background:var(--blue);border-color:var(--blue);color:#fff}
+
+.hd{display:flex;flex-direction:column;background-color:var(--bg);background-image:radial-gradient(circle, rgba(76,194,255,.05) 1px, transparent 1px);background-size:24px 24px}
+html[data-theme="light"] .hd{background-image:none}
+.hd .mobile-back{display:none}
+.tri{border:1px solid var(--line);border-radius:9px;background:var(--surface);margin-bottom:18px;overflow:hidden}
+.tri>div{padding:11px 14px;border-top:1px solid var(--line-soft)}
+.tri>div:first-child{border-top:0}
+.tri h5{margin:0 0 4px;font-family:"IBM Plex Sans Condensed";font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.tri p{color:var(--text);font-size:14px;line-height:1.6;max-width:72ch}
+.tri .do{background:rgba(76,194,255,.07)}
+.tri .do h5{color:var(--blue)}
+.warnbox{border:1px solid var(--orange-dim);border-left:3px solid var(--orange);border-radius:7px;padding:9px 12px;margin-bottom:14px;font-size:13px;background:rgba(255,140,66,.06)}
+.warnbox b{color:var(--orange)}
+.dacts{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
+.btn2{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border:1px solid var(--line);border-radius:8px;font-family:"IBM Plex Sans Condensed";font-size:11.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text);background:var(--surface);touch-action:manipulation}
+@media (hover:hover){.btn2:hover{border-color:var(--blue)}}
+.btn2.primary{background:var(--blue);border-color:var(--blue);color:#06121A}
+html[data-theme="light"] .btn2.primary{color:#fff}
+.btn2:disabled{opacity:.4;cursor:default}
+.tcl{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.tcl .lbl{font-family:"IBM Plex Sans Condensed";font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-right:4px}
+button.pill,a.pill{cursor:pointer;text-decoration:none}
+@media (hover:hover){button.pill:hover,a.pill:hover{border-color:var(--blue);color:var(--blue)}}
+.code .ln{display:grid;grid-template-columns:38px minmax(0,1fr)}
+.code .ln i{font-style:normal;text-align:right;padding-right:12px;color:var(--dim);opacity:.6;user-select:none}
+.code .ln>span{white-space:pre}
+.k-num{color:var(--orange)}
+.code pre{padding:14px 0 14px}
+.code .ln>span{padding-right:16px}
+
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:40;display:flex;flex-direction:column;box-shadow:-10px 0 30px rgba(0,0,0,.35)}
+.drawer header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+.drawer h3{font-size:15px;font-weight:600}
+.dlist{flex:1;overflow-y:auto}
+.pitem{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line-soft);font-size:13px}
+.pitem .mono{font-family:"IBM Plex Mono",monospace;color:var(--dim);margin-right:6px}
+.dfoot{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:7px 14px;border-radius:7px;font-size:13px;font-weight:600;z-index:60}
+
+/* campaigns */
+.camp-wrap{flex:1;display:grid;grid-template-columns:300px minmax(0,1fr);min-height:0;position:relative}
+.camp-wrap>*{min-height:0;min-width:0}
+.clist{overflow-y:auto;border-right:1px solid var(--line);background:var(--surface)}
+.citem{display:block;width:100%;text-align:left;padding:13px 16px;border-bottom:1px solid var(--line-soft);position:relative;touch-action:manipulation}
+.citem::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--sc);opacity:.4}
+.citem[aria-current="true"]{background:var(--surface-2)}
+.citem[aria-current="true"]::before{opacity:1}
+@media (hover:hover){.citem:hover{background:var(--surface-2)}}
+.citem .cn{font-weight:600;font-size:14px;line-height:1.3;letter-spacing:-.01em}
+.citem .cm{font-size:11.5px;color:var(--dim);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.sevtxt{font-family:"IBM Plex Sans Condensed";font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--sc)}
+[data-sev="critical"]{--sc:var(--crit)}[data-sev="high"]{--sc:var(--high)}[data-sev="medium"]{--sc:var(--med)}[data-sev="low"]{--sc:var(--low)}
+.cview{overflow-y:auto;background-color:var(--bg);background-image:radial-gradient(circle, rgba(76,194,255,.05) 1px, transparent 1px);background-size:24px 24px}
+html[data-theme="light"] .cview{background-image:none}
+.cin{padding:26px 32px 56px;max-width:920px}
+.cin h2{font-size:24px;font-weight:600;letter-spacing:-.025em;line-height:1.2;margin-bottom:6px}
+.cin .when{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--dim);margin-bottom:14px}
+.cin .sum{color:var(--muted);font-size:14.5px;line-height:1.62;max-width:70ch;margin-bottom:22px}
+.stages{list-style:none}
+.stage{display:grid;grid-template-columns:28px minmax(0,1fr);gap:0 12px;position:relative;padding-bottom:16px}
+.stage::before{content:"";position:absolute;left:13px;top:28px;bottom:0;width:1px;background:var(--line)}
+.stage:last-child::before{display:none}
+.stage .dot{width:27px;height:27px;border-radius:50%;border:1px solid var(--blue-dim);color:var(--blue);display:grid;place-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;background:var(--surface);position:relative;z-index:1}
+.stage .lab{font-family:"IBM Plex Sans Condensed";font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600;margin:5px 0 6px}
+.qbox{border:1px solid var(--line);border-left:3px solid var(--sc);border-radius:8px;background:var(--surface)}
+.qhead{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:10px 12px;width:100%;text-align:left;touch-action:manipulation}
+@media (hover:hover){.qhead:hover{background:var(--surface-2)}}
+.qhead .qn{font-weight:500;font-size:14px;line-height:1.3;display:block}
+.qhead .qa{font-size:12.5px;color:var(--muted);margin-top:3px;display:block;max-width:70ch}
+.qhead .qr{display:flex;gap:8px;align-items:center;flex:none}
+.qbody{border-top:1px solid var(--line-soft);padding:12px}
+.qbody .tri{margin-bottom:10px}
+
+@media (max-width:1100px){
+  .hunt{grid-template-columns:200px minmax(0,1fr)}
+  .hd{display:none}
+  .hunt.detail-open .hd{display:flex;position:absolute;inset:0;z-index:15;background-color:var(--bg)}
+  .hd .mobile-back{display:flex;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface);font-family:"IBM Plex Sans Condensed";font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--blue);flex:0 0 auto;touch-action:manipulation}
+  .detail-scroll{padding:20px 18px 40px}
+}
+@media (max-width:760px){
+  .hunt{grid-template-columns:minmax(0,1fr)}
+  .hf{position:absolute;left:0;top:0;bottom:0;width:min(310px,88%);z-index:12;transform:translateX(-105%);transition:transform .16s;border-right:1px solid var(--line);box-shadow:8px 0 30px rgba(0,0,0,.3)}
+  .hunt.show-f .hf{transform:none}
+  .hunt.show-f::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:11}
+  .hunt.show-f .hf{z-index:13}
+  .hf .fhead{display:flex;justify-content:space-between;align-items:center;position:sticky;top:-14px;margin:-14px -12px 8px;padding:12px;background:var(--surface);border-bottom:1px solid var(--line-soft);z-index:2}
+  .hf .fhead b{font-size:15px}
+  #fBtn{display:inline-flex}
+  .hrow{padding-right:12px}
+  .camp-wrap{grid-template-columns:minmax(0,1fr)}
+  .cview{display:none}
+  .camp-wrap.detail-open .cview{display:block;position:absolute;inset:0;z-index:15;background-color:var(--bg)}
+  .camp-wrap.detail-open .clist{display:none}
+  .cin{padding:16px 16px 40px}
+  .cin .cback{display:inline-flex}
+}
+.cin .cback{display:none;margin-bottom:12px}
+.modes>:last-child:nth-child(odd){}
+@media (max-width:960px) and (min-width:561px){.modes>:last-child:nth-child(odd){grid-column:1/-1}}
+@media (prefers-reduced-motion:reduce){.hf{transition:none}}
+@media (min-width:961px){.modes{grid-template-columns:repeat(5,1fr)}}
+
 </style>
 <script type="module">
   // ── GoXDR Likes (Firebase Realtime Database) ───────────────────────────
@@ -527,7 +688,8 @@ html[data-theme="light"] .landing{background:var(--bg)}
     <div class="spacer"></div>
     <div class="tools">
       <button class="tool" id="viewGrid" aria-pressed="true">Overview</button>
-      <button class="tool" id="viewWork" aria-pressed="false">Workspace</button>
+      <button class="tool" id="viewWork" aria-pressed="false">Hunt</button>
+      <button class="tool" id="viewCamp" aria-pressed="false">Campaigns</button>
       <button class="tool" id="viewAttack" aria-pressed="false">ATT&amp;CK</button>
       <button class="tool" id="viewAdv" aria-pressed="false">Advisories</button>
       <button class="tool" id="themeBtn">Light</button>
@@ -573,9 +735,15 @@ html[data-theme="light"] .landing{background:var(--bg)}
         </button>
         <button class="mode-card" id="modeWork">
           <span class="glyph glyph-orange">≡</span>
-          <div class="k">Workspace</div>
-          <h4>Three pane analyst view</h4>
-          <p>Category rail, query list and detail panel. Keyboard driven. Filter by severity and platform.</p>
+          <div class="k">Hunt</div>
+          <h4>Filter by the tables you have</h4>
+          <p>Faceted filters, triage cards and a hunt pack. Pick your tables and see what you can run today.</p>
+        </button>
+        <button class="mode-card" id="modeCamp">
+          <span class="glyph glyph-high">◇</span>
+          <div class="k">Campaigns</div>
+          <h4>Detections grouped by attack story</h4>
+          <p>Follow a campaign from first contact to impact and open each query in order.</p>
         </button>
         <button class="mode-card" id="modeAdv">
           <span class="glyph glyph-med">△</span>
@@ -606,48 +774,48 @@ html[data-theme="light"] .landing{background:var(--bg)}
     </div>
   </main>
 
-  <div class="workspace hidden" id="workspace">
-    <nav class="rail">
-      <div class="rail-head">Categories <span class="count" id="catCountBadge">0</span></div>
-      <div class="rail-list" id="rail"></div>
-      <div class="rail-foot">
-        <div class="row"><span>Showing</span><b id="shownCount">0</b></div>
-        <div class="row"><span>Schema</span><b class="ok">2026.07 ✓</b></div>
-        <div class="row"><span>Last audit</span><b>Jul 14</b></div>
+  <div class="hunt hidden" id="workspace">
+    <nav class="hf" id="rail" aria-label="Filters"></nav>
+    <section class="hl" aria-label="Results">
+      <div class="hl-head">
+        <button class="tool" id="fBtn" type="button">Filters</button>
+        <span class="cnt"><b id="shownCount">0</b> queries</span>
+        <span class="hl-chips" id="activeChips"></span>
+        <div class="hl-tools">
+          <button class="chip" data-sort="sev" aria-pressed="true">Severity</button>
+          <button class="chip" data-sort="new" aria-pressed="false">Newest</button>
+          <button class="chip" data-sort="id" aria-pressed="false">ID</button>
+          <span class="divider"></span>
+          <button class="chip" id="sortLikesChip" aria-pressed="false">♥ Most Liked</button>
+          <button class="chip new-chip" id="newChip" aria-pressed="false">✨ Recently Added</button>
+          <button class="chip active-filter" id="activeFilterChip" style="display:none"></button>
+          <button class="chip" id="packBtn" type="button">Hunt pack&nbsp;<b id="packN">0</b></button>
+        </div>
       </div>
-    </nav>
-    <section class="listpane">
-      <div class="listpane-head">
-        <button class="chip" data-k="all" aria-pressed="true">All sev</button>
-        <button class="chip" data-k="critical" aria-pressed="false">Critical</button>
-        <button class="chip" data-k="high" aria-pressed="false">High</button>
-        <button class="chip" data-k="medium" aria-pressed="false">Med</button>
-        <button class="chip" data-k="low" aria-pressed="false">Low</button>
-        <div class="divider"></div>
-        <button class="chip" data-p="all" aria-pressed="true">All plat</button>
-        <button class="chip" data-p="xdr" aria-pressed="false">XDR</button>
-        <button class="chip" data-p="sentinel" aria-pressed="false">Sentinel</button>
-        <div class="divider"></div>
-        <button class="chip" id="sortLikesChip" aria-pressed="false">♥ Most Liked</button>
-        <button class="chip new-chip" id="newChip" aria-pressed="false">✨ Recently Added</button>
-        <button class="chip active-filter" id="activeFilterChip" style="display:none"></button>
-      </div>
-      <div class="listpane-scroll" id="list"></div>
+      <div class="hl-scroll" id="list"></div>
     </section>
-    <section class="detail" id="detail">
+    <section class="hd" id="detail">
       <button class="mobile-back" id="mobileBack" type="button">&larr; Back to list</button>
       <div class="empty" id="emptyState">
         <div class="g">|</div>
-        <p>Pick a query from the list. Use <kbd>↑</kbd> <kbd>↓</kbd> to move, <kbd>/</kbd> to search.</p>
+        <p>Pick a query from the list. Use <kbd>↑</kbd> <kbd>↓</kbd> to move, <kbd>c</kbd> to copy, <kbd>/</kbd> to search.</p>
       </div>
       <div class="detail-scroll hidden" id="detailScroll"><div class="detail-inner" id="detailInner"></div></div>
     </section>
   </div>
 
+  <div class="camp-wrap hidden" id="campaigns">
+    <div class="clist" id="clist"></div>
+    <div class="cview" id="cview"></div>
+  </div>
+
+  <aside class="drawer hidden" id="packDrawer" aria-label="Hunt pack"></aside>
+  <div class="toast hidden" id="toast"></div>
+
   <div class="matrix-wrap hidden" id="attack">
     <div class="matrix-head">
       <h2>ATT&amp;CK <span class="accent">coverage matrix</span></h2>
-      <p>MITRE ATT&amp;CK Enterprise tactics, mapped from query tags and content. Deeper blue means more detections in this library. Click any tactic column to filter workspace to that tactic.</p>
+      <p>MITRE ATT&amp;CK Enterprise tactics, mapped from query tags and content. Deeper blue means more detections in this library. Click any tactic column to filter the hunt view to that tactic.</p>
       <div class="legend">
         <div class="item"><span class="swatch" style="background:var(--surface)"></span>No coverage</div>
         <div class="item"><span class="swatch" style="background:rgba(76,194,255,.08);border-color:var(--blue-dim)"></span>1-2 queries</div>
@@ -720,7 +888,7 @@ const safeStorage = {
 };
 
 let LIKED_LOCAL = new Set(JSON.parse(safeStorage.get('goxdr_liked_ids', '[]')));
-let state = { view:"grid", cat:"all", sub:null, sev:"all", plat:"all", tactic:null, term:"", sel:null, sortByLikes:false, newOnly:false };
+let state = { view:"grid", cat:"all", sub:null, sev:"all", plat:"all", tactic:null, term:"", sel:null, sortByLikes:false, newOnly:false, kind:null, tables:[], runnable:false, sort:"sev", camp:null, allTables:false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
@@ -916,31 +1084,7 @@ function renderGrid(){
   });
 }
 
-/* ---------------- workspace ---------------- */
-function renderRail(){
-  const cats = catList();
-  const items = [{id:"all",name:"All queries",n:DATA.length}]
-    .concat(cats.map(c=>({id:c,name:c,n:countByCat(c)})));
-  $("#catCountBadge").textContent = cats.length;
-  $("#rail").innerHTML = items.map(i=>
-    `<button class="rail-item" data-cat="${esc(i.id)}" aria-current="${state.cat===i.id}">
-       <span>${esc(i.name)}</span><span class="n">${i.n}</span>
-     </button>`).join("");
-  $("#rail").querySelectorAll(".rail-item").forEach(b=>{
-    b.onclick = ()=>{
-      try{
-        resetWorkspaceFilters();
-        state.cat=b.dataset.cat; state.sub=null; state.sel=null; state.tactic=null;
-        $("#rail").querySelectorAll('.rail-item[aria-current="true"]').forEach(x=>x.setAttribute('aria-current','false'));
-        b.setAttribute('aria-current','true');
-        renderList(); renderDetail();
-        pushHistory();
-      }catch(err){
-        (window.__goxdrReportError||console.error)('rail item click failed: ' + (err && err.stack || err));
-      }
-    };
-  });
-}
+/* ---------------- workspace (Hunt) ---------------- */
 const RECENT_DAYS = 14;
 function isRecentlyAdded(q){
   const added = new Date(q.added + "T00:00:00Z").getTime();
@@ -948,103 +1092,230 @@ function isRecentlyAdded(q){
   return added >= cutoff;
 }
 function recentCount(){ return DATA.filter(isRecentlyAdded).length; }
+const SEVRANK = {critical:0, high:1, medium:2, low:3};
+const PLAT_LABEL = {xdr:"Defender XDR", sentinel:"Sentinel", both:"Sentinel + XDR"};
+const WIDE = () => window.innerWidth > 1100;
+const defer = fn => setTimeout(fn, 0);
 
-function filtered(){
-  const t = state.term.toLowerCase();
-  return DATA.filter(q=>{
-    if(state.cat!=="all" && q.cat!==state.cat) return false;
-    if(state.sub && q.sub!==state.sub) return false;
-    if(state.sev!=="all" && q.sev!==state.sev) return false;
-    if(state.plat!=="all"){
-      if(state.plat==="xdr" && !(q.plat==="xdr" || q.plat==="both")) return false;
-      if(state.plat==="sentinel" && !(q.plat==="sentinel" || q.plat==="both")) return false;
-    }
-    if(state.tactic){
-      const tacs = tacticsFor(q);
-      if(!tacs.includes(state.tactic)) return false;
-    }
-    if(state.newOnly && !isRecentlyAdded(q)) return false;
-    if(!t) return true;
-    const hay = (q.name+" "+q.desc+" "+(q.tags||[]).join(" ")+" "+(q.tables||[]).join(" ")+" "+q.cat+" "+q.sub).toLowerCase();
-    return hay.includes(t);
+/* derived fields, computed once after queries.json loads */
+function prepareData(){
+  DATA.forEach(q=>{
+    q.tech = [...new Set(q.desc.match(/\bT\d{4}(?:\.\d{3})?\b/g) || [])];
+    q.atlas = [...new Set(q.desc.match(/\bAML\.T\d{4}(?:\.\d{3})?\b/g) || [])];
+    q.isHunt = /hunting query|inventory query|baseline hunt/i.test(q.desc) || /\bhunt\b/i.test(q.name);
+    q.notes = (q.kql.match(/^\s*\/\/\s*NOTE:.*$/gm) || []).map(s=>s.replace(/^\s*\/\/\s*/,""));
+    q.hay = [q.id,q.name,q.cat,q.sub,q.plat,(q.tables||[]).join(" "),(q.tags||[]).join(" "),q.tech.join(" "),q.atlas.join(" "),q.desc].join(" ").toLowerCase();
   });
 }
-function renderList(){
-  let rows = filtered();
-  if(state.sortByLikes){
-    rows = [...rows].sort((a,b)=> likeCount(b.id)-likeCount(a.id) || a.id-b.id);
+
+function matchQ(q, skip){
+  const t = state.term.toLowerCase().trim();
+  if(t){ for(const p of t.split(/\s+/)){ if(!q.hay.includes(p)) return false; } }
+  if(skip!=="cat" && state.cat!=="all" && q.cat!==state.cat) return false;
+  if(state.sub && q.sub!==state.sub) return false;
+  if(skip!=="sev" && state.sev!=="all" && q.sev!==state.sev) return false;
+  if(skip!=="plat" && state.plat!=="all"){
+    if(state.plat==="xdr" && !(q.plat==="xdr" || q.plat==="both")) return false;
+    if(state.plat==="sentinel" && !(q.plat==="sentinel" || q.plat==="both")) return false;
   }
+  if(skip!=="kind" && state.kind && (state.kind==="hunt") !== q.isHunt) return false;
+  if(skip!=="tables" && state.tables.length){
+    const tb = q.tables || [];
+    if(state.runnable){ if(!tb.every(x=>state.tables.includes(x))) return false; }
+    else if(!tb.some(x=>state.tables.includes(x))) return false;
+  }
+  if(state.tactic && !tacticsFor(q).includes(state.tactic)) return false;
+  if(state.newOnly && !isRecentlyAdded(q)) return false;
+  return true;
+}
+function filtered(){ return DATA.filter(q=>matchQ(q)); }
+function facetCounts(skip, keyFn){
+  const m = new Map();
+  DATA.forEach(q=>{ if(!matchQ(q,skip)) return; const ks = keyFn(q); (Array.isArray(ks)?ks:[ks]).forEach(k=>m.set(k,(m.get(k)||0)+1)); });
+  return m;
+}
+function sortedRows(){
+  const rows = filtered();
+  if(state.sortByLikes) return rows.sort((a,b)=> likeCount(b.id)-likeCount(a.id) || a.id-b.id);
+  if(state.sort==="id") return rows.sort((a,b)=>a.id-b.id);
+  if(state.sort==="new") return rows.sort((a,b)=> b.added.localeCompare(a.added) || b.id-a.id);
+  return rows.sort((a,b)=> SEVRANK[a.sev]-SEVRANK[b.sev] || b.added.localeCompare(a.added) || b.id-a.id);
+}
+
+/* filters column */
+function fopt(label, n, pressed, attrs, extra, cls){
+  return `<button class="fo ${cls||""}" aria-pressed="${pressed}" ${attrs}>${extra||'<span class="bx"></span>'}<span class="lbl">${esc(label)}</span><span class="n">${n}</span></button>`;
+}
+function renderRail(){
+  const rail = $("#rail"); if(!rail) return;
+  const keepScroll = rail.scrollTop;
+  const cp = facetCounts("plat", q=> q.plat==="both" ? ["sentinel","xdr"] : [q.plat]);
+  const cs = facetCounts("sev", q=>q.sev);
+  const ck = facetCounts("kind", q=>q.isHunt?"hunt":"rule");
+  const cc = facetCounts("cat", q=>q.cat);
+  const ct = facetCounts("tables", q=>q.tables||[]);
+  const totals = new Map(); DATA.forEach(q=>(q.tables||[]).forEach(t=>totals.set(t,(totals.get(t)||0)+1)));
+  const allTab = [...totals.keys()].sort((a,b)=> (state.tables.includes(b)-state.tables.includes(a)) || (totals.get(b)-totals.get(a)) || a.localeCompare(b));
+  const shownTab = state.allTables ? allTab : allTab.slice(0, Math.max(12, state.tables.length));
+  const cats = catList();
+  const total = [...cc.values()].reduce((a,b)=>a+b,0);
+  rail.innerHTML = `
+    <div class="fhead"><b>Filters</b><button class="btn2 primary" data-act="closef" type="button">Show ${sortedRows().length} results</button></div>
+    <div class="fg"><h4>Platform ${state.plat!=="all"?'<button data-act="clr-plat">Clear</button>':''}</h4>
+      ${["sentinel","xdr"].map(p=>fopt(PLAT_LABEL[p], cp.get(p)||0, state.plat===p, `data-act="plat" data-v="${p}"`)).join("")}
+      <p class="fnote">Queries marked Sentinel + XDR count under both.</p></div>
+    <div class="fg"><h4>Severity ${state.sev!=="all"?'<button data-act="clr-sev">Clear</button>':''}</h4>
+      ${["critical","high","medium","low"].map(s=>fopt(s[0].toUpperCase()+s.slice(1), cs.get(s)||0, state.sev===s, `data-act="sev" data-v="${s}" data-sev="${s}"`, '<span class="sd"></span>')).join("")}</div>
+    <div class="fg"><h4>Kind ${state.kind?'<button data-act="clr-kind">Clear</button>':''}</h4>
+      ${fopt("Detection rule", ck.get("rule")||0, state.kind==="rule", 'data-act="kind" data-v="rule"')}
+      ${fopt("Hunting rule", ck.get("hunt")||0, state.kind==="hunt", 'data-act="kind" data-v="hunt"')}</div>
+    <div class="fg"><h4>Tables I have ${state.tables.length?'<button data-act="clr-tables">Clear</button>':''}</h4>
+      ${shownTab.map(t=>fopt(t, ct.get(t)||0, state.tables.includes(t), `data-act="table" data-v="${esc(t)}"`, null, "mono")).join("")}
+      <button class="fo more" data-act="alltables" type="button"><span class="lbl">${state.allTables?"Show fewer tables":"Show all "+allTab.length+" tables"}</span></button>
+      ${state.tables.length?`<button class="fo" aria-pressed="${state.runnable}" data-act="runnable"><span class="bx"></span><span class="lbl">Runnable with only these</span></button><p class="fnote">${state.runnable?"Every table of the query is selected.":"Queries that use any selected table."}</p>`:""}</div>
+    <div class="fg"><h4>Category ${state.cat!=="all"?'<button data-act="clr-cat">Clear</button>':''}</h4>
+      ${fopt("All queries", total, state.cat==="all", 'data-act="cat" data-v="all"', '<span class="bx"></span>')}
+      ${cats.map(c=>fopt(c, cc.get(c)||0, state.cat===c, `data-act="cat" data-v="${esc(c)}"`)).join("")}</div>
+    <div class="ffoot">
+      <div class="row"><span>Schema</span><b class="ok">2026.07 ✓</b></div>
+      <div class="row"><span>Last audit</span><b>Jul 14</b></div>
+    </div>`;
+  rail.scrollTop = keepScroll;
+}
+function railAction(a, v){
+  switch(a){
+    case "plat": state.plat = state.plat===v ? "all" : v; break;
+    case "clr-plat": state.plat = "all"; break;
+    case "sev": state.sev = state.sev===v ? "all" : v; break;
+    case "clr-sev": state.sev = "all"; break;
+    case "kind": state.kind = state.kind===v ? null : v; break;
+    case "clr-kind": state.kind = null; break;
+    case "table": state.tables = state.tables.includes(v) ? state.tables.filter(x=>x!==v) : state.tables.concat(v); if(!state.tables.length) state.runnable=false; break;
+    case "clr-tables": state.tables = []; state.runnable = false; break;
+    case "alltables": state.allTables = !state.allTables; break;
+    case "runnable": state.runnable = !state.runnable; break;
+    case "cat": state.cat = v; state.sub = null; state.tactic = null; break;
+    case "clr-cat": state.cat = "all"; state.sub = null; break;
+    default: return false;
+  }
+  return true;
+}
+function filterTable(t){
+  state.tables = [t]; state.runnable = false; state.sel = null;
+  defer(()=>{ renderRail(); renderList(); renderDetail(); pushHistory(); });
+}
+
+/* list */
+function syncToolbar(){
+  document.querySelectorAll("[data-sort]").forEach(b=>b.setAttribute("aria-pressed", !state.sortByLikes && b.dataset.sort===state.sort));
+  $("#sortLikesChip")?.setAttribute("aria-pressed", state.sortByLikes);
+  $("#newChip")?.setAttribute("aria-pressed", state.newOnly);
+  $("#packN").textContent = PACK.size;
+}
+function renderChips(){
+  const out = [];
+  if(state.cat!=="all") out.push(["cat", state.cat]);
+  if(state.sev!=="all") out.push(["sev", state.sev]);
+  if(state.plat!=="all") out.push(["plat", PLAT_LABEL[state.plat]]);
+  if(state.kind) out.push(["kind", state.kind==="hunt"?"Hunting rule":"Detection rule"]);
+  state.tables.forEach(t=>out.push(["table:"+t, t]));
+  $("#activeChips").innerHTML = out.map(([k,v])=>`<span class="fchip">${esc(v)}<button type="button" data-rm="${esc(k)}" aria-label="Remove filter">×</button></span>`).join("");
+}
+function removeFilter(k){
+  if(k==="cat"){ state.cat="all"; state.sub=null; }
+  else if(k==="sev") state.sev="all";
+  else if(k==="plat") state.plat="all";
+  else if(k==="kind") state.kind=null;
+  else if(k.startsWith("table:")){ state.tables = state.tables.filter(x=>x!==k.slice(6)); if(!state.tables.length) state.runnable=false; }
+}
+function renderList(){
+  const rows = sortedRows();
   $("#shownCount").textContent = rows.length;
-  // active filter chip
+  renderChips(); syncToolbar();
   const activeChip = $("#activeFilterChip");
   if(activeChip){
     if(state.tactic){
       activeChip.style.display = "";
       activeChip.textContent = state.sub ? `${state.tactic} · ${state.sub}` : state.tactic;
-    } else {
-      activeChip.style.display = "none";
-    }
+    } else { activeChip.style.display = "none"; }
   }
   if(!rows.length){
-    $("#list").innerHTML = `<div class="empty"><div class="g">|</div><p>No query matches. Try clearing filters or a table name like <b>EntraIdSignInEvents</b>.</p></div>`;
+    $("#list").innerHTML = `<div class="empty"><div class="g">|</div><p>No query matches. Clear a filter or try a table name like <b>EntraIdSignInEvents</b>.</p></div>`;
     return;
   }
-  // group by subcategory when a cat is picked (skip grouping in "most liked" leaderboard mode)
-  const groupBy = (!state.sortByLikes && state.cat!=="all") ? "sub" : null;
+  if(state.sel===null && WIDE()) state.sel = rows[0].id;
+  const groupBy = (!state.sortByLikes && state.cat!=="all" && state.sort==="id") ? "sub" : null;
   if(groupBy){
     const groups = {};
     for(const q of rows){ (groups[q.sub] = groups[q.sub] || []).push(q); }
-    const orderedSubs = Object.keys(groups).sort();
-    $("#list").innerHTML = orderedSubs.map(sub=>{
-      const items = groups[sub].map(q=>qrowHtml(q)).join("");
-      return `<div class="subhead"><span>${esc(sub)}</span><span class="cnt">${groups[sub].length}</span></div>${items}`;
-    }).join("");
+    $("#list").innerHTML = Object.keys(groups).sort().map(sub=>`<div class="subhead"><span>${esc(sub)}</span><span class="cnt">${groups[sub].length}</span></div>${groups[sub].map(qrowHtml).join("")}`).join("");
   } else {
-    $("#list").innerHTML = rows.map(q=>qrowHtml(q)).join("");
+    $("#list").innerHTML = rows.map(qrowHtml).join("");
   }
-  $("#list").querySelectorAll(".qrow").forEach(r=>{
+  $("#list").querySelectorAll(".hrow").forEach(r=>{
     r.onclick = ()=>{
       try{
         state.sel = +r.dataset.id;
-        // Update selection highlighting in place, without tearing down and
-        // rebuilding the row list from inside the click handler of one of
-        // its own rows. Replacing the element that is still dispatching a
-        // click can drop the rest of the handler in some WebKit builds
-        // (notably iOS Safari private browsing).
-        $("#list").querySelectorAll('.qrow[aria-current="true"]').forEach(x=>x.setAttribute('aria-current','false'));
+        $("#list").querySelectorAll('.hrow[aria-current="true"]').forEach(x=>x.setAttribute('aria-current','false'));
         r.setAttribute('aria-current','true');
         renderDetail();
         pushHistory();
       }catch(err){
-        (window.__goxdrReportError||console.error)('qrow click failed: ' + (err && err.stack || err));
+        (window.__goxdrReportError||console.error)('row click failed: ' + (err && err.stack || err));
       }
     };
   });
   $("#list").querySelectorAll(".heart-mini").forEach(h=>{
     h.onclick = (ev)=>{
-      try{
-        ev.stopPropagation();
-        toggleLike(+h.dataset.id, h);
-      }catch(err){
-        (window.__goxdrReportError||console.error)('heart click failed: ' + (err && err.stack || err));
-      }
+      try{ ev.stopPropagation(); toggleLike(+h.dataset.id, h); }
+      catch(err){ (window.__goxdrReportError||console.error)('heart click failed: ' + (err && err.stack || err)); }
     };
   });
 }
 function qrowHtml(q){
-  const tbl = (q.tables||[])[0] || "";
-  const updated = q.updated ? '<span class="badge-upd">updated</span>' : "";
+  const tb = q.tables || [];
   const liked = isLiked(q.id);
-  const cnt = likeCount(q.id);
-  return `<button class="qrow" data-sev="${q.sev}" data-id="${q.id}" aria-current="${state.sel===q.id}">
-    <div class="t">${esc(q.name)}</div>
-    <div class="m">
-      <span class="sev">${q.sev}</span>
-      <span class="tbl">${esc(tbl)}</span>
-      ${updated}
-      <span class="heart-mini${liked?' liked':''}" data-id="${q.id}">${HEART_SVG}<span>${cnt}</span></span>
-    </div>
+  return `<button class="hrow" data-sev="${q.sev}" data-id="${q.id}" aria-current="${state.sel===q.id}">
+    <span class="rid">${q.id}</span>
+    <span class="main"><span class="t" style="display:block">${esc(q.name)}</span>
+      <span class="m"><span class="sev">${q.sev}</span><span>${esc(q.cat)} / ${esc(q.sub)}</span><span class="tbl">${esc(tb.slice(0,2).join(" · "))}${tb.length>2?" +"+(tb.length-2):""}</span></span></span>
+    <span class="sd2">
+      ${isRecentlyAdded(q)?'<span class="mini new">New</span>':""}${q.updated?'<span class="mini upd">Updated</span>':""}${q.isHunt?'<span class="mini">Hunting</span>':""}<span class="mini pk${PACK.has(q.id)?"":" hidden"}" data-pk="${q.id}">In pack</span>
+      <span class="heart-mini${liked?" liked":""}" data-id="${q.id}">${HEART_SVG}<span>${likeCount(q.id)}</span></span>
+    </span>
   </button>`;
+}
+
+/* detail */
+const KQL_KW = new Set("let where project project-away project-reorder project-rename extend summarize join union order sort take top distinct mv-expand mv-apply parse evaluate render search find lookup invoke as by on kind in has has_any has_all contains startswith endswith matches regex and or not between asc desc with datatable range materialize print count limit sample serialize make-series fork partition scan".split(" "));
+const KQL_FN = new Set("ago now bin tostring toint tolong todouble tolower toupper todatetime totimespan tobool todynamic parse_json extract extract_all strcat split iff iif case coalesce isnull isnotnull isempty isnotempty array_length array_index_of dcount dcountif countif count make_set make_list arg_max arg_min min max avg sum take_any anyif any set_has_element set_difference bag_pack datetime_diff datetime_add dayofweek datetime_part format_datetime geo_info_from_ip_address ipv4_is_private ipv4_is_in_range column_ifexists trim replace_string strlen substring percentile round floor ceiling pack_array bag_keys tohex hash".split(" "));
+function hiKql(code){
+  const re = /(\/\/[^\n]*)|(@?"(?:[^"\\\n]|\\.)*"|@?'(?:[^'\\\n]|\\.)*')|(\b\d+(?:\.\d+)?(?:ms|s|m|h|d|min)?\b)|([A-Za-z_][\w-]*)(\()?/g;
+  return code.split("\n").map((line,i)=>{
+    let out = "", last = 0, m; re.lastIndex = 0;
+    while((m = re.exec(line))){
+      out += esc(line.slice(last, m.index)); last = re.lastIndex;
+      if(m[1]) out += `<span class="k-cmt">${esc(m[1])}</span>`;
+      else if(m[2]) out += `<span class="k-str">${esc(m[2])}</span>`;
+      else if(m[3]) out += `<span class="k-num">${esc(m[3])}</span>`;
+      else { const w = m[4]; if(m[5] && KQL_FN.has(w)) out += `<span class="k-fn">${esc(w)}</span>(`; else if(KQL_KW.has(w)) out += `<span class="k-op">${esc(w)}</span>${m[5]?"(":""}`; else out += esc(w) + (m[5]||""); }
+    }
+    out += esc(line.slice(last));
+    return `<div class="ln"><i>${i+1}</i><span>${out||" "}</span></div>`;
+  }).join("");
+}
+function triage(desc){
+  const marks = [["SOC action:","What to do"],["Known false positives:","Likely benign"],["Known limitations:","Limits"],["Known limitation:","Limits"],["Limitations:","Limits"],["Limitation:","Limits"],["MITRE ATT&CK:","MITRE"],["MITRE ATLAS:","MITRE"]];
+  const hits = [];
+  marks.forEach(([m,l])=>{ const i = desc.indexOf(m); if(i>=0) hits.push({i,m,l}); });
+  hits.sort((a,b)=>a.i-b.i);
+  const out = [{l:"What it finds", t:(hits.length ? desc.slice(0,hits[0].i) : desc).trim(), cls:""}];
+  hits.forEach((h,k)=>{
+    const end = k+1<hits.length ? hits[k+1].i : desc.length;
+    let t = desc.slice(h.i+h.m.length, end).trim(); t = t.charAt(0).toUpperCase()+t.slice(1);
+    if(h.l!=="MITRE") out.push({l:h.l, t, cls:h.l==="What to do"?"do":""});
+  });
+  return out;
 }
 function renderDetail(){
   const ws = $("#workspace");
@@ -1062,64 +1333,130 @@ function renderDetail(){
     $("#detailScroll").scrollTop = 0;
     if(ws) ws.classList.add("detail-open");
     const tacs = tacticsFor(q);
-    const platLabel = {xdr:"Defender XDR", sentinel:"Sentinel", both:"Sentinel + XDR"}[q.plat] || q.plat;
-    const liked = isLiked(q.id);
-    const cnt = likeCount(q.id);
+    const liked = isLiked(q.id), cnt = likeCount(q.id);
+    const needsEdit = /domain\.com|X\.X\.X\.X|placeholder/i.test(q.kql);
     $("#detailInner").innerHTML = `
     <div class="d-eyebrow">${esc(q.cat)} · ${esc(q.sub)}</div>
     <h2 class="d-title">${esc(q.name)}</h2>
     <div class="d-meta">
       <span class="pill sev-${q.sev}">${q.sev}</span>
-      <span class="pill plat">${esc(platLabel)}</span>
-      ${(q.tables||[]).map(t=>`<span class="pill">${esc(t)}</span>`).join("")}
+      <span class="pill plat">${esc(PLAT_LABEL[q.plat]||q.plat)}</span>
+      <span class="pill">${q.isHunt?"Hunting rule":"Detection rule"}</span>
       ${q.updated?`<span class="pill upd">Updated ${esc(q.updated)}</span>`:""}
-      <button class="heart-btn${liked?' liked':''}" id="detailHeart">${HEART_SVG}<span id="detailHeartCount">${cnt}</span></button>
+      <button class="heart-btn${liked?" liked":""}" id="detailHeart">${HEART_SVG}<span id="detailHeartCount">${cnt}</span></button>
     </div>
-    <p class="d-desc">${esc(q.desc)}</p>
+    <div class="tcl"><span class="lbl">Tables</span>${(q.tables||[]).map(t=>`<button class="pill" type="button" onclick="filterTable('${esc(t)}')" title="Filter the list to this table">${esc(t)}</button>`).join("")}</div>
+    ${(q.tech.length||q.atlas.length)?`<div class="tcl"><span class="lbl">Mapping</span>${q.tech.map(t=>`<a class="pill" target="_blank" rel="noopener" href="https://attack.mitre.org/techniques/${t.replace(".","/")}/">${t}</a>`).join("")}${q.atlas.map(t=>`<a class="pill" target="_blank" rel="noopener" href="https://atlas.mitre.org/techniques/${t}">${t}</a>`).join("")}</div>`:""}
+    <div class="tri">${triage(q.desc).map(s=>`<div class="${s.cls}"><h5>${s.l}</h5><p>${esc(s.t)}</p></div>`).join("")}</div>
+    ${needsEdit?`<div class="warnbox"><b>Edit before running.</b> ${q.notes.length?q.notes.map(esc).join(" "):"This query contains a placeholder value to replace with your own."}</div>`:""}
+    <div class="dacts">
+      <button class="btn2 primary" type="button" onclick="copyKql(${q.id}, this)">Copy KQL</button>
+      <button class="btn2" type="button" id="packBtnD" onclick="togglePack(${q.id})">${PACK.has(q.id)?"Remove from hunt pack":"Add to hunt pack"}</button>
+    </div>
     <div class="d-sec">
       <div class="d-sec-h"><span class="op">|</span> Query</div>
       <div class="code">
-        <div class="code-bar">
-          <span class="lang"><span class="dot"></span>kusto</span>
-          <span class="acts"><button onclick="copyKql(${q.id}, this)">Copy</button></span>
-        </div>
-        <pre>${highlightKql(q.kql)}</pre>
+        <div class="code-bar"><span class="lang"><span class="dot"></span>kusto · ${q.kql.split("\n").length} lines</span></div>
+        <pre>${hiKql(q.kql)}</pre>
       </div>
     </div>
-    ${tacs.length?`<div class="d-sec">
-      <div class="d-sec-h"><span class="op">|</span> ATT&amp;CK tactics</div>
-      <div class="tags">${tacs.map(t=>`<span class="tag tec">${esc(t)}</span>`).join("")}</div>
-    </div>`:""}
-    ${(q.tags||[]).length?`<div class="d-sec">
-      <div class="d-sec-h"><span class="op">|</span> Tags</div>
-      <div class="tags">${q.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div>
-    </div>`:""}
-    <div class="d-sec">
-      <div class="d-sec-h"><span class="op">|</span> Metadata</div>
-      <div class="tags">
-        <span class="tag">id ${q.id}</span>
-        <span class="tag">added ${esc(q.added)}</span>
-        ${q.updated?`<span class="tag">updated ${esc(q.updated)}</span>`:""}
-      </div>
-    </div>
-  `;
+    ${tacs.length?`<div class="d-sec"><div class="d-sec-h"><span class="op">|</span> ATT&amp;CK tactics</div><div class="tags">${tacs.map(t=>`<span class="tag tec">${esc(t)}</span>`).join("")}</div></div>`:""}
+    ${(q.tags||[]).length?`<div class="d-sec"><div class="d-sec-h"><span class="op">|</span> Tags</div><div class="tags">${q.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div></div>`:""}
+    <div class="d-sec"><div class="d-sec-h"><span class="op">|</span> Metadata</div>
+      <div class="tags"><span class="tag">id ${q.id}</span><span class="tag">added ${esc(q.added)}</span>${q.updated?`<span class="tag">updated ${esc(q.updated)}</span>`:""}</div></div>`;
     const dh = $("#detailHeart");
     if(dh) dh.onclick = ()=>toggleLike(q.id, dh);
   }catch(err){
     (window.__goxdrReportError||console.error)('renderDetail failed: ' + (err && err.stack || err));
   }
 }
+
+/* copy, toast, hunt pack */
+let toastTimer;
+function toast(msg){ const t=$("#toast"); if(!t) return; t.textContent=msg; t.classList.remove("hidden"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add("hidden"),1700); }
+function copyText(text, ok){
+  const fallback = ()=>{
+    try{ const ta=document.createElement("textarea"); ta.value=text; ta.style.cssText="position:fixed;opacity:0;top:0;left:0"; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand("copy"); ta.remove(); toast(ok); }
+    catch(e){ toast("Copy blocked. Select the code manually."); }
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(()=>toast(ok), fallback); } else fallback();
+}
 function copyKql(id, btn){
   try{
     const q = DATA.find(x=>x.id===id);
-    navigator.clipboard?.writeText(q.kql);
-    const old = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(()=>btn.textContent=old, 1200);
-  }catch(err){
-    (window.__goxdrReportError||console.error)('copyKql failed: ' + (err && err.stack || err));
-  }
+    copyText(q.kql, "KQL copied");
+    if(btn){ const old = btn.textContent; btn.textContent = "Copied"; setTimeout(()=>btn.textContent=old, 1200); }
+  }catch(err){ (window.__goxdrReportError||console.error)('copyKql failed: ' + (err && err.stack || err)); }
 }
+let PACK = new Set();
+try{ JSON.parse(safeStorage.get("goxdr_pack","[]")).forEach(i=>PACK.add(+i)); }catch(e){}
+function savePack(){ safeStorage.set("goxdr_pack", JSON.stringify([...PACK])); }
+function updatePackUI(id){
+  $("#packN").textContent = PACK.size;
+  document.querySelectorAll(`.mini.pk[data-pk="${id}"]`).forEach(el=>el.classList.toggle("hidden", !PACK.has(id)));
+  const b = $("#packBtnD"); if(b && state.sel===id) b.textContent = PACK.has(id) ? "Remove from hunt pack" : "Add to hunt pack";
+}
+function togglePack(id){
+  PACK.has(id) ? PACK.delete(id) : PACK.add(id);
+  savePack(); updatePackUI(id);
+  if(!$("#packDrawer").classList.contains("hidden")) defer(renderPack);
+}
+function packText(){
+  return [...PACK].map(id=>DATA.find(q=>q.id===id)).filter(Boolean).sort((a,b)=>a.id-b.id)
+    .map(q=>`// ===== #${q.id} ${q.name} [${PLAT_LABEL[q.plat]}]\n${q.kql}`).join("\n\n");
+}
+function renderPack(){
+  const d = $("#packDrawer");
+  const items = [...PACK].map(id=>DATA.find(q=>q.id===id)).filter(Boolean).sort((a,b)=>a.id-b.id);
+  $("#packN").textContent = items.length;
+  d.innerHTML = `<header><h3>Hunt pack (${items.length})</h3><button class="btn2" data-pk-act="close" type="button">Close</button></header>
+    <div class="dlist">${items.length ? items.map(q=>`<div class="pitem"><span><span class="mono">#${q.id}</span>${esc(q.name)}</span><button class="btn2" data-pk-act="rm" data-id="${q.id}" type="button">Remove</button></div>`).join("") : '<div class="empty"><p>Add queries with the Add to hunt pack button. The pack stays in this browser.</p></div>'}</div>
+    <div class="dfoot"><button class="btn2 primary" data-pk-act="copy" type="button" ${items.length?"":"disabled"}>Copy all KQL</button><button class="btn2" data-pk-act="clear" type="button" ${items.length?"":"disabled"}>Clear pack</button></div>`;
+}
+
+/* campaigns */
+const CAMPAIGNS = [{"key": "unc6671", "name": "UNC6671 passkey vishing", "when": "Library entries added 2026-10-01", "summary": "The actor phones the victim posing as IT and talks them through verifying their account while sign-ins fail. A new authentication method gets registered and survives a later password reset. After access the actor deletes the notification emails and pulls files with scripts.", "stages": [{"id": 157, "stage": "Persistence: new authentication method"}, {"id": 158, "stage": "Defense evasion: notification cleanup"}, {"id": 159, "stage": "Collection: scripted bulk file access"}]}, {"key": "devicecode", "name": "Device code phishing", "when": "Library entries added 2026-09-16 to 2026-10-01", "summary": "The victim approves a code on an attacker controlled session, so the sign-in itself looks legitimate. The attacker then registers a device and uses the token from somewhere else. The password never changes hands, so detection moves to the link, the flow and the gap between sign-in and token use.", "stages": [{"id": 166, "stage": "Delivery: device login link arrives by message"}, {"id": 164, "stage": "Census: who uses device code at all"}, {"id": 151, "stage": "Persistence: device registered after sign-in"}, {"id": 165, "stage": "Token use: different country after sign-in"}]}, {"key": "tokenreplay", "name": "Microsoft 365 token replay", "when": "Reported July to September 2026, added 2026-11-09", "summary": "Tokens stolen through AiTM relays and device code phishing were replayed instead of guessing passwords. The hunt combines campaign addresses, scripted Office clients, device registration and session changes.", "stages": [{"id": 176, "stage": "Hunt: replay signals in one result set"}, {"id": 165, "stage": "Follow up: token used from a different country"}]}, {"key": "cisa", "name": "Red team assessment of two SOCs", "when": "Library entries added 2026-10-01", "summary": "A joint red team assessment used a chain of common weaknesses. A low privilege user created computer accounts, an ESC1 certificate template allowed impersonation, DCSync pulled hashes and an app owner's refresh token was used to add a secret and read mailboxes. The four queries follow that order.", "stages": [{"id": 160, "stage": "Foothold: computer account creation"}, {"id": 161, "stage": "Privilege: certificate subject mismatch"}, {"id": 162, "stage": "Credential access: directory replication"}, {"id": 163, "stage": "Cloud: app secret added then used for mail"}]}, {"key": "lshiy", "name": "LSHIY Azure CLI password spray", "when": "Reported June 2026, 81 million attempts", "summary": "A low and slow spray through the Azure CLI client stayed under per account lockout thresholds. It only mattered where a guessed password cleared without a second factor, so the second query is the compromise condition.", "stages": [{"id": 155, "stage": "Spray: one IP across many accounts"}, {"id": 156, "stage": "Impact: single factor success on the CLI client"}]}, {"key": "storm", "name": "Storm-2949 and Storm-3068 SSPR abuse", "when": "Library entry added 2026-09-30", "summary": "A successful self service password reset is followed by authentication method changes. The owner's methods are removed and the attacker's own are registered, which locks the owner out while access persists.", "stages": [{"id": 153, "stage": "Persistence: reset then method change"}]}, {"key": "closedquorum", "name": "CLOSEDQUORUM implant", "when": "Reported September 2026", "summary": "A Windows implant polls four LLM providers for a plurality vote on its next action, then reports the decision and exfiltrates stolen credentials over a Discord webhook.", "stages": [{"id": 152, "stage": "Network: LLM provider calls then Discord"}]}, {"key": "teams", "name": "Fake IT support over Teams", "when": "Library entry added 2026-11-09", "summary": "A mailbox flood is followed by an external Teams chat that poses as IT support, then a call that gets the user to start Quick Assist or another remote tool.", "stages": [{"id": 175, "stage": "Initial access: external chat from fake support"}]}, {"key": "spn", "name": "Stolen application credentials", "when": "November 2026 campaign, added 2026-11-09", "summary": "Harvested client secrets were used to sign in as workload identities. The hunt checks the reported operator address, invalid secret errors followed by success and sign-ins from unusual places.", "stages": [{"id": 172, "stage": "Hunt: service principal sign-ins with stolen secrets"}]}, {"key": "claudeext", "name": "Trojanized Claude Code extension", "when": "Disclosed 30 October 2026", "summary": "A trojanized extension served through the Cursor Marketplace planted an SSH backdoor with a reverse tunnel, an added authorized key and persistence files on macOS, Linux and Windows.", "stages": [{"id": 174, "stage": "Hunt: tunnel host, keys and persistence files"}]}];
+const campOpen = new Set();
+function campWorst(c){ return c.stages.map(s=>DATA.find(q=>q.id===s.id)).filter(Boolean).reduce((m,q)=>SEVRANK[q.sev]<SEVRANK[m]?q.sev:m,"low"); }
+function renderCampaigns(){
+  const term = state.term.toLowerCase().trim();
+  const list = CAMPAIGNS.filter(c=>!term || term.split(/\s+/).every(p=>(c.name+" "+c.summary+" "+c.stages.map(s=>(DATA.find(q=>q.id===s.id)||{}).name).join(" ")).toLowerCase().includes(p)));
+  if(!state.camp || !list.some(c=>c.key===state.camp)) state.camp = list.length ? list[0].key : null;
+  $("#clist").innerHTML = list.length ? list.map(c=>{
+    const w = campWorst(c);
+    return `<button class="citem" data-sev="${w}" data-camp="${c.key}" aria-current="${state.camp===c.key}"><span class="cn" style="display:block">${esc(c.name)}</span>
+      <span class="cm"><span>${c.stages.length} ${c.stages.length>1?"queries":"query"}</span><span>${esc(c.when)}</span><span class="sevtxt">${w}</span></span></button>`;
+  }).join("") : '<div class="empty"><p>No campaign matches the search.</p></div>';
+  const c = CAMPAIGNS.find(x=>x.key===state.camp);
+  if(!c){ $("#cview").innerHTML = '<div class="empty"><p>Select a campaign.</p></div>'; return; }
+  $("#cview").innerHTML = `<div class="cin">
+    <button class="btn2 cback" type="button" data-cback="1">← Campaigns</button>
+    <div class="d-eyebrow">Campaign</div><h2>${esc(c.name)}</h2><div class="when">${esc(c.when)}</div>
+    <p class="sum">${esc(c.summary)}</p>
+    <ol class="stages">${c.stages.map((s,i)=>{
+      const q = DATA.find(x=>x.id===s.id); if(!q) return "";
+      const open = campOpen.has(c.key+":"+q.id);
+      const tri = triage(q.desc); const act = tri.find(x=>x.l==="What to do");
+      const first = tri[0].t.split(/(?<=\.)\s/)[0];
+      return `<li class="stage"><span class="dot">${i+1}</span><div><div class="lab">${esc(s.stage)}</div>
+        <div class="qbox" data-sev="${q.sev}"><button class="qhead" data-qtoggle="${c.key}:${q.id}" aria-expanded="${open}"><span><span class="qn">${esc(q.name)}</span><span class="qa">${esc(first)}</span></span>
+          <span class="qr"><span class="mini">${q.plat==="both"?"Both":q.plat==="xdr"?"XDR":"Sentinel"}</span><span class="sevtxt">${q.sev}</span></span></button>
+          ${open?`<div class="qbody">${act?`<div class="tri"><div class="do"><h5>What to do</h5><p>${esc(act.t)}</p></div></div>`:""}
+            <div class="dacts"><button class="btn2 primary" type="button" onclick="copyKql(${q.id}, this)">Copy KQL</button><button class="btn2" type="button" onclick="togglePack(${q.id}); this.textContent = PACK.has(${q.id}) ? 'Remove from hunt pack' : 'Add to hunt pack'">${PACK.has(q.id)?"Remove from hunt pack":"Add to hunt pack"}</button><button class="btn2" type="button" onclick="openQuery(${q.id})">Open in Hunt</button></div>
+            <div class="code"><pre>${hiKql(q.kql)}</pre></div></div>`:""}
+        </div></div></li>`;}).join("")}</ol>
+    <button class="btn2" type="button" onclick="packCampaign('${c.key}')">Add all ${c.stages.length} to hunt pack</button>
+  </div>`;
+}
+function packCampaign(key){
+  const c = CAMPAIGNS.find(x=>x.key===key); if(!c) return;
+  c.stages.forEach(s=>PACK.add(s.id)); savePack(); $("#packN").textContent = PACK.size; toast(c.stages.length + " queries added to the pack");
+}
+function openQuery(id){
+  resetWorkspaceFilters(); state.cat="all"; state.sub=null; state.tactic=null; state.term=""; $("#q").value="";
+  state.sel = id; goWorkspace(); pushHistory();
+}
+
 
 /* ---------------- matrix ---------------- */
 function renderMatrix(){
@@ -1156,7 +1493,7 @@ function renderMatrix(){
         resetWorkspaceFilters();
         state.tactic = head.dataset.tacticOnly;
         state.sub = null;
-        state.cat = "all"; state.sel=null; state.term="";
+        state.cat = "all"; state.sel=null; state.term=""; state.kind=null; state.tables=[]; state.runnable=false;
         $("#q").value = "";
         goWorkspace();
       }catch(err){
@@ -1171,7 +1508,7 @@ function renderMatrix(){
         resetWorkspaceFilters();
         state.tactic = cell.dataset.tactic;
         state.sub = cell.dataset.sub;
-        state.cat = "all"; state.sel=null; state.term="";
+        state.cat = "all"; state.sel=null; state.term=""; state.kind=null; state.tables=[]; state.runnable=false;
         $("#q").value = "";
         goWorkspace();
       }catch(err){
@@ -1249,29 +1586,32 @@ function renderAdvisories(){
     el.onclick = ()=>{
       state.sel = +el.dataset.id;
       state.cat="all"; state.sub=null; state.sev="all"; state.plat="all"; state.tactic=null;
-      document.querySelectorAll(".chip").forEach(x=>{
-        if(x.dataset.k) x.setAttribute("aria-pressed", x.dataset.k==="all");
-        if(x.dataset.p) x.setAttribute("aria-pressed", x.dataset.p==="all");
-      });
-      goWorkspace();
+      state.kind=null; state.tables=[]; state.runnable=false; state.newOnly=false; state.sortByLikes=false;
+      goWorkspace(); pushHistory();
     };
   });
 }
 
 /* ---------------- navigation ---------------- */
+const VIEWS = ["grid","workspace","campaigns","attack","advisories"];
 function setView(v){
   state.view = v;
   $("#landing").classList.toggle("hidden", v!=="grid");
   $("#workspace").classList.toggle("hidden", v!=="workspace");
+  $("#campaigns").classList.toggle("hidden", v!=="campaigns");
   $("#attack").classList.toggle("hidden", v!=="attack");
   $("#advisories").classList.toggle("hidden", v!=="advisories");
   $("#viewGrid").setAttribute("aria-pressed", v==="grid");
   $("#viewWork").setAttribute("aria-pressed", v==="workspace");
+  $("#viewCamp").setAttribute("aria-pressed", v==="campaigns");
   $("#viewAttack").setAttribute("aria-pressed", v==="attack");
   $("#viewAdv").setAttribute("aria-pressed", v==="advisories");
+  $("#workspace").classList.remove("show-f");
+  document.body.classList.toggle("hunt-active", v==="workspace");
 }
 function goGrid(){ setView("grid"); }
 function goWorkspace(){ setView("workspace"); renderRail(); renderList(); renderDetail(); }
+function goCampaigns(){ setView("campaigns"); renderCampaigns(); }
 function goAttack(){ setView("attack"); renderMatrix(); }
 function goAdv(){ setView("advisories"); renderAdvisories(); }
 
@@ -1280,7 +1620,9 @@ function snapshotState(){
   return {
     view: state.view, cat: state.cat, sub: state.sub, sev: state.sev,
     plat: state.plat, tactic: state.tactic, sel: state.sel,
-    sortByLikes: state.sortByLikes, newOnly: state.newOnly
+    sortByLikes: state.sortByLikes, newOnly: state.newOnly,
+    kind: state.kind, tables: state.tables.slice(), runnable: state.runnable,
+    sort: state.sort, camp: state.camp
   };
 }
 function stateToParams(s){
@@ -1294,11 +1636,18 @@ function stateToParams(s){
   if(typeof s.sel === "number") p.set("sel", String(s.sel));
   if(s.sortByLikes) p.set("liked", "1");
   if(s.newOnly) p.set("new", "1");
+  if(s.kind) p.set("kind", s.kind);
+  if(s.tables && s.tables.length) p.set("tables", s.tables.join(","));
+  if(s.runnable) p.set("runnable", "1");
+  if(s.sort && s.sort !== "sev") p.set("sort", s.sort);
+  if(s.view === "campaigns" && s.camp) p.set("camp", s.camp);
   return p;
 }
 function paramsToState(p){
+  let view = p.get("view") || "grid";
+  if(!VIEWS.includes(view)) view = "grid";
   return {
-    view: p.get("view") || "grid",
+    view,
     cat: p.get("cat") || "all",
     sub: p.get("sub") || null,
     sev: p.get("sev") || "all",
@@ -1306,15 +1655,17 @@ function paramsToState(p){
     tactic: p.get("tactic") || null,
     sel: p.has("sel") ? +p.get("sel") : null,
     sortByLikes: p.get("liked") === "1",
-    newOnly: p.get("new") === "1"
+    newOnly: p.get("new") === "1",
+    kind: (p.get("kind")==="hunt"||p.get("kind")==="rule") ? p.get("kind") : null,
+    tables: p.get("tables") ? p.get("tables").split(",").filter(Boolean) : [],
+    runnable: p.get("runnable") === "1",
+    sort: ["sev","new","id"].includes(p.get("sort")) ? p.get("sort") : "sev",
+    camp: p.get("camp") || null
   };
 }
 function resetWorkspaceFilters(){
   state.sev = "all"; state.plat = "all"; state.sortByLikes = false; state.newOnly = false;
-  document.querySelectorAll(".chip[data-k]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.k==="all"));
-  document.querySelectorAll(".chip[data-p]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.p==="all"));
-  $("#sortLikesChip")?.setAttribute("aria-pressed","false");
-  $("#newChip")?.setAttribute("aria-pressed","false");
+  state.kind = null; state.tables = []; state.runnable = false; state.sort = "sev";
 }
 function pushHistory(){
   try{
@@ -1335,15 +1686,17 @@ function applyState(s){
   state.sel = (typeof s.sel === "number") ? s.sel : null;
   state.sortByLikes = !!s.sortByLikes;
   state.newOnly = !!s.newOnly;
-  document.querySelectorAll(".chip[data-k]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.k===state.sev));
-  document.querySelectorAll(".chip[data-p]").forEach(x=>x.setAttribute("aria-pressed", x.dataset.p===state.plat));
-  const sortChip = $("#sortLikesChip"); if(sortChip) sortChip.setAttribute("aria-pressed", state.sortByLikes);
-  const newChip = $("#newChip"); if(newChip) newChip.setAttribute("aria-pressed", state.newOnly);
+  state.kind = s.kind || null;
+  state.tables = Array.isArray(s.tables) ? s.tables.slice() : [];
+  state.runnable = !!s.runnable && state.tables.length>0;
+  state.sort = s.sort || "sev";
+  state.camp = s.camp || state.camp;
   const v = s.view || "grid";
-  if(v==="workspace"){ setView("workspace"); renderRail(); renderList(); renderDetail(); }
-  else if(v==="attack"){ setView("attack"); renderMatrix(); }
-  else if(v==="advisories"){ setView("advisories"); renderAdvisories(); }
-  else { setView("grid"); }
+  if(v==="workspace") goWorkspace();
+  else if(v==="campaigns") goCampaigns();
+  else if(v==="attack") goAttack();
+  else if(v==="advisories") goAdv();
+  else setView("grid");
 }
 window.addEventListener("popstate", (e)=>{
   try{ applyState(e.state); }
@@ -1357,6 +1710,7 @@ async function boot(){
     DATA = await res.json();
     // sort by id for determinism
     DATA.sort((a,b)=>a.id-b.id);
+    prepareData();
     await loadLikes();
     $("#landingLoading").classList.add("hidden");
     $("#landingInner").classList.remove("hidden");
@@ -1382,22 +1736,27 @@ async function boot(){
     (window.__goxdrReportError||console.error)('boot() failed: ' + (e && e.stack || e));
   }
 }
+function refreshHunt(keepSel){
+  if(!keepSel) state.sel = null;
+  renderRail(); renderList(); renderDetail();
+}
 function wireup(){
   $("#viewGrid").onclick = ()=>{ goGrid(); pushHistory(); };
   $("#viewWork").onclick = ()=>{ goWorkspace(); pushHistory(); };
+  $("#viewCamp").onclick = ()=>{ goCampaigns(); pushHistory(); };
   $("#viewAttack").onclick = ()=>{ goAttack(); pushHistory(); };
   $("#viewAdv").onclick = ()=>{ goAdv(); pushHistory(); };
   $("#brand").onclick = ()=>{ goGrid(); pushHistory(); };
   $("#brand").onkeydown = e => { if(e.key==="Enter"){ goGrid(); pushHistory(); } };
   $("#modeAttack").onclick = ()=>{ goAttack(); pushHistory(); };
   $("#modeWork").onclick = ()=>{ resetWorkspaceFilters(); state.cat="all"; state.sub=null; state.tactic=null; goWorkspace(); pushHistory(); };
+  $("#modeCamp").onclick = ()=>{ goCampaigns(); pushHistory(); };
   $("#modeAdv").onclick = ()=>{ goAdv(); pushHistory(); };
   $("#modeLikes").onclick = ()=>{
     resetWorkspaceFilters();
     state.sortByLikes = true;
     state.cat = "all"; state.sub = null; state.tactic=null;
     goWorkspace();
-    $("#sortLikesChip").setAttribute("aria-pressed","true");
     pushHistory();
   };
   $("#modeNew").onclick = ()=>{
@@ -1405,16 +1764,13 @@ function wireup(){
     state.newOnly = true;
     state.cat = "all"; state.sub = null; state.tactic=null;
     goWorkspace();
-    $("#newChip").setAttribute("aria-pressed","true");
     pushHistory();
   };
   $("#advLink").onclick = e => { e.preventDefault(); goAdv(); pushHistory(); };
   $("#mobileBack").onclick = ()=>{
     try{
       if(state.sel !== null){
-        // Reuses the history entry pushed when the query was opened.
         history.back();
-        // Fallback in case there is no entry to go back to (e.g. deep link).
         setTimeout(()=>{
           if(state.sel !== null){ state.sel = null; renderList(); renderDetail(); }
         }, 60);
@@ -1426,54 +1782,97 @@ function wireup(){
 
   $("#q").oninput = e => {
     state.term = e.target.value;
+    if(state.view==="campaigns"){ renderCampaigns(); return; }
     if(state.view!=="workspace" && state.term) goWorkspace();
-    state.sel = null; if(state.view==="workspace"){ renderList(); renderDetail(); }
+    state.sel = null; if(state.view==="workspace"){ renderRail(); renderList(); renderDetail(); }
   };
-  document.querySelectorAll(".chip[data-k]").forEach(c=>{
-    c.onclick = ()=>{
-      state.sev = c.dataset.k;
-      document.querySelectorAll(".chip[data-k]").forEach(x=>x.setAttribute("aria-pressed", x===c));
-      state.sel=null; renderList(); renderDetail();
-    };
-  });
-  document.querySelectorAll(".chip[data-p]").forEach(c=>{
-    c.onclick = ()=>{
-      state.plat = c.dataset.p;
-      document.querySelectorAll(".chip[data-p]").forEach(x=>x.setAttribute("aria-pressed", x===c));
-      state.sel=null; renderList(); renderDetail();
-    };
-  });
   $("#themeBtn").onclick = e => {
     const light = document.documentElement.getAttribute("data-theme")==="light";
     document.documentElement.setAttribute("data-theme", light?"dark":"light");
     e.target.textContent = light?"Light":"Dark";
   };
+
+  /* filters column: delegation, re-render deferred so the clicked node is not replaced mid dispatch */
+  $("#rail").addEventListener("click", e=>{
+    const b = e.target.closest("[data-act]"); if(!b) return;
+    const a = b.dataset.act;
+    if(a==="closef"){ $("#workspace").classList.remove("show-f"); return; }
+    if(railAction(a, b.dataset.v)){
+      state.sel = null;
+      defer(()=>{ renderRail(); renderList(); renderDetail(); pushHistory(); });
+    }
+  });
+  $("#activeChips").addEventListener("click", e=>{
+    const b = e.target.closest("[data-rm]"); if(!b) return;
+    removeFilter(b.dataset.rm); state.sel = null;
+    defer(()=>{ renderRail(); renderList(); renderDetail(); pushHistory(); });
+  });
+  document.querySelectorAll("[data-sort]").forEach(c=>{
+    c.onclick = ()=>{ state.sort = c.dataset.sort; state.sortByLikes = false; state.sel = null; defer(()=>{ renderList(); renderDetail(); pushHistory(); }); };
+  });
   $("#activeFilterChip").onclick = ()=>{
     state.tactic = null; state.sub = null; state.sel = null;
-    renderList(); renderDetail();
+    defer(()=>{ renderRail(); renderList(); renderDetail(); });
   };
   $("#sortLikesChip").onclick = ()=>{
-    state.sortByLikes = !state.sortByLikes;
-    $("#sortLikesChip").setAttribute("aria-pressed", state.sortByLikes);
-    state.sel = null; renderList(); renderDetail();
+    state.sortByLikes = !state.sortByLikes; state.sel = null;
+    defer(()=>{ renderList(); renderDetail(); });
   };
   $("#newChip").onclick = ()=>{
-    state.newOnly = !state.newOnly;
-    $("#newChip").setAttribute("aria-pressed", state.newOnly);
-    state.sel = null; renderList(); renderDetail();
+    state.newOnly = !state.newOnly; state.sel = null;
+    defer(()=>{ renderRail(); renderList(); renderDetail(); });
   };
+  $("#fBtn").onclick = ()=> $("#workspace").classList.toggle("show-f");
+  $("#workspace").addEventListener("click", e=>{
+    if(e.target===$("#workspace") || e.target.classList.contains("hl-scroll")) $("#workspace").classList.remove("show-f");
+  });
+
+  /* hunt pack */
+  $("#packBtn").onclick = ()=>{ const d=$("#packDrawer"); if(d.classList.contains("hidden")){ renderPack(); d.classList.remove("hidden"); } else d.classList.add("hidden"); };
+  $("#packDrawer").addEventListener("click", e=>{
+    const b = e.target.closest("[data-pk-act]"); if(!b) return;
+    const a = b.dataset.pkAct;
+    if(a==="close"){ $("#packDrawer").classList.add("hidden"); }
+    else if(a==="rm"){ const id=+b.dataset.id; PACK.delete(id); savePack(); updatePackUI(id); defer(renderPack); }
+    else if(a==="copy"){ copyText(packText(), "Pack copied"); }
+    else if(a==="clear"){ const ids=[...PACK]; PACK.clear(); savePack(); ids.forEach(updatePackUI); defer(renderPack); }
+  });
+
+  /* campaigns */
+  $("#clist").addEventListener("click", e=>{
+    const b = e.target.closest("[data-camp]"); if(!b) return;
+    state.camp = b.dataset.camp; $("#campaigns").classList.add("detail-open");
+    defer(()=>{ renderCampaigns(); pushHistory(); });
+  });
+  $("#cview").addEventListener("click", e=>{
+    const t = e.target.closest("[data-qtoggle]");
+    if(t){ const k=t.dataset.qtoggle; campOpen.has(k)?campOpen.delete(k):campOpen.add(k); defer(renderCampaigns); return; }
+    if(e.target.closest("[data-cback]")){ $("#campaigns").classList.remove("detail-open"); }
+  });
+
   document.addEventListener("keydown", e=>{
-    if(e.key==="/" && document.activeElement!==$("#q")){ e.preventDefault(); $("#q").focus(); }
-    if(e.key==="Escape"){ $("#q").blur(); }
-    if(state.view!=="workspace") return;
-    if(e.key==="ArrowDown"||e.key==="ArrowUp"){
-      const rows = filtered(); if(!rows.length) return;
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||"");
+    if(e.key==="/" && !typing){ e.preventDefault(); $("#q").focus(); return; }
+    if(e.key==="Escape"){
+      $("#q").blur();
+      $("#packDrawer").classList.add("hidden");
+      $("#workspace").classList.remove("show-f");
+      return;
+    }
+    if(state.view!=="workspace" || typing) return;
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"||e.key==="j"||e.key==="k"){
+      const rows = sortedRows(); if(!rows.length) return;
       e.preventDefault();
       let idx = rows.findIndex(r=>r.id===state.sel);
-      idx = e.key==="ArrowDown" ? Math.min(idx+1, rows.length-1) : Math.max(idx-1, 0);
+      const down = e.key==="ArrowDown"||e.key==="j";
+      idx = down ? Math.min(idx+1, rows.length-1) : Math.max(idx-1, 0);
       state.sel = rows[idx].id;
       renderList(); renderDetail();
-      document.querySelector('.qrow[aria-current="true"]')?.scrollIntoView({block:"nearest"});
+      document.querySelector('.hrow[aria-current="true"]')?.scrollIntoView({block:"nearest"});
+    } else if(e.key==="c" && state.sel!==null && !e.metaKey && !e.ctrlKey){
+      copyKql(state.sel);
+    } else if(e.key==="p" && state.sel!==null){
+      togglePack(state.sel);
     }
   });
 }
