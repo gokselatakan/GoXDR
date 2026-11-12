@@ -1309,7 +1309,7 @@ function renderList(){
     $("#list").innerHTML = `<div class="empty"><div class="g">|</div><p>No query matches. Clear a filter or try a table name like <b>EntraIdSignInEvents</b>.</p></div>`;
     return;
   }
-  if(state.sel===null && WIDE()) state.sel = rows[0].id;
+  if(state.sel===null && WIDE()){ state.sel = rows[0].id; SEL_AUTO = true; }
   const groupBy = (!state.sortByLikes && state.cat!=="all" && state.sort==="id") ? "sub" : null;
   if(groupBy){
     const groups = {};
@@ -1321,7 +1321,7 @@ function renderList(){
   $("#list").querySelectorAll(".hrow").forEach(r=>{
     r.onclick = ()=>{
       try{
-        state.sel = +r.dataset.id;
+        state.sel = +r.dataset.id; SEL_AUTO = false;
         $("#list").querySelectorAll('.hrow[aria-current="true"]').forEach(x=>x.setAttribute('aria-current','false'));
         r.setAttribute('aria-current','true');
         renderDetail();
@@ -1520,7 +1520,7 @@ function packCampaign(key){
 }
 function openQuery(id){
   resetWorkspaceFilters(); state.cat="all"; state.sub=null; state.tactic=null; state.term=""; $("#q").value="";
-  state.sel = id; goWorkspace(); pushHistory();
+  state.sel = id; SEL_AUTO = false; goWorkspace(); pushHistory();
 }
 
 
@@ -1652,7 +1652,7 @@ function renderAdvisories(){
   `;
   $("#advInner").querySelectorAll(".qi").forEach(el=>{
     el.onclick = ()=>{
-      state.sel = +el.dataset.id;
+      state.sel = +el.dataset.id; SEL_AUTO = false;
       state.cat="all"; state.sub=null; state.sev="all"; state.plat="all"; state.tactic=null;
       state.kind=null; state.tables=[]; state.runnable=false; state.newOnly=false; state.sortByLikes=false;
       goWorkspace(); pushHistory();
@@ -1693,15 +1693,18 @@ function snapshotState(){
     sort: state.sort, camp: state.camp
   };
 }
+let SEL_AUTO = false; /* true while the selected query was picked automatically, so it stays out of the URL */
 function stateToParams(s){
   const p = new URLSearchParams();
   if(s.view && s.view !== "grid") p.set("view", s.view);
+  if(s.view === "campaigns"){ if(s.camp) p.set("camp", s.camp); return p; }
+  if(s.view !== "workspace") return p;
   if(s.cat && s.cat !== "all") p.set("cat", s.cat);
   if(s.sub) p.set("sub", s.sub);
   if(s.sev && s.sev !== "all") p.set("sev", s.sev);
   if(s.plat && s.plat !== "all") p.set("plat", s.plat);
   if(s.tactic) p.set("tactic", s.tactic);
-  if(typeof s.sel === "number") p.set("sel", String(s.sel));
+  if(typeof s.sel === "number" && !SEL_AUTO) p.set("sel", String(s.sel));
   if(s.sortByLikes) p.set("liked", "1");
   if(s.newOnly) p.set("new", "1");
   if(s.kind) p.set("kind", s.kind);
@@ -1751,7 +1754,7 @@ function applyState(s){
   state.sev = s.sev || "all";
   state.plat = s.plat || "all";
   state.tactic = s.tactic || null;
-  state.sel = (typeof s.sel === "number") ? s.sel : null;
+  state.sel = (typeof s.sel === "number") ? s.sel : null; SEL_AUTO = false;
   state.sortByLikes = !!s.sortByLikes;
   state.newOnly = !!s.newOnly;
   state.kind = s.kind || null;
@@ -1875,12 +1878,13 @@ function refreshHunt(keepSel){
 }
 function wireup(){
   $("#viewGrid").onclick = ()=>{ goGrid(); pushHistory(); };
-  $("#viewWork").onclick = ()=>{ goWorkspace(); pushHistory(); };
+  $("#viewWork").onclick = ()=>{ resetWorkspaceFilters(); state.cat="all"; state.sub=null; state.tactic=null; state.sel=null; state.term=""; $("#q").value=""; goWorkspace(); pushHistory(); };
   $("#viewCamp").onclick = ()=>{ goCampaigns(); pushHistory(); };
   $("#viewAttack").onclick = ()=>{ goAttack(); pushHistory(); };
   $("#viewAdv").onclick = ()=>{ goAdv(); pushHistory(); };
-  $("#brand").onclick = ()=>{ goGrid(); pushHistory(); };
-  $("#brand").onkeydown = e => { if(e.key==="Enter"){ goGrid(); pushHistory(); } };
+  const homeReload = ()=>{ location.assign(location.pathname); };
+  $("#brand").onclick = homeReload;
+  $("#brand").onkeydown = e => { if(e.key==="Enter" || e.key===" "){ e.preventDefault(); homeReload(); } };
   const goLiked = ()=>{
     resetWorkspaceFilters();
     state.sortByLikes = true;
@@ -2009,7 +2013,7 @@ function wireup(){
       let idx = rows.findIndex(r=>r.id===state.sel);
       const down = e.key==="ArrowDown"||e.key==="j";
       idx = down ? Math.min(idx+1, rows.length-1) : Math.max(idx-1, 0);
-      state.sel = rows[idx].id;
+      state.sel = rows[idx].id; SEL_AUTO = false;
       renderList(); renderDetail();
       document.querySelector('.hrow[aria-current="true"]')?.scrollIntoView({block:"nearest"});
     } else if(e.key==="c" && state.sel!==null && !e.metaKey && !e.ctrlKey){
