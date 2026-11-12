@@ -3591,5 +3591,377 @@
     "desc": "Hunts for the Microsoft 365 token replay campaign reported between July and September 2026, where tokens stolen through AiTM relays and device code phishing were replayed instead of guessing passwords. Three signals are combined. The first is a sign-in from the reported replay addresses, including the 193.26.115.0/24 range. The second is a scripted client (node or a bare Mozilla/5.0 user agent) using an Office client app ID, or any access to the Device Registration Service, from an IP the account has not used in the previous 14 days. The third is one session ID seen from more than one OS platform and more than one IP inside the lookback. Error codes 50133 and 53003 are included so that failed replays show up. MITRE ATT&CK: T1550.001 (Application Access Token), T1078.004 (Cloud Accounts), T1098.005 (Device Registration). SOC action: revoke sessions and reset the password, review registered devices and authentication methods because a reset alone leaves attacker devices and MFA methods in place, then check for new hidden inbox rules. Known false positives: users on VPN or roaming between networks and scripts that legitimately use Office clients. Known limitation: IOC addresses age quickly and the Office app IDs and the Device Registration Service ID are Microsoft first party IDs that normal traffic also uses, so treat hits as leads. Requires the EntraIdSignInEvents table in Defender advanced hunting, which needs a Microsoft Entra ID P2 license. Hunting query, not an alert.",
     "kql": "// Hunting query, not an alert\nlet Lookback = 1d;\nlet Baseline = 14d;\nlet IocIps = dynamic([\"193.26.115.221\", \"193.26.115.199\", \"193.26.115.16\", \"193.26.115.21\", \"193.26.115.72\", \"193.26.115.210\", \"124.198.132.33\", \"45.83.31.44\", \"192.159.99.172\", \"185.238.2.195\", \"167.148.41.96\", \"2400:8d60:2::1:841d:5dd\"]);\nlet OfficeClients = dynamic([\"d3590ed6-52b3-4102-aeff-aad2292ab01c\", \"29d9ed98-a469-4536-ade2-f981bc1d605e\", \"4765445b-32c6-49b0-83e6-1d93765276ca\"]);\nlet DeviceRegistrationService = \"01cb2876-7ebd-4aa4-9cc9-d28bd4d359a9\";\nlet KnownAccountIps = EntraIdSignInEvents\n| where Timestamp between (ago(Baseline) .. ago(Lookback))\n| where ErrorCode == 0\n| distinct AccountObjectId, IPAddress\n| extend SeenBefore = true;\nlet ClientSignals = EntraIdSignInEvents\n| where Timestamp > ago(Lookback)\n| where ErrorCode in (0, 50133, 53003)\n| extend KnownIndicatorIp = IPAddress in (IocIps) or IPAddress startswith \"193.26.115.\"\n| extend ScriptedOfficeClient = tolower(UserAgent) in (\"node\", \"mozilla/5.0\") and tolower(ApplicationId) in (OfficeClients)\n| extend DeviceRegistrationAccess = ResourceId =~ DeviceRegistrationService\n| where KnownIndicatorIp or ScriptedOfficeClient or DeviceRegistrationAccess\n| join kind=leftouter KnownAccountIps on AccountObjectId, IPAddress\n| where KnownIndicatorIp or isnull(SeenBefore)\n| extend Signal = case(KnownIndicatorIp, \"SignInFromCampaignInfrastructure\", ScriptedOfficeClient, \"ScriptedClientUsingOfficeApp\", \"DeviceRegistrationServiceFromNewIp\")\n| project Timestamp, Signal, AccountUpn, AccountObjectId, IPAddress, Country, UserAgent, Application, ResourceDisplayName, ErrorCode, Detail = strcat(EndpointCall, \" | \", ClientAppUsed);\nlet SessionHops = EntraIdSignInEvents\n| where Timestamp > ago(Lookback)\n| where ErrorCode == 0 and isnotempty(SessionId) and isnotempty(OSPlatform)\n| summarize LastSeen = max(Timestamp), Ips = make_set(IPAddress, 5), OsPlatforms = make_set(OSPlatform, 5), Countries = make_set(Country, 5), UserAgents = make_set(UserAgent, 5) by AccountUpn, AccountObjectId, SessionId\n| where array_length(OsPlatforms) > 1 and array_length(Ips) > 1\n| project Timestamp = LastSeen, Signal = \"SessionSeenFromDifferentOsAndIp\", AccountUpn, AccountObjectId, IPAddress = tostring(Ips), Country = tostring(Countries), UserAgent = tostring(UserAgents), Application = \"\", ResourceDisplayName = \"\", ErrorCode = 0, Detail = strcat(\"OS=\", tostring(OsPlatforms));\nunion ClientSignals, SessionHops\n| order by Timestamp desc",
     "added": "2026-11-09"
+  },
+  {
+    "id": 177,
+    "name": "SQL Server Spawned Shells and Post Exploitation Tooling Hunt",
+    "cat": "XDR",
+    "sub": "Endpoint",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "sql server",
+      "sqlservr",
+      "xp_cmdshell",
+      "certutil",
+      "credential dump",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for command execution launched from the SQL Server service process and for the follow on steps attackers commonly run after gaining a shell there. The first signal is sqlservr.exe starting a shell, scripting host, download tool or reconnaissance binary. The second is certutil decoding a payload. The third is a registry hive save of SAM, SYSTEM or SECURITY. The fourth is a local account or group being added. A device is returned when sqlservr.exe spawns any listed tool, or when at least two of the four stages appear on the same device on the same day. MITRE ATT&CK: T1505.001 (SQL Stored Procedures), T1059.003 (Windows Command Shell), T1140 (Deobfuscate/Decode Files), T1003.002 (Security Account Manager), T1136.001 (Local Account). SOC action: isolate the host, review who holds sysadmin on the instance, disable xp_cmdshell where it is not needed and rotate service account credentials. Known false positives: database maintenance jobs, backup agents that run scripts from SQL Agent or administrators who add local accounts. Known limitation: this is a behavioral pattern and no public report documents these exact process events, so treat it as a lead generator. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 14d;\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where InitiatingProcessFileName =~ \"sqlservr.exe\"\n    or (FileName in~ (\"certutil.exe\", \"reg.exe\", \"net.exe\", \"net1.exe\")\n        and (ProcessCommandLine contains \"decode\" or ProcessCommandLine contains \"save\" or ProcessCommandLine contains \"/add\"))\n| extend IsSqlShell = InitiatingProcessFileName =~ \"sqlservr.exe\"\n    and FileName in~ (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"wscript.exe\", \"cscript.exe\", \"mshta.exe\", \"rundll32.exe\", \"regsvr32.exe\", \"wmic.exe\", \"certutil.exe\", \"whoami.exe\", \"net.exe\", \"net1.exe\", \"reg.exe\", \"curl.exe\", \"bitsadmin.exe\")\n| extend IsDecode = FileName =~ \"certutil.exe\" and ProcessCommandLine matches regex @\"(?i)\\s[-/]decode\"\n| extend IsHiveSave = FileName =~ \"reg.exe\" and ProcessCommandLine matches regex @\"(?i)\\bsave\\b.*(hklm|hkey_local_machine)\\\\(sam|system|security)([^\\\\\\w]|$)\"\n| extend IsAccountAdd = FileName in~ (\"net.exe\", \"net1.exe\") and ProcessCommandLine matches regex @\"(?i)\\b(user|localgroup)\\b.*\\s/add\\b\"\n| where IsSqlShell or IsDecode or IsHiveSave or IsAccountAdd\n| summarize SqlShell = countif(IsSqlShell), Decode = countif(IsDecode), HiveSave = countif(IsHiveSave), AccountAdd = countif(IsAccountAdd),\n    FirstSeen = min(Timestamp), LastSeen = max(Timestamp), Accounts = make_set(AccountName, 5), Samples = make_set(ProcessCommandLine, 5)\n    by DeviceName, Day = bin(Timestamp, 1d)\n| extend Stages = iff(SqlShell > 0, 1, 0) + iff(Decode > 0, 1, 0) + iff(HiveSave > 0, 1, 0) + iff(AccountAdd > 0, 1, 0)\n| where SqlShell > 0 or Stages >= 2\n| sort by Stages desc, SqlShell desc, LastSeen desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 178,
+    "name": "Citrix NetScaler Syslog Hunt: Command Strings After NSPPE in Log Entries",
+    "cat": "XDR",
+    "sub": "Endpoint",
+    "plat": "sentinel",
+    "tables": [
+      "Syslog",
+      "CommonSecurityLog"
+    ],
+    "tags": [
+      "netscaler",
+      "citrix",
+      "log poisoning",
+      "syslog",
+      "command injection",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts NetScaler syslog for entries where shell syntax or common command line tools follow the NSPPE marker, which is the pattern seen when attacker supplied text is written into appliance logs. The query searches both Syslog and CommonSecurityLog, URL decodes the message, requires the strings pitboss and NSPPE. It then tests the trailing text for command separators, substitution syntax, redirection and tools such as curl, wget, bash and base64. MITRE ATT&CK: T1190 (Exploit Public Facing Application), T1059.004 (Unix Shell). SOC action: treat a hit as a possible compromise of the appliance, preserve a copy of the logs, patch to a fixed build, rotate credentials the appliance handles and review outbound connections from it. Known false positives: administrators pasting commands into support sessions that get logged. Known limitation: NetScaler syslog must already be forwarded to Sentinel. An empty result does not prove an appliance is clean because logging may be incomplete or rotated. Requires Syslog or CommonSecurityLog. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\n// Needs NetScaler syslog in Sentinel. Empty results do not prove an appliance is clean.\nlet Lookback = 14d;\nunion isfuzzy=true Syslog, CommonSecurityLog\n| where TimeGenerated > ago(Lookback)\n| extend Msg = url_decode(strcat(tostring(column_ifexists(\"SyslogMessage\", \"\")), \" \", tostring(column_ifexists(\"Message\", \"\"))))\n| where Msg contains \"pitboss\" and Msg contains \"NSPPE\"\n| extend Trailing = extract(@\"NSPPE;?(.*)$\", 1, Msg)\n| where Trailing matches regex @\"(?i)(\\$\\{IFS\\}|\\$\\(|`|&&|\\||;|>|<|\\b(curl|wget|whoami|perl|python|bash|nc|chmod|tar|cat|base64)\\b)\"\n| project TimeGenerated, Type, Computer = tostring(column_ifexists(\"Computer\", \"\")), SourceIP = tostring(column_ifexists(\"SourceIP\", \"\")), Trailing, Msg\n| sort by TimeGenerated desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 179,
+    "name": "Node.js Runtime Spawning Shells on Hosts Flagged for the Brotli Vulnerability Hunt",
+    "cat": "XDR",
+    "sub": "Vulnerability Mgmt",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents",
+      "DeviceTvmSoftwareVulnerabilities"
+    ],
+    "tags": [
+      "node",
+      "nodejs",
+      "brotli",
+      "cve-2026-111497",
+      "vulnerability",
+      "hunting"
+    ],
+    "sev": "medium",
+    "desc": "Hunts for the Node.js runtime starting a shell, download tool or scripting host. Each result is marked with whether Defender Vulnerability Management lists CVE-2026-111497 on that device. Package managers and CI runners are filtered out of the parent command line so the remaining rows are Node processes that run commands outside of normal build tooling. Results on flagged devices sort first. MITRE ATT&CK: T1190 (Exploit Public Facing Application), T1059 (Command and Scripting Interpreter). SOC action: patch the Node runtime on flagged devices, then review the parent application and the command line of each hit. Known false positives: applications that shell out on purpose, such as build scripts, deployment tools and desktop apps built on Node. Known limitation: no public source documents the exact process events produced by exploitation, so the process pattern is a heuristic and the vulnerability flag only tells you the runtime version is affected. Requires Defender Vulnerability Management data. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 1d;\nlet VulnerableDevices = DeviceTvmSoftwareVulnerabilities\n    | where CveId == \"CVE-2026-111497\"\n    | summarize NodeVersions = make_set(SoftwareVersion, 5) by DeviceId;\nlet NodeRuntimes = dynamic([\"node\", \"node.exe\"]);\nlet ChildTools = dynamic([\"sh\", \"bash\", \"dash\", \"zsh\", \"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"cscript.exe\", \"wscript.exe\", \"curl\", \"curl.exe\", \"wget\", \"certutil.exe\", \"bitsadmin.exe\", \"nc\", \"ncat\"]);\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where InitiatingProcessFileName in~ (NodeRuntimes)\n| where FileName in~ (ChildTools)\n| where not(InitiatingProcessCommandLine matches regex @\"(?i)(^|[\\\\/\\s])(npm|npx|yarn|pnpm)(-cli)?([.]cmd|[.]c?js)?(\\s|[\"\"']|$)\")\n| where not(InitiatingProcessCommandLine matches regex @\"(?i)_work.?_actions\")\n| join kind=leftouter VulnerableDevices on DeviceId\n| extend TvmFlaggedVulnerable = isnotempty(NodeVersions)\n| project Timestamp, DeviceName, TvmFlaggedVulnerable, NodeVersions = tostring(NodeVersions), AccountName, FileName, ProcessCommandLine, InitiatingProcessCommandLine, InitiatingProcessParentFileName\n| order by TvmFlaggedVulnerable desc, Timestamp desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 180,
+    "name": "Authenticated SMTP Password Spray Hunt: Many Failures from Many IPs and Success After Failures",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "sentinel",
+    "tables": [
+      "SigninLogs",
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "smtp",
+      "password spray",
+      "legacy auth",
+      "basic auth",
+      "brute force",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for accounts that receive many failed Authenticated SMTP sign-ins from many different source addresses in a day, which is how a spray against a legacy mail protocol looks when it is spread across a botnet. Failures are error 50126 and 50053. An account is returned at 20 or more failures from 10 or more addresses. A flag shows whether any success occurred on the same account on the same day. MITRE ATT&CK: T1110.003 (Password Spraying), T1078.004 (Cloud Accounts). SOC action: for any account with a success, reset the password, revoke sessions and check mailbox rules and sent items, then block Authenticated SMTP for accounts that do not need it. Known false positives: a mail relay or scanner that retries with a stale password. Known limitation: thresholds are starting points and need tuning. The query only sees tenants where SMTP sign-ins are logged. Requires SigninLogs and AADNonInteractiveUserSignInLogs. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\n// A success after failures on the same account needs urgent review. Thresholds are starting points.\nlet Lookback = 1d;\nlet MinFailures = 20;\nlet MinIps = 10;\nunion isfuzzy=true SigninLogs, AADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(Lookback)\n| where ClientAppUsed =~ \"Authenticated SMTP\"\n| summarize Failures = countif(ResultType in (\"50126\", \"50053\")), Successes = countif(ResultType == \"0\"),\n    FailedIps = dcountif(IPAddress, ResultType in (\"50126\", \"50053\")),\n    SuccessIps = make_set_if(IPAddress, ResultType == \"0\", 5),\n    FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated)\n    by UserPrincipalName, Day = bin(TimeGenerated, 1d)\n| where Failures >= MinFailures and FailedIps >= MinIps\n| extend SuccessAfterFailures = Successes > 0\n| sort by SuccessAfterFailures desc, Failures desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 181,
+    "name": "Phishing Email Followed by Sign In from a New IP Within 24 Hours Hunt",
+    "cat": "Email",
+    "sub": "AiTM",
+    "plat": "both",
+    "tables": [
+      "EmailEvents",
+      "SigninLogs",
+      "AADNonInteractiveUserSignInLogs"
+    ],
+    "tags": [
+      "phishing",
+      "new ip",
+      "aitm",
+      "account takeover",
+      "correlation",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for users who received a phishing email that was delivered or junked and then had a successful sign-in from an IP address they have not used in the previous 30 days, within 24 hours of the email. Interactive and non interactive sign-ins are both checked. Sign-ins from a country the user has not used before are counted separately. Users are ranked by new country sign-ins and then by the shortest time between the email and the sign-in. MITRE ATT&CK: T1566 (Phishing), T1078.004 (Cloud Accounts), T1539 (Steal Web Session Cookie). SOC action: confirm the sign-in with the user, revoke sessions and refresh tokens, reset the password and review registered authentication methods and inbox rules. Known false positives: travel, VPN changes and mobile networks on a user who also received an unrelated phishing email. Known limitation: users with no sign-in history in the baseline window are skipped. Run in the Defender portal with the Sentinel workspace connected, because the query joins Defender and Sentinel tables. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\n// Run in Defender portal advanced hunting with the Sentinel workspace connected.\nlet Lookback = 7d;\nlet Baseline = 30d;\nlet Window = 24h;\nlet BaselineIps = materialize(\n    union isfuzzy=true SigninLogs, AADNonInteractiveUserSignInLogs\n    | where TimeGenerated between (ago(Baseline + Lookback) .. ago(Lookback))\n    | where ResultType == \"0\"\n    | distinct User = tolower(UserPrincipalName), IPAddress, Country = tostring(LocationDetails.countryOrRegion));\nlet BaselineUsers = BaselineIps | distinct User;\nlet BaselineCountries = BaselineIps | distinct User, Country | extend Seen = true;\nlet NewIpSignIns = union isfuzzy=true SigninLogs, AADNonInteractiveUserSignInLogs\n    | where TimeGenerated > ago(Lookback)\n    | where ResultType == \"0\"\n    | extend User = tolower(UserPrincipalName), Country = tostring(LocationDetails.countryOrRegion)\n    | join kind=inner BaselineUsers on User\n    | join kind=leftanti BaselineIps on User, IPAddress\n    | join kind=leftouter BaselineCountries on User, Country\n    | project SignInTime = TimeGenerated, User, IPAddress, Country,\n        NewCountry = isnull(Seen), SignInType = iff(Type == \"SigninLogs\", \"Interactive\", \"NonInteractive\");\nlet Phish = EmailEvents\n    | where Timestamp > ago(Lookback)\n    | where ThreatTypes has \"Phish\" and DeliveryAction in (\"Delivered\", \"Junked\")\n    | project PhishTime = Timestamp, User = tolower(RecipientEmailAddress), NetworkMessageId;\nNewIpSignIns\n| join kind=inner Phish on User\n| where SignInTime between (PhishTime .. (PhishTime + Window))\n| extend MinutesAfterPhish = datetime_diff('minute', SignInTime, PhishTime)\n| summarize PhishEmails = dcount(NetworkMessageId), NewIpSignIns = count(), NewCountrySignIns = countif(NewCountry),\n    FastestMinutes = min(MinutesAfterPhish), SignInTypes = make_set(SignInType),\n    Ips = make_set(IPAddress, 5), Countries = make_set(Country, 5)\n    by User\n| sort by NewCountrySignIns desc, FastestMinutes asc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 182,
+    "name": "Tensorlake Package Supply Chain Hunt: Token Monitor Persistence, Install Scripts and Campaign Domain",
+    "cat": "AI Security",
+    "sub": "Supply Chain",
+    "plat": "xdr",
+    "tables": [
+      "DeviceFileEvents",
+      "DeviceProcessEvents",
+      "DeviceNetworkEvents"
+    ],
+    "tags": [
+      "supply chain",
+      "npm",
+      "github token",
+      "persistence",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for artifacts of the compromised Tensorlake package release across three tables. File events look for the reported SHA256 values and the gh-token-monitor service, script and launch agent names. Process events look for Node or Bun running the install script, any command line mentioning the token monitor or a scheduled task or PowerShell run of monitor.ps1. Network events look for connections to the reported campaign domain and for Node or Bun connecting to three public Ethereum RPC hosts. All signals are returned in one list with the signal type. MITRE ATT&CK: T1195.002 (Compromise Software Supply Chain), T1552.001 (Credentials In Files), T1053 (Scheduled Task/Job). SOC action: remove the package, rotate GitHub tokens and any secrets present on the host, delete the persistence files and review recent repository activity for the affected tokens. Known false positives: none expected for the hashes or the domain. The RPC hosts are harmless on their own and count only when Node or Bun makes the connection, so a legitimate Web3 application can match. The monitor name match can hit unrelated tooling that uses the same words. Known limitation: indicators are specific to one release and age quickly. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 7d;\nlet Sha256Iocs = dynamic([\"25a0735d0db7dc40e5d45ce42d9c106067e6a66e184d967cfecfab17c3bcb5ef\", \"b50a00900399ba99fb6ce1fc151519cb99d44320ef2a631f2237e1aea0ad6fec\"]);\nlet MonitorNames = dynamic([\"gh-token-monitor.service\", \"gh-token-monitor.sh\", \"com.user.gh-token-monitor.plist\"]);\nlet JsRuntimes = dynamic([\"node\", \"node.exe\", \"bun\", \"bun.exe\"]);\nlet RpcHosts = dynamic([\"eth.llamarpc.com\", \"rpc.ankr.com\", \"ethereum.publicnode.com\"]);\nlet FileSignals = DeviceFileEvents\n    | where Timestamp > ago(Lookback)\n    | where SHA256 in (Sha256Iocs) or FileName in~ (MonitorNames) or FolderPath has \"gh-token-monitor\"\n    | project Timestamp, DeviceName, Signal = \"MalwareFileOrMonitorPersistence\", Actor = InitiatingProcessAccountName, Process = InitiatingProcessFileName, Detail = strcat(FolderPath, \" | \", FileName, \" | \", SHA256);\nlet ProcessSignals = DeviceProcessEvents\n    | where Timestamp > ago(Lookback)\n    | where (FileName in~ (JsRuntimes) and ProcessCommandLine has_any (\"lib/setup.mjs\", \"Math_Symbol.js\"))\n        or ProcessCommandLine has \"gh-token-monitor\"\n        or (FileName in~ (\"schtasks.exe\", \"powershell.exe\", \"pwsh.exe\") and ProcessCommandLine matches regex @\"(?i)(^|[^a-z0-9_-])monitor[.]ps1\")\n    | project Timestamp, DeviceName, Signal = \"InstallScriptOrMonitorExecution\", Actor = AccountName, Process = FileName, Detail = ProcessCommandLine;\nlet NetworkSignals = DeviceNetworkEvents\n    | where Timestamp > ago(Lookback)\n    | where RemoteUrl has \"iseekaigogo.com\" or (InitiatingProcessFileName in~ (JsRuntimes) and RemoteUrl has_any (RpcHosts))\n    | project Timestamp, DeviceName, Signal = \"CampaignDomainOrRpcHost\", Actor = InitiatingProcessAccountName, Process = InitiatingProcessFileName, Detail = strcat(RemoteUrl, \" | \", RemoteIP, \":\", tostring(RemotePort));\nunion FileSignals, ProcessSignals, NetworkSignals\n| order by Timestamp desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 183,
+    "name": "LiteLLM Compromised Release Hunt: Install Command, Stealer Files and Attacker Hosts",
+    "cat": "AI Security",
+    "sub": "Supply Chain",
+    "plat": "xdr",
+    "tables": [
+      "DeviceNetworkEvents",
+      "DeviceProcessEvents",
+      "DeviceFileEvents"
+    ],
+    "tags": [
+      "supply chain",
+      "litellm",
+      "pypi",
+      "credential stealer",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for installation and execution traces of the compromised LiteLLM release. Process events look for an install command that pins version 1.107.0. File events look for the cook.pth file in a site-packages folder, files with the .pc_once_ prefix, the remote_code_loader.lock file and the reported SHA256 values. Network events look for connections to the attacker host and the reported raw content path. Results are grouped by device and signal with sample details. MITRE ATT&CK: T1195.002 (Compromise Software Supply Chain), T1555 (Credentials from Password Stores), T1041 (Exfiltration Over C2 Channel). SOC action: remove the release, rebuild environments from a clean image, rotate every API key and cloud credential that was reachable from the host, then review outbound traffic from CI runners. Known false positives: low, since the file names and hashes are specific to this release. Known limitation: the install command signal only catches a pinned version typed on the command line, so a version resolved from a requirements file shows up only through the file and network signals. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet BadHosts = dynamic([\"litellm.dev\"]);\nlet BadUrlParts = dynamic([\"raw.githubusercontent.com/letters9813\"]);\nlet BadHashes = dynamic([\"2befe2a79fb4fbbd9a543b5b40b530c8cffa8771bab22b8fb22b2e4ae3b1f819\", \"7598727f209d717041db37f7dca271d3a7d328a279890e0e1d55375729aeb86d\", \"0aaf7ba346d41ef2f40390436738b001180d5a1c03aa093f121078a9969d9a1a\", \"668169d35b87bf51324080390b1b1c5ab12bd335cfe5f1a99e3689abd5e02ae6\", \"462d0c9f67ca522d9e0e4acd245e90b36ce0d5353604a66bb7c43a1ec4a6fcf7\", \"c2e32d0ce2548aa662c18bf5001911a79fe5b30cf8357132275add02fdcde054\", \"1bbce8caa94f01c0aaa0b7ddae51553a8a32e1ce53d96d44fe583272aff7ad00\", \"12d4ccc5c6f8d35cf4f2cf233b7f3e418e863e657d81ff5f5fc9e210005b9484\", \"7f191632e7320705d154b85204f1ae546b543acbd7e8861229b76f5042b92bdb\", \"84dc8c82c0a4a4a62552ef826b49fcc86d1a5c4a5d0f2c06665723f93d129d7d\", \"9dd0a3926f96a37eb86cf1ee2310d9be93139cc4ebef3ef9e2efe9531390be25\", \"03ac2a8b752605d1d7710979c17ff18b03dd978203ba23ba97fd8ce3d6f897ea\", \"34bef04fe88ac9d0aae0475630b1738681d15b94f233ac8aa46eacf5968305fa\", \"b6122440d0d9cb1eb1ade9933f49214da8c31288de7710c076c2680dfa528465\"]);\nlet NetHits = (T: (Timestamp: datetime, DeviceName: string, RemoteUrl: string, InitiatingProcessFileName: string)) {\n  T\n  | where Timestamp > ago(30d)\n  | where RemoteUrl has_any (BadHosts) or RemoteUrl has_any (BadUrlParts)\n  | project Timestamp, DeviceName, Signal = \"Connection to attacker infrastructure\", Detail = strcat(InitiatingProcessFileName, \" to \", RemoteUrl)\n};\nlet ProcHits = (T: (Timestamp: datetime, DeviceName: string, ProcessCommandLine: string)) {\n  T\n  | where Timestamp > ago(30d)\n  | where ProcessCommandLine matches regex @\"litellm==1\\.107\\.0($|[^\\w.])\"\n  | project Timestamp, DeviceName, Signal = \"Install of compromised release\", Detail = substring(ProcessCommandLine, 0, 200)\n};\nlet FileHits = (T: (Timestamp: datetime, DeviceName: string, FileName: string, FolderPath: string, SHA256: string)) {\n  T\n  | where Timestamp > ago(30d)\n  | where (FileName =~ \"cook.pth\" and FolderPath contains \"site-packages\")\n    or FileName startswith \".pc_once_\"\n    or FileName =~ \"remote_code_loader.lock\"\n    or SHA256 in~ (BadHashes)\n  | project Timestamp, DeviceName, Signal = \"Stealer artifact\", Detail = FolderPath\n};\nlet Combine = (N: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string), P: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string), F: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string)) {\n  union N, P, F\n  | summarize Events = count(), FirstSeen = min(Timestamp), LastSeen = max(Timestamp), Samples = make_set(Detail, 5) by DeviceName, Signal\n  | project Timestamp = LastSeen, DeviceName, Signal, Events, FirstSeen, Samples\n  | order by Timestamp desc\n};\nCombine(NetHits(DeviceNetworkEvents), ProcHits(DeviceProcessEvents), FileHits(DeviceFileEvents))",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 184,
+    "name": "AhsayCBS Exploitation Hunt: Backup Service Child Processes and Cryptominer Staging",
+    "cat": "XDR",
+    "sub": "Endpoint",
+    "plat": "xdr",
+    "tables": [
+      "DeviceNetworkEvents",
+      "DeviceProcessEvents",
+      "DeviceFileEvents"
+    ],
+    "tags": [
+      "ahsay",
+      "backup server",
+      "cryptominer",
+      "web exploit",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for exploitation of the AhsayCBS backup server followed by cryptominer staging. Process events flag curl, certutil, powershell or cmd started by cbssvcX64.exe, plus command lines naming Taskgmr.ps1 or WinRing0x64.sys. File events look for the reported SHA256 values, the Taskgmr.ps1 script and the WinRing0x64.sys driver in a Temp folder. Network events look for the reported campaign addresses, the cloud storage host used for staging and the mining pool host. Results are grouped by device and signal. MITRE ATT&CK: T1190 (Exploit Public Facing Application), T1496 (Resource Hijacking), T1105 (Ingress Tool Transfer). SOC action: isolate the server, remove the miner and driver, patch AhsayCBS, rotate credentials stored on the backup server and review the integrity of the backup data. Known false positives: low for the hashes and hosts. Known limitation: the child process rule covers curl, certutil, powershell and cmd only, so other child processes need a separate review. Indicator addresses age quickly. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet BadIps = dynamic([\"177.4.12.11\", \"38.60.252.110\", \"107.191.47.199\", \"185.220.236.49\", \"104.234.26.10\", \"123.202.208.37\", \"51.195.127.124\"]);\nlet BadHosts = dynamic([\"imagefiles-backup.oss-ap-southeast-7.aliyuncs.com\", \"xmr.kryptex.network\"]);\nlet BadHashes = dynamic([\"05f69ae6b2b89c1c4dcf836bff032232f11bf0109f2b498e2345045d06139034\", \"4dcb0202fe8b2d4d7b183764e38184cd6ed50132786cc7e7d1f7f4bce1dd6f3d\", \"481728a7c9c4c02be07051d9c1958d902ea6397ebb8952ab83944818e3d25d21\"]);\nlet NetHits = (T: (Timestamp: datetime, DeviceName: string, RemoteIP: string, RemoteUrl: string, InitiatingProcessFileName: string)) {\n  T\n  | where Timestamp > ago(30d)\n  | where RemoteIP in (BadIps) or RemoteUrl has_any (BadHosts)\n  | project Timestamp, DeviceName, Signal = \"Connection to campaign infrastructure\", Detail = strcat(InitiatingProcessFileName, \" to \", coalesce(RemoteUrl, RemoteIP))\n};\nlet ProcHits = (T: (Timestamp: datetime, DeviceName: string, FileName: string, ProcessCommandLine: string, InitiatingProcessFileName: string)) {\n  T\n  | where Timestamp > ago(30d)\n  | where (InitiatingProcessFileName =~ \"cbssvcX64.exe\" and FileName in~ (\"curl.exe\", \"certutil.exe\", \"powershell.exe\", \"cmd.exe\"))\n    or ProcessCommandLine has_any (\"Taskgmr.ps1\", \"WinRing0x64.sys\")\n  | project Timestamp, DeviceName, Signal = \"AhsayCBS child process or miner tooling\", Detail = substring(ProcessCommandLine, 0, 200)\n};\nlet FileHits = (T: (Timestamp: datetime, DeviceName: string, FileName: string, FolderPath: string, SHA256: string)) {\n  T\n  | where Timestamp > ago(30d)\n  | where SHA256 in~ (BadHashes)\n    or FileName =~ \"Taskgmr.ps1\"\n    or (FileName =~ \"WinRing0x64.sys\" and FolderPath contains \"Temp\")\n  | project Timestamp, DeviceName, Signal = \"Miner artifact\", Detail = FolderPath\n};\nlet Combine = (N: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string), P: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string), F: (Timestamp: datetime, DeviceName: string, Signal: string, Detail: string)) {\n  union N, P, F\n  | summarize Events = count(), FirstSeen = min(Timestamp), LastSeen = max(Timestamp), Samples = make_set(Detail, 5) by DeviceName, Signal\n  | project Timestamp = LastSeen, DeviceName, Signal, Events, FirstSeen, Samples\n  | order by Timestamp desc\n};\nCombine(NetHits(DeviceNetworkEvents), ProcHits(DeviceProcessEvents), FileHits(DeviceFileEvents))",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 185,
+    "name": "Password Spray Hunt: Distributed Failures Across Many Accounts and Reported Spray Addresses",
+    "cat": "Identity",
+    "sub": "Auth Attacks",
+    "plat": "xdr",
+    "tables": [
+      "EntraIdSignInEvents"
+    ],
+    "tags": [
+      "password spray",
+      "brute force",
+      "scripted client",
+      "lockout",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for a source address that fails against many accounts inside a ten minute window, with the failure ratio, lockout count, scripted clients and any success from the same address. A source is returned when it fails against 10 or more accounts with at least 30 failures and a failure ratio of 0.5 or higher, or when it is one of four reported spray addresses and has any failure. A success after failures sorts first. Scripted clients are python-requests, python-urllib and curl user agents. MITRE ATT&CK: T1110.003 (Password Spraying), T1078.004 (Cloud Accounts). SOC action: for accounts with a success, reset the password, revoke sessions and confirm that multifactor authentication applied, then block the source in Conditional Access named locations. Known false positives: shared egress addresses such as corporate proxies and VPN gateways during a mass password expiry. Known limitation: the reported addresses age quickly. A slow spray that stays under the thresholds is not caught. Requires the EntraIdSignInEvents table in Defender advanced hunting, which needs a Microsoft Entra ID P2 license. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 1d;\nlet Window = 10m;\nlet MinAccounts = 10;\nlet MinFailures = 30;\nlet MinFailureRatio = 0.5;\nlet IocIps = dynamic([\"144.172.64.99\", \"144.172.64.60\", \"144.172.64.128\", \"144.172.94.243\"]);\nEntraIdSignInEvents\n| where Timestamp > ago(Lookback)\n| where ErrorCode in (0, 50126, 50053, 50034)\n| where isnotempty(IPAddress)\n| summarize Failures = countif(ErrorCode != 0), Lockouts = countif(ErrorCode == 50053), FailedAccounts = dcountif(AccountUpn, ErrorCode != 0), Successes = countif(ErrorCode == 0), SucceededAccounts = make_set_if(AccountUpn, ErrorCode == 0, 5), ScriptedAttempts = countif(UserAgent matches regex @\"(?i)^(python-(requests|urllib)|curl)/\"), UserAgents = make_set(UserAgent, 5), Countries = make_set(Country, 3), FirstSeen = min(Timestamp), LastSeen = max(Timestamp) by IPAddress, WindowStart = bin(Timestamp, Window)\n| extend FailureRatio = round(todouble(Failures) / (Failures + Successes), 3)\n| where (FailedAccounts >= MinAccounts and Failures >= MinFailures and FailureRatio >= MinFailureRatio) or (IPAddress in (IocIps) and Failures > 0)\n| extend KnownIndicatorIp = IPAddress in (IocIps), ScriptedClient = ScriptedAttempts > 0, SuccessAfterFailures = Successes > 0\n| order by KnownIndicatorIp desc, SuccessAfterFailures desc, Failures desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 186,
+    "name": "Key Vault Secret Read Spike Hunt: Identity Reading Secrets from Many Vaults",
+    "cat": "XDR",
+    "sub": "Azure Key Vault",
+    "plat": "xdr",
+    "tables": [
+      "CloudKeyVaultEvents"
+    ],
+    "tags": [
+      "key vault",
+      "secret access",
+      "credential access",
+      "cloud",
+      "mass read",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for an identity that reads secrets from three or more different Key Vaults with at least ten successful reads in a day, where that count exceeds the most vaults the same identity touched on any single day in the previous 14 days. Successful SecretGet and SecretList operations are counted. The result includes the account type, the application ID, the vaults touched, the source addresses and the user agents. MITRE ATT&CK: T1555 (Credentials from Password Stores), T1552.001 (Credentials In Files), T1078.004 (Cloud Accounts). SOC action: confirm with the owner of the identity, review the access policies or role assignments on each vault, rotate the secrets that were read and check the source addresses against the identity's usual locations. Known false positives: deployment pipelines and configuration services that legitimately read many vaults or new identities with no baseline. Known limitation: a slow read of one vault at a time stays under the vault count and is not caught. Requires the CloudKeyVaultEvents table in Defender advanced hunting. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 1d;\nlet Baseline = 14d;\nlet MinVaults = 3;\nlet MinReads = 10;\nlet SecretOps = dynamic([\"SecretGet\", \"SecretList\"]);\nlet History = CloudKeyVaultEvents\n| where Timestamp between (ago(Baseline) .. ago(Lookback))\n| where ActivityName in~ (SecretOps) and HttpStatusCode == 200\n| summarize DailyVaults = dcount(VaultName) by AccountObjectId, Day = bin(Timestamp, 1d)\n| summarize BaselineMaxVaults = max(DailyVaults) by AccountObjectId;\nCloudKeyVaultEvents\n| where Timestamp > ago(Lookback)\n| where ActivityName in~ (SecretOps) and HttpStatusCode == 200\n| summarize Vaults = dcount(VaultName), SecretReads = count(), VaultList = make_set(VaultName, 10), SourceIps = make_set(IPAddress, 5), UserAgents = make_set(UserAgentHeader, 3), FirstSeen = min(Timestamp), LastSeen = max(Timestamp) by AccountObjectId, AccountApplicationId, AccountUpn, AccountType\n| join kind=leftouter History on AccountObjectId\n| extend BaselineMaxVaults = coalesce(BaselineMaxVaults, 0)\n| where Vaults >= MinVaults and SecretReads >= MinReads and Vaults > BaselineMaxVaults\n| project Timestamp = LastSeen, FirstSeen, AccountType, AccountObjectId, AccountApplicationId, AccountUpn, Vaults, BaselineMaxVaults, SecretReads, VaultList, SourceIps, UserAgents\n| order by Vaults desc, SecretReads desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 187,
+    "name": "Linux Web Server Account Starting su, Root Shells or Namespace Tools Hunt",
+    "cat": "XDR",
+    "sub": "Post-Compromise",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents"
+    ],
+    "tags": [
+      "linux",
+      "web shell",
+      "privilege escalation",
+      "www-data",
+      "unshare",
+      "hunting"
+    ],
+    "sev": "medium",
+    "desc": "Hunts for processes started by a web server account on Linux that point to a privilege escalation attempt. The accounts checked are www-data, apache, nginx, httpd, wwwrun, php-fpm and lsws. A row is returned when such an account starts su, when it starts a shell that runs as root, or when it starts unshare. Results are grouped by device and signal with the parent processes and sample command lines. MITRE ATT&CK: T1068 (Exploitation for Privilege Escalation), T1059.004 (Unix Shell), T1505.003 (Web Shell). SOC action: isolate the host, look for a web shell in the web root, review the request logs around the first event and check for new root owned files or accounts. Known false positives: management panels and cron jobs that run helper scripts under a web account. Known limitation: no public source documents these exact process events, so the pattern is a heuristic. A kernel exploit that runs inside the original process produces no child process at all. Requires Defender for Endpoint on Linux. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet WebAccounts = dynamic([\"www-data\", \"apache\", \"nginx\", \"httpd\", \"wwwrun\", \"php-fpm\", \"lsws\"]);\nlet ShellNames = dynamic([\"sh\", \"bash\", \"dash\", \"zsh\"]);\nlet Hunt = (T: (Timestamp: datetime, DeviceName: string, FolderPath: string, FileName: string, ProcessCommandLine: string, AccountName: string, InitiatingProcessAccountName: string, InitiatingProcessFileName: string)) {\n    T\n    | where Timestamp > ago(7d)\n    | where FolderPath startswith \"/\"\n    | where InitiatingProcessAccountName in~ (WebAccounts)\n    | extend Signal = case(\n        FileName =~ \"su\", \"su started by web account\",\n        FileName in~ (ShellNames) and AccountName =~ \"root\", \"root shell under web account\",\n        FileName =~ \"unshare\", \"namespace tool started by web account\",\n        \"\")\n    | where isnotempty(Signal)\n    | summarize\n        Events = count(),\n        FirstSeen = min(Timestamp),\n        LastSeen = max(Timestamp),\n        Parents = make_set(InitiatingProcessFileName, 5),\n        Commands = make_set(substring(ProcessCommandLine, 0, 200), 5)\n        by DeviceName, Signal, WebAccount = InitiatingProcessAccountName\n    | project Timestamp = LastSeen, DeviceName, Signal, WebAccount, Events, FirstSeen, Parents, Commands\n    | order by Timestamp desc\n};\nHunt(DeviceProcessEvents)",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 188,
+    "name": "Ethersphere Package Compromise Hunt: Hidden Solidity Folder, Remote Tool Service and Campaign Hosts",
+    "cat": "AI Security",
+    "sub": "Supply Chain",
+    "plat": "xdr",
+    "tables": [
+      "DeviceNetworkEvents",
+      "DeviceFileEvents",
+      "DeviceProcessEvents",
+      "DeviceRegistryEvents"
+    ],
+    "tags": [
+      "supply chain",
+      "npm",
+      "remote access",
+      "screenconnect",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for traces of the compromised Ethersphere packages across four tables. Network events look for the reported domain, paste and webhook paths, addresses and hashes. They also look for processes running from a hidden .solidity folder. File events look for the reported hashes, the .solidity folder, temporary folders starting with .stuffed- and the langsupport runner service and launch agent names. Process events look for the same hashes, paths and names plus the remote tool identifier. Registry events look for the remote tool service key that carries the campaign identifier. Results are returned with the evidence type, the indicator and the detail. MITRE ATT&CK: T1195.002 (Compromise Software Supply Chain), T1219 (Remote Access Software), T1543 (Create or Modify System Process). SOC action: isolate the host, remove the package and the remote tool service, rotate secrets and wallet keys reachable from the machine and review package lockfiles across repositories. Known false positives: low for the hashes and domains. A legitimate remote tool install can match the registry key only if it uses the same identifier. Known limitation: indicators are specific to this campaign and age quickly. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet EthersphereHashes = dynamic([\n    \"9b73e7cd4e1425e770392549d8df46c706139ef476f4f7b9ac405165dc8d9696\",\n    \"b601776817363b96295119f7221338a122d5247a35a77a64b04f286e1bbcc565\",\n    \"80d2672e2599732d3c0ae2a4cd0d1e3fe4d555a60273ce33feb99db3f34d250f\",\n    \"fae61f31f00988fdc5cc9e7272b51e08af2e245d81003237875415930fd27358\",\n    \"37d14bff30762ca701e9c1f8bc6c57c065bb20ae3a2208cb7411a6530610f08e\",\n    \"7527e86d70e7c9493db4356f1c3775380431b310000f2602c1e993cf435d01da\",\n    \"d01fdf241aa9e0a1ba6ebc19f8f667af1bf652745021c5050126cb7036f7ce58\",\n    \"ee2f762e9ed3fd89f106e0b80c2e923bf1aed9a280277d3d998a5902c4d9ec0f\",\n    \"f81315968e679b48f6bdff1c9b928bb223230d07f44d7948412c2250c2a14deb\",\n    \"92c6eb24f9910b3577d5939a8686f9bf6e52f1bdd5872bf96cab0132b4558025\",\n    \"e49afac84dbb6d5a5d101f87754575024b078d67a7ab9e767ff0f7b5b4368069\",\n    \"40a45d68aa49e9e6233c4eb6bb2eb2e92525deea5d17863f6910fc24b06ff20e\",\n    \"14f23342f4292ede4546070e0e3e1cacd06fa781a2937ac374d2b47dbaf77666\",\n    \"23f2d944a0dfa60df493667428d9304cfc1961270b6c68f8d0f38df7fe0e2d31\",\n    \"aed930fbf5993df4ce9bb5951a4092da8a28a12fb45a81ad9715c7b029606fd0\",\n    \"e0304260dcf2f29d1b4690dc46e9ceb35d5554a79ea749cd913687288d6e228b\",\n    \"94df8933a57cb9962a312a79c079fd0d43706a45066cda1f1b2322f403ad9217\",\n    \"718ae6ac77e119568dff50a6409996bd649c8e9daf7c8a5616856ff1909a916f\",\n    \"0ef1fbe5db17ec0ebd3bcac576f0f0f351a5ef5da67d5e45a9817e7a224acc5d\",\n    \"ffd280b8ff519b647041b7453754bfd35d341bbd26bce02cb325c512c8976645\",\n    \"6a37ce783e406f135ed8b60e0897e0e1146a9fa220c2e6c5ce4118fff967f395\"]);\nlet EthersphereIPs = dynamic([\n    \"193.57.9.155\",\n    \"185.232.84.169\",\n    \"193.57.9.17\",\n    \"178.16.54.222\",\n    \"107.189.27.223\",\n    \"107.189.27.46\",\n    \"91.108.240.156\",\n    \"107.189.16.215\"]);\nlet EthersphereUrlParts = dynamic([\n    \"webhook.site/fdc222d5-2e6c-4122-801d-93099f3fe827\",\n    \"webhook.site/46358b99-9cff-4f14-97bc-4a436086e826\",\n    \"webhook.site/c05b53d9-c3b6-4a90-94dc-b86a0a4e905f\",\n    \"pastebin.com/raw/q1p9qH2w\"]);\nunion\n(\n    DeviceNetworkEvents\n    | where Timestamp > ago(30d)\n    | where RemoteUrl has \"frameworkmetrics.xyz\"\n        or RemoteUrl has_any (EthersphereUrlParts)\n        or RemoteIP in (EthersphereIPs)\n        or InitiatingProcessFolderPath contains \"/.solidity/\"\n        or InitiatingProcessCommandLine contains \"/.solidity/\"\n        or InitiatingProcessSHA256 in~ (EthersphereHashes)\n    | project Timestamp, DeviceId, DeviceName, Evidence = \"NetworkEvent\", Indicator = iff(isnotempty(RemoteUrl), RemoteUrl, strcat(RemoteIP, \":\", tostring(RemotePort))), Detail = strcat(InitiatingProcessFileName, \" | \", InitiatingProcessFolderPath)\n),\n(\n    DeviceFileEvents\n    | where Timestamp > ago(30d)\n    | where SHA256 in~ (EthersphereHashes)\n        or FolderPath contains \"/.solidity/\"\n        or FolderPath contains \"\\\\Temp\\\\.stuffed-\"\n        or FileName =~ \"solidity-langsupport-runner.service\"\n        or FileName startswith \"com.solidity.langsupport.runner\"\n    | project Timestamp, DeviceId, DeviceName, Evidence = \"FileEvent\", Indicator = FileName, Detail = FolderPath\n),\n(\n    DeviceProcessEvents\n    | where Timestamp > ago(30d)\n    | where SHA256 in~ (EthersphereHashes)\n        or InitiatingProcessSHA256 in~ (EthersphereHashes)\n        or FolderPath contains \"/.solidity/\"\n        or FolderPath contains \".stuffed-\"\n        or ProcessCommandLine contains \"/.solidity/\"\n        or ProcessCommandLine contains \".stuffed-\"\n        or ProcessCommandLine has_any (\"frameworkmetrics.xyz\", \"5cbe79c9c25524df\", \"solidity-langsupport-runner\", \"com.solidity.langsupport.runner\")\n        or ProcessCommandLine has_any (EthersphereIPs)\n        or ProcessCommandLine has_any (EthersphereUrlParts)\n    | project Timestamp, DeviceId, DeviceName, Evidence = \"ProcessEvent\", Indicator = FileName, Detail = ProcessCommandLine\n),\n(\n    DeviceRegistryEvents\n    | where Timestamp > ago(30d)\n    | where RegistryKey contains \"ScreenConnect Client (5cbe79c9c25524df)\"\n    | project Timestamp, DeviceId, DeviceName, Evidence = \"ServiceRegistry\", Indicator = RegistryKey, Detail = InitiatingProcessFileName\n)\n| order by Timestamp desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 189,
+    "name": "Qubole AWS Cross Account Access Hunt: Reported Account, Actor Principal, Session Names and Source Addresses",
+    "cat": "Identity",
+    "sub": "Threat Intel",
+    "plat": "sentinel",
+    "tables": [
+      "AWSCloudTrail"
+    ],
+    "tags": [
+      "aws",
+      "cloudtrail",
+      "assumerole",
+      "qubole",
+      "trufflehog",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts CloudTrail for access linked to a reported compromise of the Qubole integration account. Rows match on a reported source address or the IPv6 prefix, the reported actor principal ID, a role session name starting with quiam-, an AssumeRole call from the reported account ID, or a GetCallerIdentity call with a TruffleHog user agent. A Matched column lists which signals fired. MITRE ATT&CK: T1078.004 (Cloud Accounts), T1550 (Use Alternate Authentication Material), T1552 (Unsecured Credentials). SOC action: review the trust policy of every role that allows the reported account, rotate any external IDs, limit roles to least privilege and review what the sessions did after the AssumeRole. Known false positives: the same AssumeRole pattern appears in legitimate integration traffic, so review the source address and the session name before escalating. Known limitation: the account ID and addresses are indicators from one report. Requires the AWSCloudTrail table from the AWS connector. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\n// AssumeRole from the Qubole account also appears in legitimate integration traffic. Review the source address and session name.\nlet QuboleAccount = \"805246085872\";\nlet ActorPrincipal = \"AIDA3W7DIFLYOLTK63SFS\";\nlet QuboleIPs = dynamic([\"57.129.54.120\", \"2001:41d0:70d:7800::\", \"45.83.220.211\", \"185.209.199.73\", \"89.37.63.175\"]);\nAWSCloudTrail\n| where TimeGenerated > ago(45d)\n| where SourceIpAddress in (QuboleIPs)\n    or SourceIpAddress startswith \"2001:41d0:70d:7800:\"\n    or UserIdentityPrincipalid == ActorPrincipal\n    or UserIdentityArn contains \"/quiam-\"\n    or UserAgent has \"TruffleHog\"\n    or (EventName == \"AssumeRole\" and (UserIdentityAccountId == QuboleAccount or RequestParameters contains \"quiam-\"))\n| extend Matched = trim_end(\";\", strcat(\n    iff(SourceIpAddress in (QuboleIPs) or SourceIpAddress startswith \"2001:41d0:70d:7800:\", \"IOCSourceIP;\", \"\"),\n    iff(UserIdentityPrincipalid == ActorPrincipal, \"ActorPrincipal;\", \"\"),\n    iff(UserIdentityArn contains \"/quiam-\" or (EventName == \"AssumeRole\" and RequestParameters matches regex @'\"roleSessionName\"\\s*:\\s*\"quiam-'), \"SessionName;\", \"\"),\n    iff(EventName == \"AssumeRole\" and UserIdentityAccountId == QuboleAccount, \"QuboleAccountAssumeRole;\", \"\"),\n    iff(EventName == \"GetCallerIdentity\" and UserAgent has \"TruffleHog\", \"TruffleHogValidation;\", \"\")))\n| extend SessionName = coalesce(\n    extract(@'\"roleSessionName\"\\s*:\\s*\"([^\"]+)\"', 1, RequestParameters),\n    extract(@'/(quiam-[^/]+)$', 1, UserIdentityArn))\n| where isnotempty(Matched)\n| project TimeGenerated, Matched, EventName, SourceIpAddress, UserIdentityAccountId, UserIdentityPrincipalid, UserIdentityArn, SessionName, RecipientAccountId, AWSRegion, UserAgent, ErrorCode\n| order by TimeGenerated desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 190,
+    "name": "ESXi Implant Hunt on Firewall Logs: Reported Addresses and Port Bursts",
+    "cat": "XDR",
+    "sub": "Endpoint",
+    "plat": "sentinel",
+    "tables": [
+      "CommonSecurityLog"
+    ],
+    "tags": [
+      "esxi",
+      "vmware",
+      "firewall",
+      "port burst",
+      "implant",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts perimeter or upstream firewall logs for the GhostFrame ESXi implant, which disables the host firewall and so leaves no trace in host logs. A one minute window is returned when a source or destination matches a reported address, when one pair of hosts touches five or more of six ports the implant uses (53, 2222, 3389, 4444, 8443, 9443), or both. A Matched column shows which rule applied. MITRE ATT&CK: T1562.004 (Disable or Modify System Firewall), T1021 (Remote Services), T1571 (Non Standard Port). SOC action: isolate the ESXi host from the network, collect the host for forensics, rotate root and vCenter credentials and review guest machines on the host. Known false positives: port scanners, vulnerability scans and monitoring that probes several of these ports. Known limitation: the port burst rule is a heuristic and the addresses age quickly. Requires CommonSecurityLog from a firewall connector. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\n// Run on perimeter or upstream firewall logs. The implant disables the ESXi host firewall.\nlet GhostFramePorts = dynamic([53, 2222, 3389, 4444, 8443, 9443]);\nlet GhostFrameIPs = dynamic([\"193.5.65.114\", \"45.158.196.81\", \"45.158.196.141\"]);\nCommonSecurityLog\n| where TimeGenerated > ago(30d)\n| where DestinationPort in (GhostFramePorts) or SourceIP in (GhostFrameIPs) or DestinationIP in (GhostFrameIPs)\n| summarize\n    PortCount = dcountif(DestinationPort, DestinationPort in (GhostFramePorts)),\n    Ports = make_set_if(DestinationPort, DestinationPort in (GhostFramePorts)),\n    IOCEvents = countif(SourceIP in (GhostFrameIPs) or DestinationIP in (GhostFrameIPs)),\n    Connections = count(),\n    Actions = make_set(DeviceAction, 5),\n    Vendors = make_set(DeviceVendor, 3),\n    Products = make_set(DeviceProduct, 3)\n    by SourceIP, DestinationIP, Window = bin(TimeGenerated, 1m)\n| extend Ports = array_sort_asc(Ports)\n| extend Matched = case(\n    IOCEvents > 0 and PortCount >= 5, \"IOCAddressAndPortBurst\",\n    IOCEvents > 0, \"IOCAddress\",\n    PortCount >= 5, \"PortBurst\",\n    \"\")\n| where isnotempty(Matched)\n| project Window, Matched, SourceIP, DestinationIP, PortCount, Ports, Connections, Actions, Vendors, Products\n| order by Window desc",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 191,
+    "name": "ARTEX Agentic Framework Artifacts Hunt: webhook.site Traffic, Probe Account Name and Known Web Shell Names",
+    "cat": "XDR",
+    "sub": "Endpoint",
+    "plat": "xdr",
+    "tables": [
+      "DeviceNetworkEvents",
+      "DeviceProcessEvents",
+      "DeviceFileEvents"
+    ],
+    "tags": [
+      "artex",
+      "agentic framework",
+      "webhook",
+      "web shell",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts for artifacts left by the ARTEX agentic attack framework in the last 30 days. Network events look for connections to webhook.site. Process events look for curl, PowerShell, cmd or wget command lines that mention webhook.site, and for the ArtexProbe account name anywhere in a command line. File events look for files starting with artex-probe- and for the web shell names cl1217.jsp, f1219a.jsp and z1219.jsp. Results are grouped by device and signal with sample details. MITRE ATT&CK: T1190 (Exploit Public Facing Application), T1505.003 (Web Shell), T1567 (Exfiltration Over Web Service). SOC action: isolate the host, remove the files, check the web application that served them for the entry point, review accounts named like the probe account and block webhook.site where there is no business use. Known false positives: developers and testers who use webhook.site on purpose. Known limitation: the file and account names are specific to the reported activity and are easy for an operator to change. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Hunt = (N: (Timestamp: datetime, DeviceName: string, RemoteUrl: string, InitiatingProcessFileName: string), P: (Timestamp: datetime, DeviceName: string, FileName: string, ProcessCommandLine: string), F: (Timestamp: datetime, DeviceName: string, ActionType: string, FileName: string, FolderPath: string)) {\n  let Net = N\n    | where Timestamp > ago(30d)\n    | where RemoteUrl has \"webhook.site\"\n    | project Timestamp, DeviceName, Signal = \"Connection to webhook.site\", Detail = strcat(InitiatingProcessFileName, \" -> \", RemoteUrl);\n  let Cmd = P\n    | where Timestamp > ago(30d)\n    | where FileName in~ (\"curl.exe\", \"powershell.exe\", \"pwsh.exe\", \"cmd.exe\", \"wget.exe\")\n    | where ProcessCommandLine has \"webhook.site\"\n    | project Timestamp, DeviceName, Signal = \"Command line posting to webhook.site\", Detail = strcat(FileName, \" \", ProcessCommandLine);\n  let Acct = P\n    | where Timestamp > ago(30d)\n    | where ProcessCommandLine contains \"ArtexProbe\"\n    | project Timestamp, DeviceName, Signal = \"ArtexProbe account name in command line\", Detail = strcat(FileName, \" \", ProcessCommandLine);\n  let Files = F\n    | where Timestamp > ago(30d)\n    | where ActionType in (\"FileCreated\", \"FileModified\", \"FileRenamed\")\n    | where FileName startswith \"artex-probe-\" or FileName in~ (\"cl1217.jsp\", \"f1219a.jsp\", \"z1219.jsp\")\n    | project Timestamp, DeviceName, Signal = \"ARTEX probe file or known web shell name\", Detail = strcat(FolderPath, \"\\\\\", FileName);\n  union Net, Cmd, Acct, Files\n  | summarize Events = count(), FirstSeen = min(Timestamp), LastSeen = max(Timestamp), Examples = make_set(Detail, 5) by DeviceName, Signal\n  | project Timestamp = LastSeen, DeviceName, Signal, Events, FirstSeen, Examples\n  | order by Timestamp desc\n};\nHunt(DeviceNetworkEvents, DeviceProcessEvents, DeviceFileEvents)",
+    "added": "2026-11-12"
+  },
+  {
+    "id": 192,
+    "name": "GSocket Activity and Web Server Script Download on Linux Hunt",
+    "cat": "XDR",
+    "sub": "Endpoint",
+    "plat": "xdr",
+    "tables": [
+      "DeviceProcessEvents",
+      "DeviceFileEvents",
+      "DeviceNetworkEvents"
+    ],
+    "tags": [
+      "gsocket",
+      "linux",
+      "web server",
+      "persistence",
+      "ioc",
+      "hunting"
+    ],
+    "sev": "high",
+    "desc": "Hunts Linux devices for GSocket tooling and for the behavior that usually surrounds a web server compromise. Process events look for gs-netcat and gsocket names, the systemd-remount-d masquerade, the reported SHA256 values and command lines naming the GSocket hosts. They also flag a web server or PHP runtime piping a download into a shell, execution from hidden folders under /dev/shm and exec -a names that imitate kernel threads. File events look for the GSocket artifact names and hashes, hidden staging under /dev/shm and a web server process writing to cron, systemd or shell profile paths. Network events look for the reported GSocket hosts. Each row carries an Evidence label. MITRE ATT&CK: T1190 (Exploit Public Facing Application), T1059.004 (Unix Shell), T1036.004 (Masquerade Task or Service), T1053.003 (Cron). SOC action: isolate the host, review the web application for the entry point, remove the persistence entries and rotate credentials stored on the server. Known false positives: installer scripts that a web server runs on purpose and browsers that create hidden folders under /dev/shm. Known limitation: hashes and hosts age quickly and the behavioral labels are heuristics. Requires Defender for Endpoint on Linux. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet GSocketHashes = dynamic([\n    \"d94f75a70b5cabaf786ac57177ed841732e62bdcc9a29e06e5b41d9be567bcfa\",\n    \"f95c4d029e6784e3849b4d1e2e2ae1a661187236ef7c5d487c71158a290a03b5\",\n    \"55d141bb2f62c527c3fea3413b8429fed7d52633d0b123b5e611bfa42165229f\",\n    \"12450bafc7a4398040e1ad3a16dbf4dbc79b6a8f83ef306c4f0f73f59886f06c\"]);\nlet GSocketHosts = dynamic([\"gsocket.io\", \"gsgg.b-cdn.net\"]);\nlet WebRuntime = dynamic([\"apache2\", \"httpd\", \"nginx\", \"php\", \"php-fpm\", \"php-cgi\", \"lsphp\", \"java\", \"node\", \"tomcat\", \"gunicorn\", \"uwsgi\", \"caddy\"]);\nlet IsWeb = (name:string) { name in~ (WebRuntime) or name startswith \"php\" or name startswith \"lsphp\" };\nunion\n(\n    DeviceProcessEvents\n    | where Timestamp > ago(30d) and FolderPath startswith \"/\"\n    | extend Evidence = case(\n        FileName contains \"gs-netcat\" or FileName contains \"gsocket\" or FileName =~ \"systemd-remount-d\" or SHA256 in~ (GSocketHashes)\n            or ProcessCommandLine has_any (\"gs-netcat\", \"gsnetcat\", \"gsocket.io\", \"gsgg.b-cdn.net\"), \"GSocketTooling\",\n        (IsWeb(InitiatingProcessFileName) or IsWeb(InitiatingProcessParentFileName))\n            and ProcessCommandLine matches regex @'(curl|wget)\\b[^|]*\\|\\s*(ba|da|z)?sh\\b|\\b((ba|da|z)?sh|eval|source)\\s+(-c\\s+)?[\\x22\\x27]?(<\\(|\\$\\()\\s*(curl|wget)\\b', \"WebServerDownloadExecute\",\n        FolderPath startswith \"/dev/shm/\" and FolderPath contains \"/.\", \"HiddenShmExecution\",\n        ProcessCommandLine matches regex @'(?i)exec\\s+-a\\s+\\S*\\[[a-z0-9/:_-]+\\]', \"KernelThreadNameMasquerade\",\n        \"\")\n    | where isnotempty(Evidence)\n    | project Timestamp, DeviceId, DeviceName, Evidence, Indicator = FolderPath, Detail = ProcessCommandLine, AccountName, InitiatingProcessFileName, InitiatingProcessCommandLine\n),\n(\n    DeviceFileEvents\n    | where Timestamp > ago(30d) and FolderPath startswith \"/\"\n    | extend Evidence = case(\n        FolderPath startswith \"/dev/shm/.gs-\" or FileName in~ (\"systemd-remount-d\", \".gsn_ora\", \"defunct\", \"defunct.service\") or SHA256 in~ (GSocketHashes), \"GSocketArtifact\",\n        ActionType == \"FileCreated\" and FolderPath startswith \"/dev/shm/\" and FolderPath contains \"/.\"\n                and not(FolderPath startswith_cs \"/dev/shm/.org.chromium.\" or FolderPath startswith_cs \"/dev/shm/.com.google.\"), \"HiddenShmStaging\",\n        ActionType == \"FileCreated\" and (IsWeb(InitiatingProcessFileName) or IsWeb(InitiatingProcessParentFileName))\n            and (FolderPath matches regex @\"^/(etc/cron|etc/systemd/system|usr/lib/systemd/system|var/spool/cron)\" or FileName in~ (\".bashrc\", \".profile\", \".bash_profile\", \".zshrc\")), \"WebServerPersistence\",\n        \"\")\n    | where isnotempty(Evidence)\n    | project Timestamp, DeviceId, DeviceName, Evidence, Indicator = FolderPath, Detail = ActionType, AccountName = InitiatingProcessAccountName, InitiatingProcessFileName, InitiatingProcessCommandLine\n),\n(\n    DeviceNetworkEvents\n    | where Timestamp > ago(30d)\n    | extend Evidence = case(RemoteUrl has_any (GSocketHosts), \"GSocketHost\", \"\")\n    | where isnotempty(Evidence)\n    | project Timestamp, DeviceId, DeviceName, Evidence, Indicator = RemoteUrl, Detail = strcat(RemoteIP, \":\", tostring(RemotePort)), AccountName = InitiatingProcessAccountName, InitiatingProcessFileName, InitiatingProcessCommandLine\n)\n| order by Timestamp desc",
+    "added": "2026-11-12"
   }
 ]
