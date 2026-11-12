@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="google-site-verification" content="St0et6SFaaeYBQnT_vjLSYqLGQzvvfslb1738HAJ02s" />
 <title>GoXDR - KQL Query Library</title>
+<script>
+/* Theme: dark by default. A visitor's own choice is remembered. Runs before paint to avoid a flash. */
+(function(){
+  var t = null;
+  try{ t = localStorage.getItem("goxdr_theme"); }catch(e){}
+  if(t!=="light" && t!=="dark") t = "dark";
+  document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
 <meta name="description" content="KQL detection and threat hunting queries for Microsoft Sentinel and Defender XDR, proven useful in real security operations before they earn a place.">
 <meta name="author" content="GoX">
 <link rel="canonical" href="https://goxdr.fyi" />
@@ -49,6 +58,7 @@ html[data-theme="light"]{
   --blue:#0A6EA8; --blue-dim:#BEDCEC;
   --orange:#D95F1E; --orange-dim:#FCE0CE;
   --violet:#A1367B;
+  --crit:#D1242F; --high:#C2570C; --med:#9A6700; --low:#1A7F37;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -120,6 +130,8 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .counter.med .n{color:var(--med)} .counter.low .n{color:var(--low)}
 .counter.crit .l .d{background:var(--crit)} .counter.high .l .d{background:var(--high)}
 .counter.med .l .d{background:var(--med)} .counter.low .l .d{background:var(--low)}
+.counter.total .l{color:var(--blue)} .counter.total .sub{color:var(--blue);opacity:.85}
+.counter.crit .l{color:var(--crit)} .counter.high .l{color:var(--high)} .counter.med .l{color:var(--med)} .counter.low .l{color:var(--low)}
 .counter .sub{font-size:11px;color:var(--dim);margin-top:2px;font-family:"IBM Plex Mono",monospace}
 .advisory{display:flex;gap:14px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;background:linear-gradient(90deg, rgba(255,140,66,.08) 0%, transparent 40%), var(--surface);padding:14px 18px;margin-bottom:34px;position:relative;overflow:hidden}
 .advisory::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--orange)}
@@ -605,6 +617,8 @@ html[data-theme="light"] .cview{background-image:none}
 #advPanel{background:linear-gradient(90deg, rgba(255,140,66,.07) 0%, transparent 45%), var(--surface)}
 .atag-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--orange);margin-right:6px;vertical-align:1px}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+#advPanel .panel-head h4{color:var(--orange)}
+#favs .panel-head h4{color:var(--violet)}
 .panel-head h4{font-size:12px;font-family:"IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .panel-head .heart{color:var(--crit)}
 .panel-link{font-size:12px;color:var(--blue);font-weight:600;padding:4px 2px}
@@ -726,7 +740,7 @@ html[data-theme="light"] .cview{background-image:none}
     <div class="loading" id="landingLoading">Loading library…</div>
     <div class="landing-inner hidden" id="landingInner">
       <div class="masthead">
-        <div class="eyebrow"><span class="pulse"></span><span id="schemaLine">Live catalog · Schema audited 2026-07-14</span></div>
+        <div class="eyebrow"><span class="pulse"></span><span id="schemaLine">Live catalog</span></div>
         <h1>Detection Queries for<br><span class="b">Sentinel</span> and <span class="o">Defender XDR</span></h1>
         <p class="lede">Tested and proven useful in real security operations.</p>
       </div>
@@ -838,6 +852,9 @@ html[data-theme="light"] .cview{background-image:none}
 
 <script>
 /* ---------------- state ---------------- */
+const AUDIT_DATE = "2026-11-09";
+const AUDIT_SHORT = "Nov 9";
+const SCHEMA_TAG = "2026.11";
 let DATA = [];
 let LIKES = {};
 
@@ -1193,8 +1210,8 @@ function renderRail(){
       ${fopt("All queries", total, state.cat==="all", 'data-act="cat" data-v="all"', '<span class="bx"></span>')}
       ${cats.map(c=>fopt(c, cc.get(c)||0, state.cat===c, `data-act="cat" data-v="${esc(c)}"`)).join("")}</div>
     <div class="ffoot">
-      <div class="row"><span>Schema</span><b class="ok">2026.07 ✓</b></div>
-      <div class="row"><span>Last audit</span><b>Jul 14</b></div>
+      <div class="row"><span>Schema</span><b class="ok">${SCHEMA_TAG} ✓</b></div>
+      <div class="row"><span>Last audit</span><b>${AUDIT_SHORT}</b></div>
     </div>`;
   rail.scrollTop = keepScroll;
 }
@@ -1727,6 +1744,7 @@ async function boot(){
     // sort by id for determinism
     DATA.sort((a,b)=>a.id-b.id);
     prepareData();
+    $("#schemaLine").textContent = "Live catalog · Schema audited " + AUDIT_DATE;
     await loadLikes();
     $("#landingLoading").classList.add("hidden");
     $("#landingInner").classList.remove("hidden");
@@ -1811,10 +1829,13 @@ function wireup(){
     if(state.view!=="workspace" && state.term) goWorkspace();
     state.sel = null; if(state.view==="workspace"){ renderRail(); renderList(); renderDetail(); }
   };
+  $("#themeBtn").textContent = document.documentElement.getAttribute("data-theme")==="light" ? "Dark" : "Light";
   $("#themeBtn").onclick = e => {
     const light = document.documentElement.getAttribute("data-theme")==="light";
-    document.documentElement.setAttribute("data-theme", light?"dark":"light");
-    e.target.textContent = light?"Light":"Dark";
+    const next = light ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    safeStorage.set("goxdr_theme", next);
+    e.target.textContent = next==="light" ? "Dark" : "Light";
   };
 
   /* filters column: delegation, re-render deferred so the clicked node is not replaced mid dispatch */
