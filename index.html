@@ -831,7 +831,7 @@ html[data-theme="light"] .cview{background-image:none}
   <div class="matrix-wrap hidden" id="attack">
     <div class="matrix-head">
       <h2>ATT&amp;CK <span class="accent">coverage matrix</span></h2>
-      <p>MITRE ATT&amp;CK Enterprise tactics, mapped from query tags and content. Deeper blue means more detections in this library. Click any tactic column to filter the hunt view to that tactic.</p>
+      <p id="attackNote">MITRE ATT&amp;CK Enterprise tactics. Deeper blue means more detections in this library. Click any tactic column to filter the hunt view to that tactic.</p>
       <div class="legend">
         <div class="item"><span class="swatch" style="background:var(--surface)"></span>No coverage</div>
         <div class="item"><span class="swatch" style="background:rgba(76,194,255,.08);border-color:var(--blue-dim)"></span>1-2 queries</div>
@@ -996,14 +996,18 @@ function toggleLike(id, btnEl){
 
 /* ---------------- ATT&CK tactic mapping ---------------- */
 /* Maps tags and description keywords → MITRE Enterprise tactic. A query can hit multiple. */
+const ATTACK_VERSION = "v20.1";
 const TACTIC_ORDER = [
-  "Reconnaissance","Initial Access","Execution","Persistence","Privilege Escalation",
-  "Defense Evasion","Credential Access","Discovery","Lateral Movement",
+  "Reconnaissance","Resource Development","Initial Access","Execution","Persistence","Privilege Escalation",
+  "Stealth","Defense Impairment","Credential Access","Discovery","Lateral Movement",
   "Collection","Command and Control","Exfiltration","Impact"
 ];
+/* Official technique to tactic mapping (ATT&CK v20.1 tactic pages) for the technique IDs used in this library.
+   A sub-technique falls back to its parent. */
+const TECH_TACTICS = {"T1003": ["Credential Access"], "T1020": ["Exfiltration"], "T1021": ["Lateral Movement"], "T1036.004": ["Stealth"], "T1041": ["Exfiltration"], "T1053": ["Execution", "Persistence", "Privilege Escalation"], "T1055.004": ["Privilege Escalation", "Stealth"], "T1059": ["Execution"], "T1068": ["Privilege Escalation"], "T1070.008": ["Stealth"], "T1071.001": ["Command and Control"], "T1078.004": ["Initial Access", "Persistence", "Privilege Escalation", "Stealth"], "T1098": ["Persistence", "Privilege Escalation"], "T1102": ["Command and Control"], "T1105": ["Command and Control"], "T1110": ["Credential Access"], "T1115": ["Collection"], "T1136": ["Persistence"], "T1140": ["Stealth"], "T1190": ["Initial Access"], "T1195.002": ["Initial Access"], "T1204.001": ["Execution"], "T1219": ["Command and Control"], "T1496": ["Impact"], "T1505": ["Persistence"], "T1528": ["Credential Access"], "T1539": ["Credential Access"], "T1543": ["Persistence", "Privilege Escalation"], "T1546.003": ["Persistence", "Privilege Escalation"], "T1547.001": ["Persistence", "Privilege Escalation"], "T1550": ["Lateral Movement"], "T1552": ["Credential Access"], "T1555": ["Credential Access"], "T1556.006": ["Credential Access", "Persistence", "Defense Impairment"], "T1566": ["Initial Access"], "T1567": ["Exfiltration"], "T1571": ["Command and Control"], "T1572": ["Command and Control"], "T1649": ["Credential Access"], "T1684.001": ["Stealth"], "T1686": ["Defense Impairment"]};
 const TACTIC_STAGE = {
   "Reconnaissance":"early","Initial Access":"early","Execution":"early",
-  "Persistence":"mid","Privilege Escalation":"mid","Defense Evasion":"mid",
+  "Persistence":"mid","Privilege Escalation":"mid","Stealth":"mid","Defense Impairment":"mid","Resource Development":"early",
   "Credential Access":"mid","Discovery":"mid","Lateral Movement":"mid",
   "Collection":"late","Command and Control":"late","Exfiltration":"late","Impact":"late"
 };
@@ -1014,7 +1018,8 @@ const TACTIC_KEYWORDS = {
   "Execution":["execution","process","command execution"],
   "Persistence":["persistence","service principal","inbox rule","forwarding","new credential","secret added","certificate added","backdoor","persist","account lifecycle","new application","first seen","managed identity","new resource","ai agent","mcp","org-wide sharing","dormant","reactivation"],
   "Privilege Escalation":["privilege escalation","pim","role assignment","privileged","admin","elevated","subscription transfer","ownership"],
-  "Defense Evasion":["defense evasion","unmanaged","non-interactive","legacy auth","bypass","disable","clear log","conditional access","device trust","evasion","anonymous","vpn","tor","off-hours","weekend","trusted","untrusted","open inbound"],
+  "Stealth":["stealth","defense evasion","unmanaged","non-interactive","clear log","device trust","evasion","anonymous","vpn","tor","off-hours","weekend","trusted","untrusted"],
+  "Defense Impairment":["defense impairment","legacy auth","bypass","disable","conditional access","open inbound"],
   "Credential Access":["credential","password","mfa","token theft","ntlm","kerberoast","cookie","session","credential mgmt","token","risky sign-in","cred"],
   "Discovery":["discovery","recon","ldap","enumeration","account discovery","list users","list roles","bloodhound","graph api","permission analysis","exposure"],
   "Lateral Movement":["lateral","ntlm relay","pass the","remote","smb"],
@@ -1024,11 +1029,19 @@ const TACTIC_KEYWORDS = {
   "Impact":["impact","ransomware","encrypt","destroy","deletion","nsg","attack surface"]
 };
 
+function officialTactics(q){
+  const ids = q.tech || [...new Set((q.desc||"").match(/\bT\d{4}(?:\.\d{3})?\b/g) || [])];
+  const out = new Set();
+  ids.forEach(t=>{ (TECH_TACTICS[t] || TECH_TACTICS[t.split(".")[0]] || []).forEach(x=>out.add(x)); });
+  return [...out];
+}
 function tacticsFor(q){
+  const off = officialTactics(q);
+  if(off.length) return off;
   const hay = ((q.tags||[]).join(" ") + " " + (q.desc||"") + " " + (q.sub||"")).toLowerCase();
   const hit = new Set();
   for(const [tac, kws] of Object.entries(TACTIC_KEYWORDS)){
-    for(const k of kws){ if(hay.includes(k)){ hit.add(tac); break; } }
+    for(const k of kws){ if(k.length<=3 ? new RegExp('\\b'+k+'\\b').test(hay) : hay.includes(k)){ hit.add(tac); break; } }
   }
   return [...hit];
 }
@@ -1044,7 +1057,22 @@ function highlightKql(src){
 }
 
 /* ---------------- utility ---------------- */
-const catList = () => [...new Set(DATA.map(q=>q.cat))];
+const CAT_ORDER = ["AI Security","Identity","XDR","Email","LDAP","App Identity","Collaboration","OAuth","Non-Interactive","NTLM","Geolocation"];
+const catList = () => {
+  const rank = c => { const i = CAT_ORDER.indexOf(c); return i < 0 ? CAT_ORDER.length : i; };
+  return [...new Set(DATA.map(q=>q.cat))].sort((x,y)=>rank(x)-rank(y));
+};
+const CAT_LABEL = {
+  "XDR":"Defender XDR",
+  "Email":"Email Security",
+  "LDAP":"Active Directory",
+  "App Identity":"Workload Identity",
+  "Collaboration":"Collaboration Security",
+  "OAuth":"OAuth Apps and Consent",
+  "Non-Interactive":"Non-Interactive Sign-Ins",
+  "NTLM":"NTLM and Legacy Auth"
+};
+const catLabel = c => CAT_LABEL[c] || c;
 const countByCat = c => DATA.filter(q=>q.cat===c).length;
 const sevCountByCat = (c,s) => DATA.filter(q=>q.cat===c && q.sev===s).length;
 const CAT_DESCS = {
@@ -1056,7 +1084,7 @@ const CAT_DESCS = {
   "OAuth":"Consent grants, application governance, permission abuse.",
   "Email":"BEC, AiTM, phishing, malware and mailbox exfiltration.",
   "Collaboration":"Teams, SharePoint and data protection signals.",
-  "XDR":"Cross-workload correlation, SOC metrics, Azure activity.",
+  "XDR":"Endpoint, cloud and Key Vault signals, investigation, SOC metrics.",
   "Geolocation":"Location correlation, IP intelligence enrichment.",
   "AI Security":"AI agent inventory, governance and tampering detection."
 };
@@ -1090,7 +1118,7 @@ function renderFavs(){
   $("#favAll").classList.toggle("hidden", !top.length);
   box.innerHTML = top.length ? top.map((q,i)=>`<div class="fav" data-id="${q.id}" data-sev="${q.sev}" role="button" tabindex="0">
     <span class="rk">${i+1}</span>
-    <span class="ft"><b>${esc(q.name)}</b><span><i>${q.sev}</i>${esc(q.cat)} / ${esc(q.sub)}</span></span>
+    <span class="ft"><b>${esc(q.name)}</b><span><i>${q.sev}</i>${esc(catLabel(q.cat))} / ${esc(q.sub)}</span></span>
     <span class="heart-mini${isLiked(q.id)?" liked":""}" data-id="${q.id}">${HEART_SVG}<span>${likeCount(q.id)}</span></span>
   </div>`).join("") : '<div class="favs-empty">No votes yet. Open a query in Hunt and tap the heart to start this list.</div>';
 }
@@ -1106,7 +1134,7 @@ function renderGrid(){
     const num = String(i+1).padStart(2,"0");
     return `<button class="tile" data-cat="${esc(c)}">
       <div class="cat-num">CATEGORY · ${num}</div>
-      <h3>${esc(c)}</h3>
+      <h3>${esc(catLabel(c))}</h3>
       <div class="desc">${esc(CAT_DESCS[c]||"")}</div>
       <div class="sev-bar">
         <i class="c" style="width:${(crit/total)*100}%"></i>
@@ -1142,7 +1170,7 @@ function prepareData(){
     q.atlas = [...new Set(q.desc.match(/\bAML\.T\d{4}(?:\.\d{3})?\b/g) || [])];
     q.isHunt = /hunting query|inventory query|baseline hunt/i.test(q.desc) || /\bhunt\b/i.test(q.name);
     q.notes = (q.kql.match(/^\s*\/\/\s*NOTE:.*$/gm) || []).map(s=>s.replace(/^\s*\/\/\s*/,""));
-    q.hay = [q.id,q.name,q.cat,q.sub,q.plat,(q.tables||[]).join(" "),(q.tags||[]).join(" "),q.tech.join(" "),q.atlas.join(" "),q.desc].join(" ").toLowerCase();
+    q.hay = [q.id,q.name,q.cat,catLabel(q.cat),q.sub,q.plat,(q.tables||[]).join(" "),(q.tags||[]).join(" "),q.tech.join(" "),q.atlas.join(" "),q.desc].join(" ").toLowerCase();
   });
 }
 
@@ -1213,7 +1241,7 @@ function renderRail(){
       ${state.tables.length?`<button class="fo" aria-pressed="${state.runnable}" data-act="runnable"><span class="bx"></span><span class="lbl">Runnable with only these</span></button><p class="fnote">${state.runnable?"Every table of the query is selected.":"Queries that use any selected table."}</p>`:""}</div>
     <div class="fg"><h4>Category ${state.cat!=="all"?'<button data-act="clr-cat">Clear</button>':''}</h4>
       ${fopt("All queries", total, state.cat==="all", 'data-act="cat" data-v="all"', '<span class="bx"></span>')}
-      ${cats.map(c=>fopt(c, cc.get(c)||0, state.cat===c, `data-act="cat" data-v="${esc(c)}"`)).join("")}</div>
+      ${cats.map(c=>fopt(catLabel(c), cc.get(c)||0, state.cat===c, `data-act="cat" data-v="${esc(c)}"`)).join("")}</div>
     <div class="ffoot">
       <div class="row"><span>Schema</span><b class="ok">${SCHEMA_TAG} ✓</b></div>
       <div class="row"><span>Last audit</span><b>${AUDIT_SHORT}</b></div>
@@ -1252,7 +1280,7 @@ function syncToolbar(){
 }
 function renderChips(){
   const out = [];
-  if(state.cat!=="all") out.push(["cat", state.cat]);
+  if(state.cat!=="all") out.push(["cat", catLabel(state.cat)]);
   if(state.sev!=="all") out.push(["sev", state.sev]);
   if(state.plat!=="all") out.push(["plat", PLAT_LABEL[state.plat]]);
   if(state.kind) out.push(["kind", state.kind==="hunt"?"Hunting rule":"Detection rule"]);
@@ -1316,7 +1344,7 @@ function qrowHtml(q){
   return `<button class="hrow" data-sev="${q.sev}" data-id="${q.id}" aria-current="${state.sel===q.id}">
     <span class="rid">${q.id}</span>
     <span class="main"><span class="t" style="display:block">${esc(q.name)}</span>
-      <span class="m"><span class="sev">${q.sev}</span><span>${esc(q.cat)} / ${esc(q.sub)}</span><span class="tbl">${esc(tb.slice(0,2).join(" · "))}${tb.length>2?" +"+(tb.length-2):""}</span></span></span>
+      <span class="m"><span class="sev">${q.sev}</span><span>${esc(catLabel(q.cat))} / ${esc(q.sub)}</span><span class="tbl">${esc(tb.slice(0,2).join(" · "))}${tb.length>2?" +"+(tb.length-2):""}</span></span></span>
     <span class="sd2">
       ${isRecentlyAdded(q)?'<span class="mini new">New</span>':""}${q.updated?'<span class="mini upd">Updated</span>':""}${q.isHunt?'<span class="mini">Hunting</span>':""}<span class="mini pk${PACK.has(q.id)?"":" hidden"}" data-pk="${q.id}">In pack</span>
       <span class="heart-mini${liked?" liked":""}" data-id="${q.id}">${HEART_SVG}<span>${likeCount(q.id)}</span></span>
@@ -1374,7 +1402,7 @@ function renderDetail(){
     const liked = isLiked(q.id), cnt = likeCount(q.id);
     const needsEdit = /domain\.com|X\.X\.X\.X|placeholder/i.test(q.kql);
     $("#detailInner").innerHTML = `
-    <div class="d-eyebrow">${esc(q.cat)} · ${esc(q.sub)}</div>
+    <div class="d-eyebrow">${esc(catLabel(q.cat))} · ${esc(q.sub)}</div>
     <h2 class="d-title">${esc(q.name)}</h2>
     <div class="d-meta">
       <span class="pill sev-${q.sev}">${q.sev}</span>
@@ -1398,7 +1426,7 @@ function renderDetail(){
         <pre>${hiKql(q.kql)}</pre>
       </div>
     </div>
-    ${tacs.length?`<div class="d-sec"><div class="d-sec-h"><span class="op">|</span> ATT&amp;CK tactics</div><div class="tags">${tacs.map(t=>`<span class="tag tec">${esc(t)}</span>`).join("")}</div></div>`:""}
+    ${tacs.length?`<div class="d-sec"><div class="d-sec-h"><span class="op">|</span> ATT&amp;CK tactics</div><div class="tags">${tacs.map(t=>`<span class="tag tec">${esc(t)}</span>`).join("")}</div>${officialTactics(q).length?"":`<p class="fnote">Inferred from tags and description. This query does not list a MITRE technique ID yet.</p>`}</div>`:""}
     ${(q.tags||[]).length?`<div class="d-sec"><div class="d-sec-h"><span class="op">|</span> Tags</div><div class="tags">${q.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div></div>`:""}
     <div class="d-sec"><div class="d-sec-h"><span class="op">|</span> Metadata</div>
       <div class="tags"><span class="tag">id ${q.id}</span><span class="tag">added ${esc(q.added)}</span>${q.updated?`<span class="tag">updated ${esc(q.updated)}</span>`:""}</div></div>`;
@@ -1498,6 +1526,8 @@ function openQuery(id){
 
 /* ---------------- matrix ---------------- */
 function renderMatrix(){
+  { const withId = DATA.filter(q=>officialTactics(q).length).length;
+    $("#attackNote").innerHTML = `MITRE ATT&amp;CK Enterprise ${ATTACK_VERSION} tactics. <b>${withId}</b> of ${DATA.length} queries list a technique ID and are placed by MITRE's own technique to tactic mapping. The rest are placed by keyword inference until they get an ID. Deeper blue means more detections. Click a tactic column to filter the hunt view.`; }
   const cover = {};
   TACTIC_ORDER.forEach(t=>cover[t] = 0);
   DATA.forEach(q=>{ tacticsFor(q).forEach(t=>{ if(t in cover) cover[t]++; }); });
