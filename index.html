@@ -139,6 +139,9 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .counter.total .l{color:var(--blue)} .counter.total .sub{color:var(--blue);opacity:.85}
 .counter.crit .l{color:var(--crit)} .counter.high .l{color:var(--high)} .counter.med .l{color:var(--med)} .counter.low .l{color:var(--low)}
 .counter .sub{font-size:11px;color:var(--dim);margin-top:2px;font-family:"IBM Plex Mono",monospace}
+.counter .sub.jump{display:block;background:none;border:0;padding:6px 0;margin-top:0;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+@media (hover:hover){.counter .sub.jump:hover{opacity:1;text-decoration-style:solid}}
+.section-label{scroll-margin-top:12px}
 .advisory{display:flex;gap:14px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;background:linear-gradient(90deg, rgba(255,140,66,.08) 0%, transparent 40%), var(--surface);padding:14px 18px;margin-bottom:34px;position:relative;overflow:hidden}
 .advisory::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--orange)}
 .advisory .atag{font-family:"IBM Plex Sans Condensed";font-size:10px;letter-spacing:.13em;font-weight:700;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:3px 8px;background:rgba(255,140,66,.06)}
@@ -654,6 +657,11 @@ html[data-theme="light"] .cview{background-image:none}
 .adv-row b{display:block;font-weight:500;font-size:13.5px;line-height:1.3;letter-spacing:-.01em}
 .adv-row span.s{display:block;font-size:12px;color:var(--muted);margin-top:3px;line-height:1.45}
 @media (hover:hover){.adv-row:hover b{color:var(--blue)}}
+.srcb{font-style:normal;margin-left:8px;padding:1px 6px;border:1px solid var(--line);border-radius:999px;font-size:10px;letter-spacing:.04em;color:var(--muted);white-space:nowrap}
+.favtabs{display:flex;gap:4px;margin:2px 0 8px}
+.favtabs button{padding:3px 10px;border:1px solid var(--line);border-radius:999px;font-family:"IBM Plex Sans Condensed";font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted);background:transparent;transition:.12s;touch-action:manipulation}
+.favtabs button[aria-selected="true"]{color:var(--violet);border-color:var(--violet);background:rgba(160,120,255,.1)}
+@media (hover:hover){.favtabs button:hover{color:var(--text)}}
 .favs-empty{font-size:12.5px;color:var(--muted);padding:6px 0 2px}
 
 </style>
@@ -769,6 +777,11 @@ html[data-theme="light"] .cview{background-image:none}
         </section>
         <section class="panel" id="favs" aria-label="Community favorites">
           <div class="panel-head"><h4><span class="heart">♥</span> Community favorites</h4><button class="panel-link" id="favAll" type="button">See all liked →</button></div>
+          <div class="favtabs" id="favTabs" role="tablist" aria-label="Favorites by kind">
+            <button type="button" role="tab" data-fk="all" aria-selected="true">All</button>
+            <button type="button" role="tab" data-fk="rule" aria-selected="false">Detections</button>
+            <button type="button" role="tab" data-fk="hunt" aria-selected="false">Hunts</button>
+          </div>
           <div class="panel-list" id="favList"></div>
         </section>
       </div>
@@ -782,7 +795,7 @@ html[data-theme="light"] .cview{background-image:none}
         <span class="fn-arr">Explore →</span>
       </button>
 
-      <div class="section-label">Browse by category</div>
+      <div class="section-label" id="catSection">Browse by category</div>
       <div class="grid" id="grid"></div>
 
       <footer class="site-footer">
@@ -1121,12 +1134,18 @@ function renderCounters(){
   const med  = DATA.filter(q=>q.sev==="medium").length;
   const low  = DATA.filter(q=>q.sev==="low").length;
   $("#counters").innerHTML = `
-    <div class="counter total"><div class="l">Total queries</div><div class="n">${total}</div><div class="sub">across ${catList().length} categories</div></div>
+    <div class="counter total"><div class="l">Total queries</div><div class="n">${total}</div><button class="sub jump" type="button" id="jumpCats" aria-label="Jump to categories">across ${catList().length} categories <span aria-hidden="true">↓</span></button></div>
     <div class="counter crit"><div class="l"><span class="d"></span>Critical</div><div class="n">${crit}</div></div>
     <div class="counter high"><div class="l"><span class="d"></span>High</div><div class="n">${high}</div></div>
     <div class="counter med"><div class="l"><span class="d"></span>Medium</div><div class="n">${med}</div></div>
     <div class="counter low"><div class="l"><span class="d"></span>Low</div><div class="n">${low}</div></div>
   `;
+  const jump = $("#jumpCats");
+  if(jump) jump.onclick = ()=>{
+    const t = $("#catSection"); if(!t) return;
+    const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    t.scrollIntoView({behavior: calm ? "auto" : "smooth", block:"start"});
+  };
 }
 function renderAdvPanel(){
   const box = $("#advList"); if(!box) return;
@@ -1136,15 +1155,24 @@ function renderAdvPanel(){
     return `<button class="adv-row" type="button"><span class="am"><i>${esc(a.kind)}</i><span>${esc(a.date)}</span></span><b>${esc(a.title)}</b><span class="s">${esc(t)}</span></button>`;
   }).join("");
 }
+let FAV_KIND = "all";
+/* Fills empty favorite slots until the library has enough real votes. Listed in order of popularity on detections.ai.
+   These rows carry the real GoXDR like count (zero until people vote) and a source badge, never an invented number. */
+const FEATURED_IDS = [174, 179];
 function renderFavs(){
   const box = $("#favList"); if(!box) return;
-  const top = DATA.filter(q=>likeCount(q.id)>0).sort((a,b)=>likeCount(b.id)-likeCount(a.id) || b.id-a.id).slice(0,3);
+  document.querySelectorAll("#favTabs button").forEach(b=>b.setAttribute("aria-selected", b.dataset.fk===FAV_KIND));
+  const kindOk = q => FAV_KIND==="all" || (FAV_KIND==="hunt" ? q.isHunt : !q.isHunt);
+  const top = DATA.filter(q=>kindOk(q) && likeCount(q.id)>0).sort((a,b)=>likeCount(b.id)-likeCount(a.id) || b.id-a.id).slice(0,3);
   $("#favAll").classList.toggle("hidden", !top.length);
-  box.innerHTML = top.length ? top.map((q,i)=>`<div class="fav" data-id="${q.id}" data-sev="${q.sev}" role="button" tabindex="0">
+  const seen = new Set(top.map(q=>q.id));
+  const featured = FEATURED_IDS.map(id=>DATA.find(q=>q.id===id)).filter(q=>q && kindOk(q) && !seen.has(q.id));
+  const rows = top.concat(featured).slice(0,3);
+  box.innerHTML = rows.length ? rows.map((q,i)=>`<div class="fav" data-id="${q.id}" data-sev="${q.sev}" role="button" tabindex="0">
     <span class="rk">${i+1}</span>
-    <span class="ft"><b>${esc(q.name)}</b><span><i>${q.sev}</i>${esc(catLabel(q.cat))} / ${esc(q.sub)}</span></span>
+    <span class="ft"><b>${esc(q.name)}</b><span><i>${q.sev}</i>${esc(catLabel(q.cat))} / ${esc(q.sub)}${likeCount(q.id)>0?"":'<em class="srcb">Popular on detections.ai</em>'}</span></span>
     <span class="heart-mini${isLiked(q.id)?" liked":""}" data-id="${q.id}">${HEART_SVG}<span>${likeCount(q.id)}</span></span>
-  </div>`).join("") : '<div class="favs-empty">No votes yet. Open a query in Hunt and tap the heart to start this list.</div>';
+  </div>`).join("") : `<div class="favs-empty">${FAV_KIND==="all"?"No votes yet. Open a query in Hunt and tap the heart to start this list.":FAV_KIND==="hunt"?"No liked hunts yet. Open a hunting rule in Hunt and tap the heart.":"No liked detections yet. Open a detection rule in Hunt and tap the heart."}</div>`;
 }
 function renderGrid(){
   const cats = catList();
@@ -1226,10 +1254,13 @@ function facetCounts(skip, keyFn){
 }
 function sortedRows(){
   const rows = filtered();
-  if(state.sortByLikes) return rows.sort((a,b)=> likeCount(b.id)-likeCount(a.id) || a.id-b.id);
-  if(state.sort==="id") return rows.sort((a,b)=>a.id-b.id);
-  if(state.sort==="new") return rows.sort((a,b)=> b.added.localeCompare(a.added) || b.id-a.id);
-  return rows.sort((a,b)=> SEVRANK[a.sev]-SEVRANK[b.sev] || b.added.localeCompare(a.added) || b.id-a.id);
+  /* Most Liked is a primary key. The chosen sort (Severity, Newest or ID) breaks ties,
+     so Most Liked + Newest lists liked queries first and the newest first within the same like count. */
+  const bySort = state.sort==="id" ? (a,b)=>a.id-b.id
+    : state.sort==="new" ? (a,b)=> b.added.localeCompare(a.added) || b.id-a.id
+    : (a,b)=> SEVRANK[a.sev]-SEVRANK[b.sev] || b.added.localeCompare(a.added) || b.id-a.id;
+  if(state.sortByLikes) return rows.sort((a,b)=> likeCount(b.id)-likeCount(a.id) || bySort(a,b));
+  return rows.sort(bySort);
 }
 
 /* filters column */
@@ -1297,7 +1328,7 @@ function filterTable(t){
 
 /* list */
 function syncToolbar(){
-  document.querySelectorAll("[data-sort]").forEach(b=>b.setAttribute("aria-pressed", !state.sortByLikes && b.dataset.sort===state.sort));
+  document.querySelectorAll("[data-sort]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.sort===state.sort));
   $("#sortLikesChip")?.setAttribute("aria-pressed", state.sortByLikes);
   $("#newChip")?.setAttribute("aria-pressed", state.newOnly);
   $("#packN").textContent = PACK.size;
@@ -1962,11 +1993,13 @@ function wireup(){
   const goLiked = ()=>{
     resetWorkspaceFilters();
     state.sortByLikes = true;
+    state.kind = FAV_KIND==="all" ? null : FAV_KIND;
     state.cat = "all"; state.sub = null; state.tactic=null; state.sel = null;
     goWorkspace();
     pushHistory();
   };
   $("#favAll").onclick = goLiked;
+  document.querySelectorAll("#favTabs button").forEach(b=>{ b.onclick = ()=>{ FAV_KIND = b.dataset.fk; renderFavs(); }; });
   $("#advList").addEventListener("click", e=>{ if(e.target.closest(".adv-row")){ goAdv(); pushHistory(); } });
   const favOpen = e=>{
     const row = e.target.closest(".fav"); if(!row) return;
@@ -2029,7 +2062,7 @@ function wireup(){
     defer(()=>{ renderRail(); renderList(); renderDetail(); pushHistory(); });
   });
   document.querySelectorAll("[data-sort]").forEach(c=>{
-    c.onclick = ()=>{ state.sort = c.dataset.sort; state.sortByLikes = false; state.sel = null; defer(()=>{ renderList(); renderDetail(); pushHistory(); }); };
+    c.onclick = ()=>{ state.sort = c.dataset.sort; state.sel = null; defer(()=>{ renderList(); renderDetail(); pushHistory(); }); };
   });
   $("#activeFilterChip").onclick = ()=>{
     state.tactic = null; state.sub = null; state.sel = null;
@@ -2037,11 +2070,11 @@ function wireup(){
   };
   $("#sortLikesChip").onclick = ()=>{
     state.sortByLikes = !state.sortByLikes; state.sel = null;
-    defer(()=>{ renderList(); renderDetail(); });
+    defer(()=>{ renderList(); renderDetail(); pushHistory(); });
   };
   $("#newChip").onclick = ()=>{
     state.newOnly = !state.newOnly; state.sel = null;
-    defer(()=>{ renderRail(); renderList(); renderDetail(); });
+    defer(()=>{ renderRail(); renderList(); renderDetail(); pushHistory(); });
   };
   $("#fBtn").onclick = ()=> $("#workspace").classList.toggle("show-f");
   $("#workspace").addEventListener("click", e=>{
