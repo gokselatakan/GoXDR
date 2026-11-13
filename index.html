@@ -254,6 +254,10 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .chip[data-p="xdr"][aria-pressed="true"]{border-color:var(--blue);background:rgba(76,194,255,.14);color:var(--blue)}
 .chip[data-p="sentinel"][aria-pressed="true"]{border-color:var(--orange);background:rgba(255,140,66,.14);color:var(--orange)}
 .chip[data-p="both"][aria-pressed="true"]{border-color:var(--muted);background:var(--surface-2);color:var(--text)}
+.chip[data-sort][aria-pressed="true"],.chip[data-kind][aria-pressed="true"]{border-color:var(--blue);background:rgba(76,194,255,.16);color:var(--text)}
+.chip .pri{display:none;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--blue);color:#06121c;font-family:"IBM Plex Mono",monospace;font-size:9.5px;font-weight:700;letter-spacing:0}
+.chip .pri.on{display:inline-block}
+.kindseg{display:inline-flex;gap:4px;align-items:center}
 #sortLikesChip[aria-pressed="true"]{border-color:var(--crit);background:rgba(248,81,73,.12);color:var(--crit)}
 .chip.new-chip{
   border-color:var(--blue);color:var(--blue);position:relative;
@@ -820,9 +824,15 @@ html[data-theme="light"] .cview{background-image:none}
         <span class="cnt"><b id="shownCount">0</b> queries</span>
         <span class="hl-chips" id="activeChips"></span>
         <div class="hl-tools">
-          <button class="chip" data-sort="sev" aria-pressed="true">Severity</button>
-          <button class="chip" data-sort="new" aria-pressed="false">Newest</button>
-          <button class="chip" data-sort="id" aria-pressed="false">ID</button>
+          <span class="kindseg" role="group" aria-label="Rule kind">
+            <button class="chip" data-kind="" aria-pressed="true">All</button>
+            <button class="chip" data-kind="rule" aria-pressed="false">Detections</button>
+            <button class="chip" data-kind="hunt" aria-pressed="false">Hunts</button>
+          </span>
+          <span class="divider"></span>
+          <button class="chip" data-sort="sev" aria-pressed="true" title="Click several sorts to combine them. Click order sets priority.">Severity<span class="pri"></span></button>
+          <button class="chip" data-sort="new" aria-pressed="false" title="Click several sorts to combine them. Click order sets priority.">Newest<span class="pri"></span></button>
+          <button class="chip" data-sort="id" aria-pressed="false" title="Click several sorts to combine them. Click order sets priority.">ID<span class="pri"></span></button>
           <span class="divider"></span>
           <button class="chip" id="sortLikesChip" aria-pressed="false">♥ Most Liked</button>
           <button class="chip new-chip" id="newChip" aria-pressed="false">✨ Recently Added</button>
@@ -1252,13 +1262,18 @@ function facetCounts(skip, keyFn){
   DATA.forEach(q=>{ if(!matchQ(q,skip)) return; const ks = keyFn(q); (Array.isArray(ks)?ks:[ks]).forEach(k=>m.set(k,(m.get(k)||0)+1)); });
   return m;
 }
+/* state.sort holds one or more of sev, new, id as a comma list. Click order is priority. */
+function sortKeys(){
+  const ks = String(state.sort||"sev").split(",").filter(k=>["sev","new","id"].includes(k));
+  return ks.length ? ks : ["sev"];
+}
 function sortedRows(){
   const rows = filtered();
   /* Most Liked is a primary key. The chosen sort (Severity, Newest or ID) breaks ties,
      so Most Liked + Newest lists liked queries first and the newest first within the same like count. */
-  const bySort = state.sort==="id" ? (a,b)=>a.id-b.id
-    : state.sort==="new" ? (a,b)=> b.added.localeCompare(a.added) || b.id-a.id
-    : (a,b)=> SEVRANK[a.sev]-SEVRANK[b.sev] || b.added.localeCompare(a.added) || b.id-a.id;
+  const keyCmp = { sev:(a,b)=>SEVRANK[a.sev]-SEVRANK[b.sev], new:(a,b)=>b.added.localeCompare(a.added), id:(a,b)=>a.id-b.id };
+  const keys = sortKeys();
+  const bySort = (a,b)=>{ for(const k of keys){ const r = keyCmp[k](a,b); if(r) return r; } return b.added.localeCompare(a.added) || b.id-a.id; };
   if(state.sortByLikes) return rows.sort((a,b)=> likeCount(b.id)-likeCount(a.id) || bySort(a,b));
   return rows.sort(bySort);
 }
@@ -1328,7 +1343,14 @@ function filterTable(t){
 
 /* list */
 function syncToolbar(){
-  document.querySelectorAll("[data-sort]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.sort===state.sort));
+  { const ks = sortKeys();
+    document.querySelectorAll("[data-sort]").forEach(b=>{
+      const i = ks.indexOf(b.dataset.sort);
+      b.setAttribute("aria-pressed", i>=0);
+      const pri = b.querySelector(".pri"); if(pri){ pri.textContent = i+1; pri.classList.toggle("on", i>=0 && ks.length>1); }
+    });
+    document.querySelectorAll("[data-kind]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.kind===(state.kind||"")));
+  }
   $("#sortLikesChip")?.setAttribute("aria-pressed", state.sortByLikes);
   $("#newChip")?.setAttribute("aria-pressed", state.newOnly);
   $("#packN").textContent = PACK.size;
@@ -1833,7 +1855,7 @@ function paramsToState(p){
     kind: (p.get("kind")==="hunt"||p.get("kind")==="rule") ? p.get("kind") : null,
     tables: p.get("tables") ? p.get("tables").split(",").filter(Boolean) : [],
     runnable: p.get("runnable") === "1",
-    sort: ["sev","new","id"].includes(p.get("sort")) ? p.get("sort") : "sev",
+    sort: (p.get("sort")||"").split(",").filter(k=>["sev","new","id"].includes(k)).join(",") || "sev",
     camp: p.get("camp") || null
   };
 }
@@ -2062,7 +2084,15 @@ function wireup(){
     defer(()=>{ renderRail(); renderList(); renderDetail(); pushHistory(); });
   });
   document.querySelectorAll("[data-sort]").forEach(c=>{
-    c.onclick = ()=>{ state.sort = c.dataset.sort; state.sel = null; defer(()=>{ renderList(); renderDetail(); pushHistory(); }); };
+    c.onclick = ()=>{
+      const ks = sortKeys(), k = c.dataset.sort, i = ks.indexOf(k);
+      if(i>=0) ks.splice(i,1); else ks.push(k);
+      state.sort = (ks.length ? ks : ["sev"]).join(",");
+      state.sel = null; defer(()=>{ renderList(); renderDetail(); pushHistory(); });
+    };
+  });
+  document.querySelectorAll("[data-kind]").forEach(c=>{
+    c.onclick = ()=>{ state.kind = c.dataset.kind || null; state.sel = null; defer(()=>{ renderRail(); renderList(); renderDetail(); pushHistory(); }); };
   });
   $("#activeFilterChip").onclick = ()=>{
     state.tactic = null; state.sub = null; state.sel = null;
