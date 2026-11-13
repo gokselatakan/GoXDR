@@ -15,7 +15,8 @@
 })();
 </script>
 <meta name="description" content="KQL detection and threat hunting queries for Microsoft Sentinel and Defender XDR, proven useful in real security operations before they earn a place.">
-<meta name="author" content="GoX">
+<meta name="author" content="Göksel Atakan">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"GoXDR","url":"https://goxdr.fyi","description":"Detection and hunting queries for Microsoft Sentinel and Defender XDR.","author":{"@type":"Person","name":"Göksel Atakan","alternateName":"GoX","url":"https://www.linkedin.com/in/gokselatakan/","sameAs":["https://www.linkedin.com/in/gokselatakan/","https://github.com/gokselatakan"]}}</script>
 <link rel="canonical" href="https://goxdr.fyi" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230B0E13'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Arial Black,sans-serif' font-weight='900' font-size='14'%3E%3Ctspan fill='%234CC2FF'%3EG%3C/tspan%3E%3Ctspan fill='%23FF8C42'%3EX%3C/tspan%3E%3C/text%3E%3C/svg%3E">
 <meta property="og:title" content="GoXDR - Detection and Hunting Queries for Sentinel and Defender XDR">
@@ -207,7 +208,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .footer-links a.fb{color:var(--orange);border-color:var(--orange-dim)}
 @media (hover:hover){.footer-links a.fb:hover{background:var(--orange);color:#fff}}
 .footer-credit{
-  display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim);
+  display:inline-flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px 8px;max-width:100%;font-size:12.5px;color:var(--dim);
   padding:8px 16px;border:1px solid var(--line-soft);border-radius:20px;background:var(--surface);
 }
 .footer-credit .brandmark{font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:12px}
@@ -370,6 +371,15 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .mcell[data-cov="1"]{background:linear-gradient(180deg, rgba(76,194,255,.04), var(--surface))}
 .mcell[data-cov="2"]{background:linear-gradient(180deg, rgba(76,194,255,.09), var(--surface));border-color:var(--blue-dim)}
 .mcell[data-cov="3"]{background:linear-gradient(180deg, rgba(76,194,255,.16), var(--surface));border-color:var(--blue)}
+.mtabs{display:inline-flex;gap:4px;padding:3px;margin-bottom:14px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.mtabs button{padding:6px 16px;border-radius:6px;font-family:"IBM Plex Sans Condensed";font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--muted);transition:.12s}
+.mtabs button[aria-selected="true"]{background:var(--blue);color:#06121c}
+@media (hover:hover){.mtabs button[aria-selected="false"]:hover{color:var(--text)}}
+.atlas-matrix{grid-auto-columns:minmax(170px, 1fr)}
+.atlas-matrix .mcell{min-height:0;padding:7px 9px;flex-direction:row;align-items:center;justify-content:space-between;gap:8px;cursor:default}
+.atlas-matrix .mcell[data-cov="0"]{opacity:.45}
+.atlas-matrix .mcell[data-cov="3"]{cursor:pointer}
+.atlas-matrix .mcell .cnt{margin-top:0;align-self:center}
 .mcell .tn{font-size:11.5px;color:var(--text);line-height:1.3;font-weight:500}
 .mcell .cnt{align-self:flex-start;margin-top:6px;font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--blue);font-weight:700;padding:1px 5px;background:rgba(76,194,255,.14);border-radius:3px}
 .mcell[data-cov="0"] .cnt{color:var(--dim);background:var(--surface-2)}
@@ -735,7 +745,7 @@ html[data-theme="light"] .cview{background-image:none}
       <button class="tool" id="viewGrid" aria-pressed="true">Overview</button>
       <button class="tool" id="viewWork" aria-pressed="false">Hunt</button>
       <button class="tool" id="viewCamp" aria-pressed="false">Campaigns</button>
-      <button class="tool" id="viewAttack" aria-pressed="false">ATT&amp;CK</button>
+      <button class="tool" id="viewAttack" aria-pressed="false">MITRE</button>
       <button class="tool" id="viewAdv" aria-pressed="false">Advisories</button>
       <button class="tool" id="themeBtn">Light</button>
     </div>
@@ -775,18 +785,17 @@ html[data-theme="light"] .cview{background-image:none}
       <div class="section-label">Browse by category</div>
       <div class="grid" id="grid"></div>
 
-      <div class="site-footer">
+      <footer class="site-footer">
         <div class="footer-links">
           <a href="https://github.com/gokselatakan/GoXDR/issues/new?template=quick-submit.yml" target="_blank" rel="noopener">Submit Query</a>
-          <a href="https://github.com/gokselatakan/GoXDR/issues/new?template=detailed-submit.yml" target="_blank" rel="noopener">Detailed Submit</a>
           <a href="https://github.com/gokselatakan/GoXDR/issues/new?template=feedback.yml" target="_blank" rel="noopener" class="fb">Feedback</a>
         </div>
         <div class="footer-credit">
           <span class="brandmark"><span class="go">Go</span><span class="xdr">XDR</span></span>
           <span>created by</span>
-          <a class="li" href="https://www.linkedin.com/in/gokselatakan/" target="_blank" rel="noopener">GoX</a>
+          <a class="li" href="https://www.linkedin.com/in/gokselatakan/" target="_blank" rel="noopener author">Göksel Atakan</a>
         </div>
-      </div>
+      </footer>
     </div>
   </main>
 
@@ -830,6 +839,7 @@ html[data-theme="light"] .cview{background-image:none}
 
   <div class="matrix-wrap hidden" id="attack">
     <div class="matrix-head">
+      <div class="mtabs" role="tablist" aria-label="MITRE frameworks"><button type="button" role="tab" data-mt="attack" aria-selected="true">ATT&amp;CK</button><button type="button" role="tab" data-mt="atlas" aria-selected="false">ATLAS</button></div>
       <h2>ATT&amp;CK <span class="accent">coverage matrix</span></h2>
       <p id="attackNote">MITRE ATT&amp;CK Enterprise tactics. Deeper blue means more detections in this library. Click any tactic column to filter the hunt view to that tactic.</p>
       <div class="legend">
@@ -845,6 +855,20 @@ html[data-theme="light"] .cview{background-image:none}
       </div>
     </div>
     <div class="matrix-scroll"><div class="matrix" id="matrix"></div></div>
+  </div>
+
+
+  <div class="matrix-wrap hidden" id="atlas">
+    <div class="matrix-head">
+      <div class="mtabs" role="tablist" aria-label="MITRE frameworks"><button type="button" role="tab" data-mt="attack" aria-selected="false">ATT&amp;CK</button><button type="button" role="tab" data-mt="atlas" aria-selected="true">ATLAS</button></div>
+      <h2>ATLAS <span class="accent">coverage matrix</span></h2>
+      <p id="atlasNote">MITRE ATLAS tactics and techniques for AI enabled systems.</p>
+      <div class="legend">
+        <div class="item"><span class="swatch" style="background:var(--surface);opacity:.5"></span>No query yet</div>
+        <div class="item"><span class="swatch" style="background:rgba(76,194,255,.16);border-color:var(--blue)"></span>Covered by at least one query</div>
+      </div>
+    </div>
+    <div class="matrix-scroll"><div class="matrix atlas-matrix" id="atlasMatrix"></div></div>
   </div>
 
   <div class="adv-wrap hidden" id="advisories">
@@ -1587,6 +1611,52 @@ function renderMatrix(){
   });
 }
 
+/* ---------------- ATLAS matrix ---------------- */
+/* Tactic and technique names as published on atlas.mitre.org (matrix page, copied 2026-11-13). */
+const ATLAS_MATRIX = [{"name": "Reconnaissance", "techs": ["Active Scanning", "Autonomous Reconnaissance", "Gather RAG-Indexed Targets", "Gather Victim Identity Information", "Search Application Repositories", "Search Open AI Vulnerability Analysis", "Search Open Technical Databases", "Search Open Websites/Domains", "Search Victim-Owned Websites"]}, {"name": "Resource Development", "techs": ["Acquire Infrastructure", "Acquire Public AI Artifacts", "Compromise Accounts", "Compromise Infrastructure", "Develop Capabilities", "Establish Accounts", "Obtain Capabilities", "Publish Hallucinated Entities", "Publish Poisoned AI Artifacts", "Replicate AI Model Behavior", "Stage Capabilities"]}, {"name": "AI Attack Adaptation", "techs": ["Autonomous AI Agent Communication", "Autonomous Attack Orchestration", "Autonomous Attack-Path Adaptation", "Craft Adversarial Data", "Generate Deepfakes", "Generate Malicious Commands", "LLM Prompt Crafting", "Manipulate AI Model", "Replicate AI Model Behavior", "Retrieval Content Crafting", "Verify Attack"]}, {"name": "Initial Access", "techs": ["Crafted AI Assistant Links", "Drive-by Compromise", "Evade AI Model", "Exploit Automated Artifact Processing Pipeline", "Exploit Public-Facing Application", "Misconfigured or Publicly Exposed AI Services", "Phishing", "Prompt Infiltration via Public-Facing Application", "Supply Chain Compromise", "Valid Accounts"]}, {"name": "AI Model Access", "techs": ["AI Model Inference API Access", "AI-Enabled Product or Service", "Full AI Model Access", "Physical Environment Access"]}, {"name": "Execution", "techs": ["AI Agent Clickbait", "AI Agent Tool Invocation", "Command and Scripting Interpreter", "Deploy AI Agent", "LLM Prompt Injection", "User Execution"]}, {"name": "Persistence", "techs": ["AI Agent Context Poisoning", "AI Agent Environment Reconstruction", "AI Agent Tool Data Poisoning", "AI Agent Tool Poisoning", "Create Account", "Event Triggered Execution", "LLM Prompt Self-Replication", "Manipulate AI Model", "Modify AI Agent Configuration", "Poison AI Agent Learning Environment", "Prompt Infiltration via Public-Facing Application", "RAG Poisoning", "Training Data Poisoning"]}, {"name": "Privilege Escalation", "techs": ["AI Agent Tool Invocation", "Escape to Host", "LLM Jailbreak", "Valid Accounts"]}, {"name": "Defense Evasion", "techs": ["AI Service Request Metadata Sanitization", "AI Supply Chain Reputation Inflation", "AI Supply Chain Rug Pull", "AI Targeted Cloaking", "Centralized AI Service Request Routing", "Corrupt AI Model", "Delay Execution of LLM Instructions", "Evade AI Model", "Exploitation for Defense Evasion", "False RAG Entry Injection", "Impersonation", "Indicator Removal", "LLM Jailbreak", "LLM Prompt Obfuscation", "LLM Trusted Output Components Manipulation", "Manipulate User LLM Chat History", "Masquerading", "Modify AI Agent Configuration", "Obfuscated Files or Information", "Triggers in Multimodal Inputs", "Virtualization/Sandbox Evasion"]}, {"name": "Credential Access", "techs": ["AI Agent Tool Credential Harvesting", "Credentials from AI Agent Configuration", "Exploitation for Credential Access", "OS Credential Dumping", "RAG Credential Harvesting", "Steal Web Session Cookie", "Unsecured Credentials"]}, {"name": "Discovery", "techs": ["Discover AI Agent Configuration", "Discover AI Agent Runtime Capabilities", "Discover AI Artifacts", "Discover AI Model Family", "Discover AI Model Ontology", "Discover AI Model Outputs", "Discover LLM Hallucinations", "Discover LLM System Information", "Enterprise Environment Discovery", "Enterprise Resource Discovery", "Recover AI Model Internals"]}, {"name": "Lateral Movement", "techs": ["AI Agent Tool Invocation", "Exploitation of Remote Services", "LLM Prompt Propagation", "Phishing", "Use Alternate Authentication Material", "Valid Accounts"]}, {"name": "Collection", "techs": ["AI Artifact Collection", "Automated Collection", "Data Staged", "Data from AI Services", "Data from Information Repositories", "Data from Local System", "Outputs from AI Models", "Recover AI Model Internals", "Training Data Information from AI Models"]}, {"name": "Command and Control", "techs": ["AI Agent", "AI Artifact Repository", "AI Service API", "AI Service Web Interface", "Cyber Communication Channel"]}, {"name": "Exfiltration", "techs": ["Exfiltration via AI Agent Tool Invocation", "Exfiltration via AI Inference API", "Exfiltration via AI User Interface", "Exfiltration via Cyber Means", "LLM Response Rendering"]}, {"name": "Impact", "techs": ["AI Agent Response Biasing", "Cost Harvesting", "Data Destruction via AI Agent Tool Invocation", "Denial of AI Service", "Erode AI Model Integrity", "Erode Dataset Integrity", "Evade AI Model", "External Harms", "Machine Compromise", "Spamming AI System with Chaff Data"]}];
+/* A matrix cell is marked covered only when a query lists that exact ATLAS technique ID. */
+const ATLAS_CELL_IDS = {
+  "Modify AI Agent Configuration":"AML.T0081",
+  "AI Agent Tool Poisoning":"AML.T0110",
+  "Deploy AI Agent":"AML.T0103",
+  "Supply Chain Compromise":"AML.T0010"
+};
+const atlasParent = id => id.replace(/\.\d{3}$/, "");
+function atlasQueries(id){ return DATA.filter(q=>(q.atlas||[]).some(a=>atlasParent(a)===id)); }
+function renderAtlas(){
+  const tagged = DATA.filter(q=>(q.atlas||[]).length).length;
+  let cells = 0, covered = 0;
+  $("#atlasNote").innerHTML = `MITRE ATLAS covers adversary behavior against AI enabled systems. Many ATLAS techniques target models and training data, which log based tools rarely observe, so coverage here is intentionally strict: <b>${tagged}</b> queries carry an ATLAS technique ID and a cell is marked only for an exact match. Click a covered cell to open its queries in Hunt.`;
+  $("#atlasMatrix").innerHTML = ATLAS_MATRIX.map(col=>{
+    const cs = col.techs.map(t=>{
+      const id = ATLAS_CELL_IDS[t]; const n = id ? atlasQueries(id).length : 0;
+      cells++; if(n) covered++;
+      return {t,id,n};
+    });
+    const cov = cs.filter(c=>c.n).length;
+    return `<div class="mcol">
+      <div class="mcol-head" style="cursor:default;border-top-color:var(--violet)">
+        <div class="name">${esc(col.name)}</div>
+        <div class="meta"><span>${col.techs.length} techniques</span><b>${cov} covered</b></div>
+      </div>
+      ${cs.map(c=>c.n?`<button class="mcell" data-cov="3" data-atlas="${esc(c.id)}"><div class="tn">${esc(c.t)}</div><span class="cnt">${c.n}</span></button>`:`<div class="mcell" data-cov="0"><div class="tn">${esc(c.t)}</div></div>`).join("")}
+    </div>`;
+  }).join("");
+  $("#atlasMatrix").querySelectorAll(".mcell[data-atlas]").forEach(cell=>{
+    cell.onclick = ()=>{
+      try{
+        resetWorkspaceFilters();
+        state.cat = "all"; state.sub = null; state.tactic = null; state.sel = null; state.kind = null; state.tables = []; state.runnable = false;
+        state.term = cell.dataset.atlas; $("#q").value = cell.dataset.atlas;
+        goWorkspace();
+      }catch(err){
+        (window.__goxdrReportError||console.error)('atlas cell click failed: ' + (err && err.stack || err));
+      }
+      pushHistory();
+    };
+  });
+}
+
 /* ---------------- advisories ---------------- */
 const ADVISORIES = [
   {
@@ -1661,18 +1731,19 @@ function renderAdvisories(){
 }
 
 /* ---------------- navigation ---------------- */
-const VIEWS = ["grid","workspace","campaigns","attack","advisories"];
+const VIEWS = ["grid","workspace","campaigns","attack","atlas","advisories"];
 function setView(v){
   state.view = v;
   $("#landing").classList.toggle("hidden", v!=="grid");
   $("#workspace").classList.toggle("hidden", v!=="workspace");
   $("#campaigns").classList.toggle("hidden", v!=="campaigns");
   $("#attack").classList.toggle("hidden", v!=="attack");
+  $("#atlas").classList.toggle("hidden", v!=="atlas");
   $("#advisories").classList.toggle("hidden", v!=="advisories");
   $("#viewGrid").setAttribute("aria-pressed", v==="grid");
   $("#viewWork").setAttribute("aria-pressed", v==="workspace");
   $("#viewCamp").setAttribute("aria-pressed", v==="campaigns");
-  $("#viewAttack").setAttribute("aria-pressed", v==="attack");
+  $("#viewAttack").setAttribute("aria-pressed", v==="attack" || v==="atlas");
   $("#viewAdv").setAttribute("aria-pressed", v==="advisories");
   $("#workspace").classList.remove("show-f");
   document.body.classList.toggle("hunt-active", v==="workspace");
@@ -1681,6 +1752,7 @@ function goGrid(){ setView("grid"); }
 function goWorkspace(){ setView("workspace"); renderRail(); renderList(); renderDetail(); }
 function goCampaigns(){ setView("campaigns"); renderCampaigns(); }
 function goAttack(){ setView("attack"); renderMatrix(); }
+function goAtlas(){ setView("atlas"); renderAtlas(); }
 function goAdv(){ setView("advisories"); renderAdvisories(); }
 
 /* ---------------- browser back/forward support ---------------- */
@@ -1766,6 +1838,7 @@ function applyState(s){
   if(v==="workspace") goWorkspace();
   else if(v==="campaigns") goCampaigns();
   else if(v==="attack") goAttack();
+  else if(v==="atlas") goAtlas();
   else if(v==="advisories") goAdv();
   else setView("grid");
 }
@@ -1881,6 +1954,7 @@ function wireup(){
   $("#viewWork").onclick = ()=>{ resetWorkspaceFilters(); state.cat="all"; state.sub=null; state.tactic=null; state.sel=null; state.term=""; $("#q").value=""; goWorkspace(); pushHistory(); };
   $("#viewCamp").onclick = ()=>{ goCampaigns(); pushHistory(); };
   $("#viewAttack").onclick = ()=>{ goAttack(); pushHistory(); };
+  document.querySelectorAll(".mtabs button").forEach(b=>{ b.onclick = ()=>{ if(b.dataset.mt==="atlas") goAtlas(); else goAttack(); pushHistory(); }; });
   $("#viewAdv").onclick = ()=>{ goAdv(); pushHistory(); };
   const homeReload = ()=>{ location.assign(location.pathname); };
   $("#brand").onclick = homeReload;
