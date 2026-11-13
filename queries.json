@@ -3849,8 +3849,8 @@
   {
     "id": 188,
     "name": "Ethersphere Package Compromise Hunt: Hidden Solidity Folder, Remote Tool Service and Campaign Hosts",
-    "cat": "AI Security",
-    "sub": "Supply Chain",
+    "cat": "XDR",
+    "sub": "Endpoint",
     "plat": "xdr",
     "tables": [
       "DeviceNetworkEvents",
