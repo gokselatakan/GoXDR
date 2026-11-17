@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="google-site-verification" content="St0et6SFaaeYBQnT_vjLSYqLGQzvvfslb1738HAJ02s" />
-<title>GoXDR - Detection and Hunting Queries for Sentinel and Defender XDR</title>
+<title>KQL Queries for Microsoft Sentinel and Defender XDR</title>
 <script>
 /* Theme: dark by default. A visitor's own choice is remembered. Runs before paint to avoid a flash. */
 (function(){
@@ -19,7 +19,7 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"GoXDR","url":"https://goxdr.fyi","description":"Detection and hunting queries for Microsoft Sentinel and Defender XDR.","author":{"@type":"Person","name":"Göksel Atakan","alternateName":"GoX","url":"https://www.linkedin.com/in/gokselatakan/","sameAs":["https://www.linkedin.com/in/gokselatakan/","https://github.com/gokselatakan"]}}</script>
 <link rel="canonical" href="https://goxdr.fyi" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230B0E13'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Arial Black,sans-serif' font-weight='900' font-size='14'%3E%3Ctspan fill='%234CC2FF'%3EG%3C/tspan%3E%3Ctspan fill='%23FF8C42'%3EX%3C/tspan%3E%3C/text%3E%3C/svg%3E">
-<meta property="og:title" content="GoXDR - Detection and Hunting Queries for Sentinel and Defender XDR">
+<meta property="og:title" content="KQL Queries for Microsoft Sentinel and Defender XDR">
 <meta property="og:description" content="Detection and threat hunting queries for Microsoft Sentinel and Defender XDR, tested against real-world scenarios before they earn a place in the library.">
 <meta name="twitter:description" content="Detection and threat hunting queries for Microsoft Sentinel and Defender XDR, tested against real-world scenarios before they earn a place in the library.">
 <meta property="og:type" content="website">
@@ -201,6 +201,7 @@ html[data-theme="light"] .landing{background:var(--bg)}
 .fn-k{font-family:"IBM Plex Sans Condensed";font-size:9.5px;letter-spacing:.13em;font-weight:600;text-transform:uppercase;color:var(--blue);white-space:nowrap}
 .fn-h{font-size:13px;font-weight:600;letter-spacing:-.01em;color:var(--text);white-space:nowrap}
 .fn-arr{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--blue);flex:0 0 auto}
+.footer-about{max-width:640px;margin:0 auto 16px;padding:0 4px;color:var(--muted);font-size:13px;line-height:1.6}
 .site-footer{margin-top:48px;padding:28px 0 8px;border-top:1px solid var(--line-soft);text-align:center}
 .footer-links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
 .footer-links a{
@@ -794,6 +795,8 @@ html[data-theme="light"] .cview{background-image:none}
       <div class="grid" id="grid"></div>
 
       <footer class="site-footer">
+        <p class="footer-about">GoXDR is a free, open source library of KQL detection and hunting queries for Microsoft Sentinel and Microsoft Defender XDR. It covers AI security, identity, endpoint, email, cloud and Active Directory, with campaign dossiers and MITRE ATT&amp;CK and ATLAS mapping.</p>
+        <noscript><p class="footer-about">Categories: AI Security, Identity, Defender XDR, Email Security, Active Directory, Workload Identity, Collaboration Security, OAuth Apps and Consent, Non-Interactive Sign-Ins, NTLM and Legacy Auth, Geolocation. The query library loads with JavaScript from queries.json in the GitHub repository gokselatakan/GoXDR.</p></noscript>
         <div class="footer-links">
           <a href="https://github.com/gokselatakan/GoXDR/issues/new?template=quick-submit.yml" target="_blank" rel="noopener">Submit Query</a>
           <a href="https://github.com/gokselatakan/GoXDR/issues/new?template=feedback.yml" target="_blank" rel="noopener" class="fb">Feedback</a>
