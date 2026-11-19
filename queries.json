@@ -4269,5 +4269,28 @@
     "desc": "Finds .pth files created, modified or renamed inside Python site-packages folders. Python runs these files at every start, so a malicious one gives persistence and a way to run code inside any Python process. Results are grouped by device, account, file name and writing process, with the two file names known from the Microsoft Agent Framework PyPI compromise listed first and rarely written names next. MITRE ATT&CK: T1546.018 (Python Startup Hooks). SOC action: check the file name against the packages you expect and read the sample command line. Open the file and look for import statements or code on a single line. If a startup hook is unexpected, check recently installed packages and rotate credentials reachable from that environment. Known false positives: normal package installs and updates with pip, conda or uv. Known limitation: file content is not visible. Only folders named site-packages are covered. Debian and Ubuntu system packages use dist-packages and are not matched. Only two known file names from one incident are flagged. Other malicious names show up only through the rare name ordering. Deletions are not included. Only onboarded devices are covered. The query ran in a live tenant without errors and returned no findings. The logic was validated with synthetic events: 5 expected rows and 4 negative cases, all as expected. Requires Defender for Endpoint. Hunting query, not an alert.",
     "kql": "// Hunting query, not an alert\nlet Lookback = 30d;\nlet KnownBad = dynamic([\"agent_framework_meta.pth\", \"af_runtime_diag.pth\"]);\nlet Hunt = (F: (Timestamp: datetime, DeviceName: string, ActionType: string, FileName: string, FolderPath: string, InitiatingProcessFileName: string, InitiatingProcessCommandLine: string, InitiatingProcessAccountName: string)) {\n  F\n  | where ActionType in (\"FileCreated\", \"FileModified\", \"FileRenamed\")\n  | where FileName endswith \".pth\" and FolderPath has \"site-packages\"\n  | extend KnownIoc = FileName in~ (KnownBad)\n  | summarize Events = count(), FirstSeen = min(Timestamp), LastSeen = max(Timestamp), SampleCommand = take_any(InitiatingProcessCommandLine) by DeviceName, InitiatingProcessAccountName, FileName, FolderPath, InitiatingProcessFileName, KnownIoc\n  | order by KnownIoc desc, Events asc\n};\nHunt((DeviceFileEvents | where Timestamp > ago(Lookback)))",
     "added": "2026-11-19"
+  },
+  {
+    "id": 206,
+    "name": "NGINX Packages in the Affected Version Range",
+    "cat": "XDR",
+    "sub": "Vulnerability Mgmt",
+    "plat": "xdr",
+    "tables": [
+      "DeviceTvmSoftwareInventory"
+    ],
+    "tags": [
+      "nginx",
+      "vulnerability response",
+      "software inventory",
+      "http2",
+      "patch management",
+      "cve-2026-123007",
+      "cve-2026-123633"
+    ],
+    "sev": "medium",
+    "desc": "Lists nginx packages in the software inventory whose version is in the range affected by the November 2026 NGINX HTTP/2 flaws (CVE-2026-123007 and CVE-2026-123633). Each row shows the device, package and base version number with a flag showing whether it falls between 1.9.5 and 1.30.6 or between 1.31.0 and 1.31.8. Fixed releases are 1.30.7 and 1.31.9. MITRE ATT&CK: no match, this is an inventory hunt. SOC action: check the vendor advisory for each hit, since distributions can backport fixes without a version change. Confirm whether HTTP/2 is enabled and whether the nginx is bundled inside an appliance. Patch to a fixed release and restart nginx, because a reload keeps the old binary running. Known false positives: distribution packages that already carry a backported fix. Known limitation: only the base version number is compared, so backported fixes are not visible. HTTP/2 or other required features being enabled is not visible. Only software that Defender inventories is covered. Containers and unmanaged builds are missing. Only onboarded devices are covered. The query ran in a live tenant without errors and returned rows. The logic was validated with synthetic events: 12 expected rows and 2 negative cases, all as expected. Requires Defender for Endpoint. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Hunt = (S: (DeviceName: string, SoftwareName: string, SoftwareVersion: string)) {\n  S\n  | where SoftwareName has \"nginx\"\n  | extend BaseVersion = extract(@\"^(\\d+\\.\\d+\\.\\d+)\", 1, SoftwareVersion)\n  | where isnotempty(BaseVersion)\n  | extend V = parse_version(BaseVersion)\n  | extend InRange = V >= parse_version(\"1.9.5\") and (V < parse_version(\"1.30.7\") or (V >= parse_version(\"1.31.0\") and V < parse_version(\"1.31.9\")))\n  | project DeviceName, SoftwareName, SoftwareVersion, BaseVersion, InRange\n  | order by InRange desc, DeviceName asc, SoftwareName asc\n};\nHunt((DeviceTvmSoftwareInventory))",
+    "added": "2026-11-19"
   }
 ]
