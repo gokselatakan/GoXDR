@@ -4341,5 +4341,26 @@
     "kql": "// Hunting query, not an alert\nlet Lookback = 30d;\nlet ShellsAndTools = dynamic([\"sh\", \"bash\", \"dash\", \"zsh\", \"ash\", \"busybox\", \"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"pwsh\", \"curl\", \"curl.exe\", \"wget\", \"nc\", \"ncat\", \"netcat\", \"socat\", \"ssh\", \"scp\", \"base64\", \"chmod\", \"crontab\", \"whoami\", \"whoami.exe\", \"perl\", \"ruby\", \"nslookup\", \"dig\", \"telnet\", \"mkfifo\", \"openssl\", \"certutil.exe\", \"mshta.exe\", \"rundll32.exe\", \"bitsadmin.exe\", \"regsvr32.exe\", \"wmic.exe\"]);\nlet Hunt = (P: (Timestamp: datetime, DeviceName: string, AccountName: string, FileName: string, ProcessCommandLine: string, InitiatingProcessFileName: string, InitiatingProcessCommandLine: string)) {\n  P\n  | where InitiatingProcessFileName startswith \"python\" or InitiatingProcessFileName in~ (\"litellm\", \"litellm.exe\", \"uvicorn\", \"uvicorn.exe\", \"gunicorn\", \"gunicorn.exe\")\n  | where InitiatingProcessCommandLine contains \"litellm\"\n  | where not(InitiatingProcessCommandLine contains \"pip install\" or InitiatingProcessCommandLine contains \"-m pip\")\n  | where ProcessCommandLine != InitiatingProcessCommandLine\n  | extend ShellOrTool = FileName in~ (ShellsAndTools)\n  | summarize Starts = count(), FirstSeen = min(Timestamp), LastSeen = max(Timestamp), SampleCommands = make_set(ProcessCommandLine, 3) by DeviceName, AccountName, InitiatingProcessFileName, InitiatingProcessCommandLine, FileName, ShellOrTool\n  | order by ShellOrTool desc, Starts desc\n};\nHunt((DeviceProcessEvents | where Timestamp > ago(Lookback)))",
     "added": "2026-11-20",
     "updated": "2026-11-20"
+  },
+  {
+    "id": 209,
+    "name": "Local AI Agents That Approve Their Own Actions",
+    "cat": "AI Security",
+    "sub": "Agent Inventory",
+    "plat": "xdr",
+    "tables": [
+      "AgentsInfo"
+    ],
+    "tags": [
+      "ai security",
+      "ai agents",
+      "mcp",
+      "agent inventory",
+      "auto approve"
+    ],
+    "sev": "low",
+    "desc": "Lists the latest record of each local AI agent still present on a device that acts without asking the user for approval. Each row shows the publisher, host process, account and device with the number of remote and local MCP servers configured for the agent. Agents with the most MCP servers come first. MITRE ATT&CK: no exact match. SOC action: check whether the agent and the account are expected on that device. Review the configured MCP servers and the data and services they reach, then decide whether approval prompts should be required. Known false positives: developers who run coding agents in an auto approve mode on their own workstations. Known limitation: only supported agents on onboarded Windows or macOS devices with the endpoint antivirus in active mode are discovered. Discovery is process based and shows presence, not use. MCP server details exist only for agents where discovery finds them. The source is in preview so column and field names may change. Agents that report no auto approve value are not listed. Cloud agents are excluded because the filter selects the local agent platform. Only records from the last 30 days are read. Discovery needs the license tier of the endpoint product that includes local agent discovery. The query ran in a live tenant without errors and returned no findings. The logic was validated with synthetic records: 4 expected rows, all as expected. No extra rows appeared. Requires Defender for Endpoint. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| extend AgentLabel = coalesce(column_ifexists(\"AgentName\", \"\"), column_ifexists(\"Name\", \"\"))\n| summarize arg_max(Timestamp, AgentLabel, Version, LifecycleStatus, McpServers, RawAgentInfo) by AgentId\n| where LifecycleStatus !in~ (\"Deleted\", \"Uninstalled\")\n| extend AgentMetadata = RawAgentInfo.localAgentMetadata\n| extend AutoApprove = tostring(AgentMetadata.autoApprove)\n| where AutoApprove =~ \"true\"\n| extend Vendor = tostring(AgentMetadata.vendor),\n         HostProcess = tostring(AgentMetadata.relatedProcess),\n         TrustedProcess = tostring(AgentMetadata.trustedProcess),\n         Device = tostring(AgentMetadata.deviceName),\n         Account = strcat(tostring(AgentMetadata.accountDomain), \"\\\\\", tostring(AgentMetadata.accountName)),\n         LocalMcps = AgentMetadata.localMcps\n| extend RemoteMcpCount = coalesce(array_length(McpServers), 0),\n         LocalMcpCount = coalesce(array_length(LocalMcps), 0)\n| extend TotalMcpCount = RemoteMcpCount + LocalMcpCount\n| project Timestamp, Device, Account, Agent = AgentLabel, Version, Vendor, HostProcess, TrustedProcess, AutoApprove, TotalMcpCount, RemoteMcpCount, LocalMcpCount, McpServers, LocalMcps, LifecycleStatus, AgentId\n| sort by TotalMcpCount desc, Timestamp desc",
+    "added": "2026-11-23"
   }
 ]
