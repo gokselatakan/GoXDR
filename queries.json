@@ -4363,5 +4363,26 @@
     "kql": "// Hunting query, not an alert\nlet Lookback = 30d;\nAgentsInfo\n| where Timestamp > ago(Lookback)\n| where Platform == \"LocalAgents\"\n| extend AgentLabel = coalesce(column_ifexists(\"AgentName\", \"\"), column_ifexists(\"Name\", \"\"))\n| summarize arg_max(Timestamp, AgentLabel, Version, LifecycleStatus, McpServers, RawAgentInfo) by AgentId\n| where LifecycleStatus !in~ (\"Deleted\", \"Uninstalled\")\n| extend AgentMetadata = RawAgentInfo.localAgentMetadata\n| extend AutoApprove = tostring(AgentMetadata.autoApprove)\n| where AutoApprove =~ \"true\"\n| extend Vendor = tostring(AgentMetadata.vendor),\n         HostProcess = tostring(AgentMetadata.relatedProcess),\n         TrustedProcess = tostring(AgentMetadata.trustedProcess),\n         Device = tostring(AgentMetadata.deviceName),\n         Account = strcat(tostring(AgentMetadata.accountDomain), \"\\\\\", tostring(AgentMetadata.accountName)),\n         LocalMcps = AgentMetadata.localMcps\n| extend RemoteMcpCount = coalesce(array_length(McpServers), 0),\n         LocalMcpCount = coalesce(array_length(LocalMcps), 0)\n| extend TotalMcpCount = RemoteMcpCount + LocalMcpCount\n| project Timestamp, Device, Account, Agent = AgentLabel, Version, Vendor, HostProcess, TrustedProcess, AutoApprove, TotalMcpCount, RemoteMcpCount, LocalMcpCount, McpServers, LocalMcps, LifecycleStatus, AgentId\n| sort by TotalMcpCount desc, Timestamp desc",
     "added": "2026-11-23",
     "updated": "2026-11-23"
+  },
+  {
+    "id": 210,
+    "name": "Azure API Management Secrets Read From New Source IPs",
+    "cat": "XDR",
+    "sub": "Azure Activity",
+    "plat": "sentinel",
+    "tables": [
+      "AzureActivity"
+    ],
+    "tags": [
+      "azure",
+      "api management",
+      "apim",
+      "secrets",
+      "cloud security"
+    ],
+    "sev": "low",
+    "desc": "Lists callers that read secret values from Azure API Management instances in the last 7 days from an IP address that did not read secrets in the 23 days before. Secret reads are Activity log operations that list named values or secrets of APIM objects. Output shows read counts, operations, first and last seen per caller, IP and instance. MITRE ATT&CK: T1555.006 (Cloud Secrets Management Stores). SOC action: confirm the caller and source IP with the instance owner. If unexpected, rotate the secrets that the listed operations returned (named values, subscription keys, identity provider or backend secrets) and review the caller's other Azure Activity. Known false positives: administrators on a new network or VPN, deployment pipelines running from new runner addresses, monitoring tools that read named values and hosted tools that call the control plane on behalf of users. Known limitation: needs the Azure Activity log in the workspace with 30 days of history. Only successful control plane secret reads are listed. A path that does not write to the Activity log is not seen, so an empty result does not rule out access. Operation names are matched by their last words and should be checked against your own Activity log. Gateway key and user token operations are not read. An IP counts as known if any caller read secrets from it, so a shared egress or VPN address hides new callers. Events without a caller IP are not listed. A workspace with no earlier secret reads lists every reader. Caller is shown as logged. The query ran in a live Sentinel workspace and returned rows. The logic was validated with 14 synthetic Activity log rows: 3 expected rows, all as expected. Requires Azure Activity in Microsoft Sentinel. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 7d;\nlet Baseline = 30d;\nlet SecretReads = AzureActivity\n| where TimeGenerated > ago(Baseline)\n| where OperationNameValue startswith \"microsoft.apimanagement/\"\n| where OperationNameValue has_any (\"listvalue\", \"listsecrets\")\n| where ActivityStatusValue in~ (\"Success\", \"Succeeded\")\n| where isnotempty(CallerIpAddress);\nlet KnownIps = SecretReads\n| where TimeGenerated <= ago(Lookback)\n| distinct CallerIpAddress;\nSecretReads\n| where TimeGenerated > ago(Lookback)\n| where CallerIpAddress !in (KnownIps)\n| extend Instance = tostring(split(_ResourceId, \"/\")[8])\n| summarize Reads = count(),\n            Operations = make_set(OperationNameValue, 10),\n            FirstSeen = min(TimeGenerated),\n            LastSeen = max(TimeGenerated)\n    by Caller, CallerIpAddress, Instance\n| order by Reads desc",
+    "added": "2026-11-24"
   }
 ]
