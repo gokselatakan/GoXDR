@@ -4429,5 +4429,46 @@
     "kql": "// Hunting query, not an alert\nlet Lookback = 7d;\nDeviceProcessEvents\n| where Timestamp > ago(Lookback)\n| where InitiatingProcessFileName startswith \"tomcat\"\n    or (InitiatingProcessFileName in~ (\"java\", \"java.exe\", \"javaw.exe\")\n        and InitiatingProcessCommandLine has_any (\"catalina\", \"tomcat\", \"jetty\", \"wildfly\", \"jboss\", \"weblogic\", \"websphere\", \"glassfish\", \"payara\"))\n| where FileName in~ (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"wscript.exe\", \"cscript.exe\", \"mshta.exe\", \"certutil.exe\", \"bitsadmin.exe\", \"curl.exe\", \"wget.exe\", \"whoami.exe\", \"net.exe\", \"net1.exe\", \"nltest.exe\", \"sh\", \"bash\", \"dash\", \"zsh\", \"curl\", \"wget\", \"nc\", \"ncat\", \"whoami\", \"id\", \"python\", \"python3\", \"perl\")\n| summarize Events = count(),\n            Commands = make_set(substring(ProcessCommandLine, 0, 200), 5),\n            FirstSeen = min(Timestamp),\n            LastSeen = max(Timestamp)\n    by DeviceName, Parent = InitiatingProcessFileName, Child = FileName\n| order by Events desc",
     "added": "2026-11-26",
     "updated": "2026-11-26"
+  },
+  {
+    "id": 213,
+    "name": "Service Principals Failing With Invalid or Expired Secrets From One IP",
+    "cat": "App Identity",
+    "sub": "Anomaly",
+    "plat": "sentinel",
+    "tables": [
+      "AADServicePrincipalSignInLogs"
+    ],
+    "tags": [
+      "entra",
+      "service principal",
+      "client secret",
+      "credential abuse"
+    ],
+    "sev": "low",
+    "desc": "Finds IP addresses where at least three different applications failed to sign in with an invalid or expired client secret (error 7000215 or 7000222) within the same hour, over the last 7 days. It also counts the failing applications that signed in successfully from the same IP in that hour. Error 7000215 means an invalid client secret and 7000222 an expired one. Microsoft's ARTEX write-up (25 November 2026) describes AI driven tooling that abuses exposed application credentials. It says actors can vary source IPs and user agents and that behavior is the durable signal, so a per IP hunt can miss rotation. Related Microsoft alerts exist, for example Multiple Service Principal Sign-ins from Single IP and the workload identity Leaked Credentials detection. This hunt exposes the raw pattern for tuning. MITRE ATT&CK: T1110.004 (Credential Stuffing), T1078.004 (Cloud Accounts). SOC action: check whether the failing applications share an owner or a pipeline. If any of them also succeeded from the same IP, treat its secret as possibly compromised and rotate it first. Then check AuditLogs for recent credential additions on those applications, the other activity of the IP and where the secret could have leaked from. For the single IP botnet pattern across all sign-in results see Botnet: Multiple SPs Same IP. Known false positives: shared egress IPs used by CI or automation tools that run several applications with expired secrets, deployments of several applications after a bulk secret expiry and security scanners or breach simulation tools. Known limitation: needs service principal sign-in logs in Log Analytics and ingestion can lag. Only sign-ins with the application's own identity are seen. Managed identities, user sign-ins and attempts against unknown applications are not covered. Grouping is per IP and per fixed one hour window, so rotating source IPs and bursts split across windows are missed. A success after the hour, or for an application that did not fail from that IP, is not counted. The default ARTEX user agents are not checked. False positive rates on real data are unknown. An empty result does not rule out credential abuse. The logic was validated with 40 synthetic sign-ins covering app counts, error codes, repeats, windows, lookback, empty IPs and a failure with a success in the same hour: 4 expected rows, all as expected. It checks the logic only, not detection value. The query ran in a live tenant without errors. It was not run against real attack data. Requires AADServicePrincipalSignInLogs in Microsoft Sentinel. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 7d;\nAADServicePrincipalSignInLogs\n| where TimeGenerated > ago(Lookback)\n| where isnotempty(IPAddress)\n| summarize Apps = dcount(AppId),\n            FailedApps = make_set_if(AppId, ResultType in (\"7000215\", \"7000222\")),\n            SucceededApps = make_set_if(AppId, ResultType == \"0\"),\n            FailedNames = make_set_if(ServicePrincipalName, ResultType in (\"7000215\", \"7000222\"), 10),\n            SignIns = count(),\n            FirstSeen = min(TimeGenerated),\n            LastSeen = max(TimeGenerated)\n    by IPAddress, Window = bin(TimeGenerated, 1h)\n| extend BadSecretApps = array_length(FailedApps), FailedAndSucceeded = array_length(set_intersect(FailedApps, SucceededApps))\n| where BadSecretApps >= 3\n| project IPAddress, Window, Apps, BadSecretApps, FailedAndSucceeded, FailedApps, FailedNames, SignIns, FirstSeen, LastSeen\n| order by FailedAndSucceeded desc, BadSecretApps desc, Window desc",
+    "added": "2026-11-26"
+  },
+  {
+    "id": 214,
+    "name": "Same Identity Adding Credentials and Changing a Directory Role Within One Hour",
+    "cat": "App Identity",
+    "sub": "Credential Mgmt",
+    "plat": "sentinel",
+    "tables": [
+      "AuditLogs"
+    ],
+    "tags": [
+      "entra",
+      "audit logs",
+      "service principal",
+      "persistence",
+      "privilege escalation"
+    ],
+    "sev": "medium",
+    "desc": "Finds identities that changed an application credential and made a role change within 60 minutes, in either order, over the last 7 days. Microsoft's ARTEX write-up (25 November 2026) lists adding application credentials for persistence and assigning privileged roles for privilege escalation among the cloud identity abuse capabilities. This hunt matches the two steps by the same identity. It cannot tell onboarding from a self assignment of a privileged role. MITRE ATT&CK: T1098.001 (Additional Cloud Credentials), T1098.003 (Additional Cloud Roles). SOC action: read TargetResources of the actor's events: the application that got the credential, the role and its target. Check whether the change was planned. If unexpected, follow your response process. For credential changes alone see SP Credential Changes. Known false positives: administrators onboarding an application and assigning its role in the same hour and automation that manages both. Known limitation: needs Entra ID audit logs. Role changes are Add member to role and the two permanent PIM operations only. Eligible or time limited PIM, scoped roles, app role assignments and owner changes are not matched. The actor is whoever made the change. The role name and target are not compared with the credential target. An app acting for a user is matched on the user. Actors without a user principal name or app identifier are dropped. The credential match is by operation name, so a secret removal made through an application update can match. The time columns span all matched pairs of the actor. A very busy automation account can create a large join and ranks first. Operation names should be checked in your tenant. The logic was validated with 28 synthetic audit events covering time gaps, order, letter case, failures, lookback, other operations and permanent PIM operations: 6 expected rows, all as expected. It does not cover busy actors, guest actors or actors without a user principal name, secret removal or the exact 60 minute boundary. The query ran in a live tenant without errors. It was not run against real attack data. Requires AuditLogs in Microsoft Sentinel. Hunting query, not an alert.",
+    "kql": "// Hunting query, not an alert\nlet Lookback = 7d;\nlet Events = AuditLogs\n| where TimeGenerated > ago(Lookback)\n| where Result =~ \"success\"\n| extend Actor = tolower(coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.servicePrincipalId), tostring(InitiatedBy.app.appId)))\n| where isnotempty(Actor);\nlet CredentialAdds = Events\n| where OperationName =~ \"Add service principal credentials\" or OperationName has \"Certificates and secrets management\"\n| project Actor, CredentialTime = TimeGenerated, CredentialOperation = OperationName;\nlet RoleAdds = Events\n| where OperationName in~ (\"Add member to role\", \"Add member to role outside of PIM (permanent)\", \"Add member to role in PIM completed (permanent)\")\n| project Actor, RoleTime = TimeGenerated;\nCredentialAdds\n| join kind=inner RoleAdds on Actor\n| where abs(datetime_diff(\"minute\", RoleTime, CredentialTime)) <= 60\n| summarize CredentialEvents = dcount(CredentialTime),\n            RoleEvents = dcount(RoleTime),\n            Operations = make_set(CredentialOperation, 5),\n            FirstCredential = min(CredentialTime),\n            LastCredential = max(CredentialTime),\n            FirstRole = min(RoleTime),\n            LastRole = max(RoleTime)\n    by Actor\n| order by RoleEvents desc, CredentialEvents desc",
+    "added": "2026-11-26"
   }
 ]
